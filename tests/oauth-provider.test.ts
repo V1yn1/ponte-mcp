@@ -59,6 +59,24 @@ async function tokens(provider: PonteOAuthProvider, client: OAuthClientInformati
   return provider.exchangeAuthorizationCode(client, await code(provider, client), undefined, REDIRECT, new URL(`${ORIGIN}/mcp`));
 }
 
+test('event principal identifies the grant across token rotation and stops on revocation or issuer changes', async t => {
+  const { provider, client, setOrigin } = await fixture(t);
+  const issued = await tokens(provider, client);
+  const verified = await provider.verifyAccessToken(issued.access_token);
+  const grantId = provider.snapshot().grants[0]!.id;
+  assert.deepEqual(verified.extra, { grantId, issuer: ORIGIN });
+  assert.equal(provider.isGrantActive(grantId), true);
+  const refreshed = await provider.exchangeRefreshToken(client, issued.refresh_token!);
+  assert.deepEqual((await provider.verifyAccessToken(refreshed.access_token)).extra, verified.extra);
+  assert.equal(provider.isGrantActive(grantId), true);
+  setOrigin('https://another.example');
+  assert.equal(provider.isGrantActive(grantId), false);
+  setOrigin(ORIGIN);
+  await provider.revokeGrant(grantId);
+  assert.equal(provider.isGrantActive(grantId), false);
+  assert.equal(provider.isGrantActive('missing'), false);
+});
+
 test('authorization waits for local consent and completes once with state and issuer', async t => {
   const { provider, client } = await fixture(t);
   const result = await begin(provider, client);

@@ -9,7 +9,7 @@ import { startApplication, projectRoot } from './app.js';
 import { makeMcpServer } from './mcp/server.js';
 import { makeOpenApi } from './openapi.js';
 
-const HELP = `Ponte MCP 0.2.1 — ferramentas locais para chats\n\nComandos:\n  init [--workspace PASTA]  Criar configuração e credenciais locais\n  start                    Iniciar painel e API em loopback\n  stdio                    Expor MCP por stdio usando o serviço já iniciado\n  token admin|api          Mostrar a credencial escolhida neste terminal\n  doctor                   Verificar configuração e serviço\n  add-project ID PASTA     Autorizar pasta (reinicie o serviço após configurar)\n  add-roblox               Adicionar o MCP oficial do Roblox Studio\n  export-openapi [--url HTTPS] [--output ARQUIVO]\n\nOpções gerais:\n  --state-dir PASTA        Diretório local de configuração (padrão .ponte)\n  --port NUMERO            Porta do painel ao criar a configuração\n  --api-port NUMERO        Porta da API ao criar a configuração\n\nO serviço não remove cotas do modelo. Tokens admin e api são diferentes.\n`;
+const HELP = `Ponte MCP 0.4.0 — ferramentas locais para chats\n\nComandos:\n  init [--workspace PASTA]  Criar configuração e credenciais locais\n  start                    Iniciar painel e API em loopback\n  stdio                    Expor MCP por stdio usando o serviço já iniciado\n  token admin|api          Mostrar a credencial escolhida neste terminal\n  doctor                   Verificar configuração e serviço\n  add-project ID PASTA     Autorizar pasta (reinicie o serviço após configurar)\n  add-roblox               Adicionar o MCP oficial do Roblox Studio\n  export-openapi [--url HTTPS] [--output ARQUIVO]\n\nOpções gerais:\n  --state-dir PASTA        Diretório local de configuração (padrão .ponte)\n  --port NUMERO            Porta do painel ao criar a configuração\n  --api-port NUMERO        Porta da API ao criar a configuração\n\nO serviço não remove cotas do modelo. Tokens admin e api são diferentes.\n`;
 
 async function main() {
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
@@ -85,11 +85,19 @@ async function main() {
 }
 
 async function requestJson(url: string, token: string, body?: unknown): Promise<unknown> {
-  let response: globalThis.Response;
+  const toolCall = new URL(url).pathname === '/v1/mcp/call';
+  // Tool calls can wait 25 seconds inside the gateway, including bridge_job.
+  const signal = AbortSignal.timeout(toolCall ? 35_000 : 15_000);
+  let response: globalThis.Response | undefined;
+  let result: { error?: string };
   try {
-    response = await fetch(url, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(15000) });
-  } catch { throw new Error('Não foi possível conectar à ponte local. Inicie npm start antes de conectar o cliente MCP.'); }
-  const result = await response.json() as { error?: string };
+    response = await fetch(url, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), signal });
+    result = await response.json() as { error?: string };
+  } catch (error) {
+    if (toolCall && signal.aborted) throw new Error('Tempo limite ao aguardar a ferramenta. A ação pode ter sido concluída ou continuar em execução. Consulte o painel local ou bridge_job, se já tiver o jobId. Não reenvie a operação antes de conferir seu estado.');
+    if (response) throw error;
+    throw new Error('Não foi possível conectar à ponte local. Inicie npm start antes de conectar o cliente MCP.');
+  }
   if (!response.ok) throw new Error(result.error ?? 'A ponte recusou a solicitação.');
   return result;
 }

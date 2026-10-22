@@ -8,7 +8,8 @@ import type { Application } from './app.js';
 import { projectRoot } from './app.js';
 import { projectSchema, upstreamSchema, publicUrlSchema, robloxPreset } from './core/config.js';
 import { makeOpenApi } from './openapi.js';
-import { makeMcpServer, publicTools, callGateway } from './mcp/server.js';
+import { makeMcpServer, publicTools, callGateway, SERVER_INSTRUCTIONS } from './mcp/server.js';
+import { handleModernMcp } from './mcp/modern.js';
 import { authenticateMcp, isOAuthProtocolPath, mountOAuth } from './auth/http.js';
 
 function equalSecret(value: string, secret: string): boolean {
@@ -65,8 +66,24 @@ function parseInvocation(body: unknown) {
   return { name: value.tool, args: args!, key: value.idempotencyKey };
 }
 
-function errors(error: unknown, _req: Request, res: Response, _next: NextFunction) {
+function errors(error: unknown, req: Request, res: Response, _next: NextFunction) {
   if (res.headersSent) return;
+  const parserError = error as { type?: string; body?: unknown; status?: number };
+  if (req.path === '/mcp' && ['entity.parse.failed', 'entity.too.large', 'charset.unsupported', 'encoding.unsupported'].includes(parserError?.type ?? '')) {
+    const modern = req.get('MCP-Protocol-Version') === '2026-07-28';
+    let code = -32700;
+    if (parserError.type === 'entity.parse.failed' && typeof parserError.body === 'string') {
+      try { JSON.parse(parserError.body); code = -32600; } catch { /* Malformed JSON has no request ID. */ }
+    }
+    const large = parserError.type === 'entity.too.large';
+    const encoding = parserError.type === 'charset.unsupported' || parserError.type === 'encoding.unsupported';
+    if (large || encoding) code = -32600;
+    res.status(large ? 413 : encoding ? 415 : 400).json({
+      jsonrpc: '2.0', ...(modern ? {} : { id: null }),
+      error: { code, message: large ? 'Solicitação excede 1 MiB.' : encoding ? 'O corpo JSON deve usar UTF-8 sem codificação não suportada.' : code === -32700 ? 'JSON inválido.' : 'Solicitação JSON-RPC inválida.' },
+    });
+    return;
+  }
   if (error instanceof z.ZodError) { res.status(400).json({ error: error.issues.map(issue => `${issue.path.join('.') || 'configuração'}: ${issue.message}`).join('; ') }); return; }
   const status = (error as { status?: number })?.status;
   res.status(status === 413 ? 413 : 400).json({ error: status === 413 ? 'Solicitação excede 1 MiB.' : error instanceof Error ? error.message : 'Não foi possível processar a solicitação.' });
@@ -90,7 +107,11 @@ export function createHttpApps(runtime: Application): { admin: Express; api: Exp
   admin.get('/admin/jobs/:id', (req, res) => { res.json(runtime.jobs.get(String(req.params.id))); });
   admin.post('/admin/invoke', async (req, res) => {
     const { name, args, key } = parseInvocation(req.body);
-    res.status(202).json(await runtime.jobs.submit(name, args, key));
+    res.status(202).json(await runtime.jobs.submit(name, args, key, runtime.apiPrincipal));
+  });
+  admin.delete('/admin/events/subscriptions/:id', async (req, res) => {
+    const removed = await runtime.events.cancel(String(req.params.id));
+    res.json({ ok: true, removed });
   });
   for (const action of ['approve', 'reject', 'cancel'] as const) {
     admin.post('/admin/jobs/:id/' + action, (req, res) => { res.json(runtime.jobs[action](String(req.params.id))); });
@@ -100,7 +121,7 @@ export function createHttpApps(runtime: Application): { admin: Express; api: Exp
     runtime.jobs.setPaused(paused); res.json({ ok: true, paused });
   });
   admin.patch('/admin/settings', async (req, res) => {
-    const settings = z.object({ approvalMode: z.enum(['mutations', 'all']).optional(), publicUrl: z.union([publicUrlSchema, z.literal(''), z.null()]).optional() }).strict().parse(req.body);
+    const settings = z.object({ approvalMode: z.enum(['mutations', 'all', 'automatic']).optional(), publicUrl: z.union([publicUrlSchema, z.literal(''), z.null()]).optional() }).strict().parse(req.body);
     let changedOrigin = false;
     await runtime.store.update(config => {
       if (settings.approvalMode) config.approvalMode = settings.approvalMode;
@@ -113,7 +134,8 @@ export function createHttpApps(runtime: Application): { admin: Express; api: Exp
       return config;
     });
     if (changedOrigin) await runtime.oauth.publicUrlChanged();
-    res.json({ ok: true });
+    const approvals = settings.approvalMode !== undefined ? runtime.jobs.reconcileApprovalMode() : undefined;
+    res.json({ ok: true, approvalMode: runtime.store.config.approvalMode, ...(approvals ? { approvals } : {}) });
   });
 
   admin.post('/admin/projects', async (req, res) => {
@@ -169,17 +191,27 @@ export function createHttpApps(runtime: Application): { admin: Express; api: Exp
     const { name, args, key } = parseInvocation(req.body);
     const headerKey = req.get('Idempotency-Key');
     if (headerKey && key && headerKey !== key) throw new Error('Chaves de idempotência divergentes no cabeçalho e no corpo.');
-    res.status(202).json(await runtime.jobs.submit(name, args, key ?? headerKey));
+    res.status(202).json(await runtime.jobs.submit(name, args, key ?? headerKey, runtime.apiPrincipal));
   });
-  api.get('/v1/jobs/:id', (req, res) => { res.json(runtime.jobs.get(String(req.params.id))); });
-  api.post('/v1/jobs/:id/cancel', (req, res) => { res.json(runtime.jobs.cancel(String(req.params.id))); });
+  api.get('/v1/jobs/:id', (req, res) => { res.json(runtime.getJobForClient(String(req.params.id), runtime.apiPrincipal)); });
+  api.post('/v1/jobs/:id/cancel', (req, res) => {
+    const id = String(req.params.id);
+    const job = runtime.getJobForClient(id, runtime.apiPrincipal);
+    res.json(['pending_approval', 'queued', 'running'].includes(job.status) ? runtime.jobs.cancel(id) : job);
+  });
   api.get('/v1/mcp/tools', (_req, res) => { res.json({ tools: publicTools(runtime) }); });
   api.post('/v1/mcp/call', async (req, res) => {
     const value = z.object({ name: z.string().min(1).max(128), arguments: z.record(z.unknown()).default({}) }).strict().parse(req.body);
-    res.json(await callGateway(runtime, value.name, value.arguments));
+    res.json(await callGateway(runtime, value.name, value.arguments, runtime.apiPrincipal));
   });
   api.post('/mcp', async (req, res) => {
-    const server = makeMcpServer(() => publicTools(runtime, Boolean(runtime.store.config.publicUrl)), (name, args) => callGateway(runtime, name, args));
+    const grantId = req.auth?.extra?.grantId;
+    if (req.auth && typeof grantId !== 'string') { res.status(401).json({ error: 'Identidade da conexão indisponível.' }); return; }
+    const principal = typeof grantId === 'string' ? 'oauth:' + grantId : runtime.apiPrincipal;
+    const getTools = () => publicTools(runtime, Boolean(runtime.store.config.publicUrl));
+    const call = (name: string, args: Record<string, unknown>) => callGateway(runtime, name, args, principal);
+    if (await handleModernMcp(req, res, { getTools, call, events: runtime.events, principal, version: '0.4.0', instructions: SERVER_INSTRUCTIONS })) return;
+    const server = makeMcpServer(getTools, call);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     try { await server.connect(transport); await transport.handleRequest(req, res, req.body); }
     finally { await server.close(); }

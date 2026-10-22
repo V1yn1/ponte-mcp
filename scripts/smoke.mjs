@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { writeSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -50,11 +50,11 @@ async function completed(result) {
   }
 }
 
-async function adminRequest(route, method = 'GET', token = runtime.store.secrets.adminToken) {
+async function adminRequest(route, method = 'GET', token = runtime.store.secrets.adminToken, payload) {
   const response = await fetch(runtime.adminUrl + route, {
     method,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    ...(method === 'POST' ? { body: '{}' } : {}),
+    ...(payload !== undefined || method === 'POST' ? { body: JSON.stringify(payload ?? {}) } : {}),
     signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5_000)]),
   });
   const body = await response.json();
@@ -70,7 +70,21 @@ try {
   stage = 'iniciar a aplicação em portas livres';
   temporaryRoot = await mkdtemp(path.join(tmpdir(), 'ponte-smoke-'));
   const workspace = path.join(temporaryRoot, 'project');
-  runtime = await startApplication({ stateDir: path.join(temporaryRoot, 'state'), workspace, adminPort: 0, apiPort: 0 });
+  const eventSecret = 'whsec_' + Buffer.alloc(32, 11).toString('base64');
+  secrets.push(eventSecret);
+  const deliveries = [];
+  // Controlled receiver: validates the actual signed bytes, without calling a
+  // real ChatGPT conversation. The production HTTPS transport has its own tests.
+  const eventPost = async (url, body, headers) => {
+    assert.equal(url, 'https://receiver.example/compiled-smoke');
+    const expected = 'v1,' + createHmac('sha256', Buffer.from(eventSecret.slice(6), 'base64')).update(`${headers['webhook-id']}.${headers['webhook-timestamp']}.${body}`).digest('base64');
+    assert.ok(headers['webhook-signature'].split(' ').includes(expected));
+    const payload = JSON.parse(body);
+    if (payload.type === 'verification') return { status: 200, body: JSON.stringify({ challenge: payload.challenge }) };
+    deliveries.push(payload);
+    return { status: 200, body: '' };
+  };
+  runtime = await startApplication({ stateDir: path.join(temporaryRoot, 'state'), workspace, adminPort: 0, apiPort: 0, eventPost });
   secrets.push(runtime.store.secrets.adminToken, runtime.store.secrets.apiToken);
   assert.notEqual(runtime.adminUrl, runtime.apiUrl, 'Administração e MCP devem usar portas diferentes.');
   const original = 'Olá, Ponte MCP. Conteúdo original.\n';
@@ -164,6 +178,61 @@ try {
   assert.equal(await readFile(filename, 'utf8'), updated, 'O arquivo final deve conter a gravação aprovada.');
   assert.equal(await readFile(path.join(temporaryRoot, 'state', 'backups', `${write.backupId}.bak`), 'utf8'), original);
   log('OK: aprovação administrativa, trabalho concluído e conteúdo final/backup verificados.');
+
+  stage = 'ativar aprovação automática e confirmar chamadas OAuth sem revisão individual';
+  const queuedDirectory = jsonText(await callTool('local_create_directory', { projectId: 'principal', path: 'automatic' }));
+  assert.equal(queuedDirectory.status, 'pending_approval');
+  const enabled = await adminRequest('/admin/settings', 'PATCH', runtime.store.secrets.adminToken, { approvalMode: 'automatic' });
+  assert.equal(enabled.status, 200);
+  assert.equal(enabled.body.approvals.approved, 1);
+  assert.equal(jsonText(await callTool('bridge_status', {})).approvalMode, 'automatic');
+  const directory = jsonText(await callTool('bridge_job', { jobId: queuedDirectory.jobId, waitMs: 25_000 }));
+  assert.equal(directory.status, 'succeeded');
+  assert.equal(directory.approval, 'automatic');
+  const automaticWrite = jsonText(await callTool('local_write_file', {
+    projectId: 'principal', path: 'automatic/result.txt', content: 'Modo automático confirmado.', expectedHash: null,
+  }));
+  assert.equal(automaticWrite.status, 'succeeded');
+  assert.equal(automaticWrite.approval, 'automatic');
+  assert.equal(await readFile(path.join(workspace, 'automatic', 'result.txt'), 'utf8'), 'Modo automático confirmado.');
+  assert.equal((await adminRequest('/admin/settings', 'PATCH', runtime.store.secrets.adminToken, { approvalMode: 'mutations' })).status, 200);
+  const manualAgain = jsonText(await callTool('local_create_directory', { projectId: 'principal', path: 'manual-again' }));
+  assert.equal(manualAgain.status, 'pending_approval');
+  assert.equal((await adminRequest(`/admin/jobs/${manualAgain.jobId}/reject`, 'POST')).status, 200);
+  log('OK: modo automático libera pendência e nova escrita; retorno ao modo manual exige revisão novamente.');
+
+  stage = 'descobrir MCP 2.0 e entregar evento de conclusão assinado';
+  const modern = async (method, params = {}) => {
+    const response = await localFetch(issuer + '/mcp', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + oauthTokens.access_token, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'MCP-Protocol-Version': '2026-07-28', 'Mcp-Method': method },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: { ...params, _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {} } } }),
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.error, undefined);
+    assert.equal(body.result.resultType, 'complete');
+    return body.result;
+  };
+  const discovery = await modern('server/discover');
+  assert.ok(discovery.supportedVersions.includes('2026-07-28'));
+  assert.deepEqual(discovery.capabilities.events, {});
+  assert.equal((await modern('events/list')).events[0].name, 'ponte.job.completed');
+  const watched = jsonText(await callTool('local_create_directory', { projectId: 'principal', path: 'event-completed' }));
+  assert.equal(watched.status, 'pending_approval');
+  const subscriptionParams = { name: 'ponte.job.completed', arguments: { jobId: watched.jobId }, delivery: { mode: 'webhook', url: 'https://receiver.example/compiled-smoke', secret: eventSecret } };
+  const subscribed = await modern('events/subscribe', subscriptionParams);
+  assert.ok(subscribed.id);
+  assert.equal(deliveries.length, 0);
+  assert.equal((await adminRequest(`/admin/jobs/${watched.jobId}/approve`, 'POST')).status, 200);
+  assert.equal(jsonText(await completed(await callTool('bridge_job', { jobId: watched.jobId }))).status, 'succeeded');
+  await runtime.events.flush();
+  await runtime.events.pump();
+  assert.equal(deliveries.length, 1);
+  assert.equal(deliveries[0].data.jobId, watched.jobId);
+  assert.equal(deliveries[0].data.status, 'succeeded');
+  await modern('events/unsubscribe', { ...subscriptionParams, delivery: { mode: 'webhook', url: subscriptionParams.delivery.url } });
+  assert.equal(runtime.events.snapshot().subscriptionCount, 0);
+  log('OK: MCP 2.0, assinatura de evento, desafio, HMAC, entrega única e encerramento com receptor controlado.');
 
   stage = 'renovar e revogar a conexão OAuth';
   const oldRefresh = oauthTokens.refresh_token;

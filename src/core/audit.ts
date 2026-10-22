@@ -8,7 +8,7 @@ export class AuditLog {
   constructor(private readonly directory: string) {}
 
   record(job: Job): void {
-    const entry = { at: job.updatedAt, jobId: job.id, tool: job.tool, source: job.source, risk: job.risk, status: job.status };
+    const entry = { at: job.updatedAt, jobId: job.id, tool: job.tool, source: job.source, risk: job.risk, status: job.status, approval: job.approval };
     this.chain = this.chain.then(async () => {
       await mkdir(this.directory, { recursive: true, mode: 0o700 });
       const filename = path.join(this.directory, 'audit.jsonl');

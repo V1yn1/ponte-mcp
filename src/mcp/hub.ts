@@ -234,7 +234,7 @@ export class McpHub {
     connection.error = undefined;
     try {
       const timeout = timeoutFor(connection.config);
-      const client = new Client({ name: 'ponte-mcp', version: '0.2.1' }, { capabilities: {} });
+      const client = new Client({ name: 'ponte-mcp', version: '0.4.0' }, { capabilities: {} });
       connection.client = client;
       client.onclose = () => { if (this.current(connection)) void this.fail(connection, new HubError('Conexão MCP encerrada pelo servidor. Reconecte para continuar.')); };
       client.onerror = error => { if (this.current(connection)) void this.fail(connection, error); };

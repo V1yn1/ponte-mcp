@@ -37,6 +37,15 @@
 .page-heading p,.toolbar-description,.field-help,.page-footnote{color:#6e7d65}.stat-label,.stat-foot{font-size:10px;color:#718165}.stat-foot .mini-dot{background:#8ca276}.section-kicker,.eyebrow{color:#748268}.empty-state p{color:#74826a}.activity-main span,.activity-row time{color:#7a886f}.activity-main strong{color:#465e38;font-size:11px}.activity-main span{font-size:10px}.activity-row time{font-size:9px}.control-panel>p{font-size:11px;color:#718265}.control-panel>.field-help{font-size:10px;color:#7b8a6e}.control-panel>label,.control-panel>select{font-size:11px}.server-mini strong{font-size:11px;color:#526b40}.server-mini p{font-size:9px;color:#7f8d73}.lifecycle strong{font-size:11px;color:#677d55}.lifecycle p{font-size:10px;color:#7e8e70}.lifecycle-panel>.section-kicker{color:#78886a}.tool-item p,.tool-description{color:#718265}.tool-item-bottom>span:last-child{font-size:9px;color:#7e8e71}.tool-item strong{font-size:11px}.catalog-heading>.small{color:#7d8d70;font-size:9px}.tool-detail .field-help{color:#7a8a6c}.connect-card>p,.connect-intro p{color:#718366}.connect-card>.field-help,.connect-card form .field-help{color:#7c8b6e}.jobs-table td{color:#6f7e63}.jobs-table th{color:#7b8a6d;font-size:9px}.jobs-table .job-link{font-size:11px}.job-id{font-size:9px;color:#7f8f72}.main-footer{color:#839276}.hero-copy>p{color:#667e55}.hero-kicker{color:#617c50}.auth-card .eyebrow{color:#6c7e5d}.auth-note{color:#78876b}.auth-story .eyebrow{color:#a7c7ab}.auth-foot{color:#96ae9c}.auth-caption{color:#839376}.sidebar-note p{color:#a4b79f}.sidebar-note strong{color:#c8d8bf}.sidebar-footer{color:#93ad95}.workspace-label div>span{color:#98b19e}.nav-label{color:#8eaa94}
 @media(max-width:620px){.stat-label,.stat-foot{font-size:10px}.activity-main strong{font-size:10px}.activity-main span{font-size:9px}.lifecycle strong{font-size:10px}.lifecycle p{font-size:9px}.main-footer{font-size:9px}.tool-submit-row>.small{font-size:9px}}
 
+/* The saved approval policy stays visible across the dashboard. */
+.control-panel.automatic-enabled{border-color:#b6ccb5}
+.control-panel .panel-heading .badge{margin-top:9px}
+.control-panel>select:disabled{opacity:.65;cursor:wait}
+.control-panel>.approval-mode-limits{margin-top:-9px;padding-top:12px;border-top:1px solid var(--line);line-height:1.8}
+.automatic-approval-banner{align-items:center;flex-wrap:wrap;border-color:#c9dcc2;background:#f0f6e9;color:#49693b}
+.automatic-approval-banner>span{flex:1;min-width:180px}
+.automatic-approval-banner>.text-link{margin-left:auto}
+
 /* Native OAuth connection and explicit local review. */
 .main-nav #nav-oauth-count:not([hidden])+.nav-arrow{display:none}
 .oauth-pending-notice{align-items:center;flex-wrap:wrap;gap:10px 14px}
@@ -97,3 +106,7 @@
 .oauth-modal #oauth-approve:disabled{cursor:not-allowed}
 @media(max-width:1100px){.native-connect-grid{grid-template-columns:1fr}.native-chatgpt-card .step-heading>.badge{margin-left:auto}}
 @media(max-width:620px){.oauth-requests-panel .panel-heading{align-items:flex-start;flex-wrap:wrap}.oauth-section-description{padding:0 17px 16px;font-size:11px}.oauth-request-card,.oauth-grant{padding:17px}.oauth-request-summary{flex-wrap:wrap}.oauth-request-summary>.soft-icon{width:30px;height:30px;flex-basis:30px}.oauth-request-summary>div{min-width:170px}.oauth-code-chip{margin-left:42px;font-size:16px}.oauth-request-footer{padding-left:0;flex-direction:column;align-items:stretch;gap:11px}.oauth-request-footer>.button{align-self:flex-start}.oauth-grant{flex-wrap:wrap;gap:11px}.oauth-grant-main{min-width:180px}.oauth-grant>.button{margin-left:49px}.oauth-verification>strong{font-size:27px;letter-spacing:3px}.oauth-request-details{grid-template-columns:1fr;gap:15px}.oauth-request-details>div{grid-column:1!important}.oauth-modal .modal-footer .footer-note{max-width:none;width:100%;font-size:10px}.oauth-modal .modal-footer>.button{flex:1}.oauth-permission-note{padding:13px;gap:9px}.oauth-permission-note p{font-size:11px}.native-chatgpt-card .step-heading>.badge{margin-left:48px}.connect-steps{font-size:12px}.connect-alternatives-heading h2{font-size:18px}.oauth-pending-notice>.text-link{margin-left:30px}}
+/* Subscription summaries reuse the connected-client layout. */
+.events-panel .field-help { max-width: 80ch; }
+.events-panel .oauth-grant-main .badge { margin: 4px 6px 0 0; }
+.events-panel .event-delivery-error { overflow-wrap: anywhere; }

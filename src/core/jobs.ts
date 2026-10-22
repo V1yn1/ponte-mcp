@@ -10,6 +10,10 @@ const APPROVAL_TTL = 15 * 60 * 1000;
 const MAX_JOBS = 200;
 const MAX_RESULT = 4 * 1024 * 1024;
 
+function approvalRequired(mode: AppConfig['approvalMode'], risk: Job['risk']): boolean {
+  return mode !== 'automatic' && (mode === 'all' || risk !== 'read');
+}
+
 export function stableJson(value: unknown): string {
   if (Array.isArray(value)) return '[' + value.map(stableJson).join(',') + ']';
   if (value && typeof value === 'object') return '{' + Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, val]) => JSON.stringify(key) + ':' + stableJson(val)).join(',') + '}';
@@ -19,11 +23,12 @@ export function signature(definition: ToolDefinition): string {
   return createHash('sha256').update(stableJson({ tool: definition.tool, risk: definition.risk, source: definition.source, fingerprint: definition.fingerprint })).digest('hex');
 }
 
-interface InternalJob { job: Job; signature: string; controller?: AbortController; }
+interface InternalJob { job: Job; signature: string; owner?: string; controller?: AbortController; }
 export class JobManager {
   private readonly records = new Map<string, InternalJob>();
   private readonly keys = new Map<string, { digest: string; id: string }>();
   private readonly validators = new Map<string, ValidateFunction>();
+  private readonly terminalListeners = new Set<(job: Job) => void>();
   private readonly validationOptions = { strict: false, allErrors: false, validateFormats: false, ownProperties: true, addUsedSchema: false };
   private readonly ajv = new Ajv2020(this.validationOptions);
   private readonly legacyAjv = new Ajv(this.validationOptions);
@@ -35,22 +40,24 @@ export class JobManager {
 
   constructor(private readonly getTools: () => ToolDefinition[], private readonly approvalMode: () => AppConfig['approvalMode'], private readonly audit?: AuditLog) {}
 
-  async submit(name: string, args: Record<string, unknown>, idempotencyKey?: string): Promise<Job> {
+  async submit(name: string, args: Record<string, unknown>, idempotencyKey?: string, owner?: string): Promise<Job> {
     let result!: Job;
-    const task = this.submissionChain.then(async () => { result = await this.submitOne(name, args, idempotencyKey); });
+    const task = this.submissionChain.then(async () => { result = await this.submitOne(name, args, idempotencyKey, owner); });
     this.submissionChain = task.catch(() => {});
     await task;
     return result;
   }
 
-  private async submitOne(name: string, args: Record<string, unknown>, key?: string): Promise<Job> {
+  private async submitOne(name: string, args: Record<string, unknown>, key?: string, owner?: string): Promise<Job> {
     if (this.closed) throw new Error('O serviço está encerrando.');
     if (key !== undefined && (!/^[A-Za-z0-9._:-]{1,128}$/.test(key))) throw new Error('Chave de idempotência inválida.');
+    if (owner !== undefined && (typeof owner !== 'string' || owner.length === 0 || owner.length > 256 || owner.includes('\0'))) throw new Error('Origem da solicitação inválida.');
     if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('arguments precisa ser um objeto JSON.');
     if (Buffer.byteLength(JSON.stringify(args)) > 1024 * 1024) throw new Error('Argumentos excedem 1 MiB.');
     const digest = createHash('sha256').update(stableJson({ name, args })).digest('hex');
-    if (key && this.keys.has(key)) {
-      const prior = this.keys.get(key)!;
+    const scopedKey = key ? `${owner ?? ''}\0${key}` : undefined;
+    if (scopedKey && this.keys.has(scopedKey)) {
+      const prior = this.keys.get(scopedKey)!;
       if (prior.digest !== digest) throw new Error('Chave de idempotência já usada com outros argumentos.');
       return this.get(prior.id);
     }
@@ -77,13 +84,15 @@ export class JobManager {
     const preview = definition.preview ? await definition.preview(structuredClone(frozen)) : undefined;
     if (this.closed || this.paused) throw new Error('Execuções pausadas ou serviço encerrando.');
     const now = new Date().toISOString();
+    const mode = this.approvalMode();
     const job: Job = {
       id: randomUUID(), tool: name, source: definition.source, risk: definition.risk,
-      status: this.approvalMode() === 'all' || definition.risk !== 'read' ? 'pending_approval' : 'queued',
+      status: approvalRequired(mode, definition.risk) ? 'pending_approval' : 'queued',
+      ...(mode === 'automatic' ? { approval: 'automatic' as const } : {}),
       createdAt: now, updatedAt: now, arguments: frozen, ...(preview !== undefined ? { preview } : {}),
     };
-    this.records.set(job.id, { job, signature: toolSignature });
-    if (key) this.keys.set(key, { digest, id: job.id });
+    this.records.set(job.id, { job, signature: toolSignature, ...(owner ? { owner } : {}) });
+    if (scopedKey) this.keys.set(scopedKey, { digest, id: job.id });
     this.audit?.record(job);
     this.drain();
     return structuredClone(job);
@@ -92,6 +101,11 @@ export class JobManager {
   get(id: string): Job {
     this.expire();
     return structuredClone(this.require(id).job);
+  }
+  ownerOf(id: string): string | undefined { return this.require(id).owner; }
+  onTerminal(listener: (job: Job) => void): () => void {
+    this.terminalListeners.add(listener);
+    return () => { this.terminalListeners.delete(listener); };
   }
   list(limit = 50): Job[] {
     this.expire();
@@ -102,13 +116,22 @@ export class JobManager {
     this.expire();
     const record = this.require(id);
     if (record.job.status !== 'pending_approval') throw new Error('Este trabalho não está aguardando aprovação.');
-    const current = this.getTools().find(item => item.tool.name === record.job.tool);
-    if (!current || signature(current) !== record.signature) {
-      this.change(record, 'rejected', 'A ferramenta ou sua configuração foi alterada. Envie uma nova solicitação.');
-      throw new Error('A ferramenta foi alterada desde a solicitação.');
-    }
-    this.change(record, 'queued'); this.drain();
+    if (!this.approveRecord(record, 'manual')) throw new Error('A ferramenta foi alterada desde a solicitação.');
+    this.drain();
     return structuredClone(record.job);
+  }
+  reconcileApprovalMode(): { approved: number; rejected: number; returnedToPending: number } {
+    const result = { approved: 0, rejected: 0, returnedToPending: 0 };
+    if (this.closed) return result;
+    this.expire();
+    for (const record of this.records.values()) {
+      if (this.returnToPending(record)) result.returnedToPending++;
+      if (record.job.status !== 'pending_approval' || this.approvalMode() !== 'automatic') continue;
+      if (this.approveRecord(record, 'automatic')) result.approved++;
+      else result.rejected++;
+    }
+    this.drain();
+    return result;
   }
   reject(id: string): Job {
     const record = this.require(id);
@@ -123,7 +146,7 @@ export class JobManager {
     record.controller?.abort(new Error('Cancelado pelo usuário.'));
     return structuredClone(record.job);
   }
-  setPaused(paused: boolean): void { this.paused = paused; if (!paused) this.drain(); }
+  setPaused(paused: boolean): void { this.paused = paused; if (!paused) this.reconcileApprovalMode(); }
   close(): void { this.closed = true; for (const record of this.records.values()) if (!TERMINAL.has(record.job.status)) this.cancel(record.job.id); }
 
   private require(id: string): InternalJob {
@@ -131,10 +154,33 @@ export class JobManager {
     if (!record) throw new Error('Trabalho não encontrado ou removido da memória. Consulte a auditoria para seu histórico.');
     return record;
   }
+  private approveRecord(record: InternalJob, approval: NonNullable<Job['approval']>): boolean {
+    const current = this.getTools().find(item => item.tool.name === record.job.tool);
+    if (!current || signature(current) !== record.signature) {
+      this.change(record, 'rejected', 'A ferramenta ou sua configuração foi alterada. Envie uma nova solicitação.');
+      return false;
+    }
+    record.job.approval = approval;
+    this.change(record, 'queued');
+    return true;
+  }
+  private returnToPending(record: InternalJob): boolean {
+    if (record.job.status !== 'queued' || record.job.approval === 'manual' || !approvalRequired(this.approvalMode(), record.job.risk)) return false;
+    delete record.job.approval;
+    this.change(record, 'pending_approval');
+    return true;
+  }
   private change(record: InternalJob, status: Job['status'], error?: string): void {
+    const wasTerminal = TERMINAL.has(record.job.status);
     record.job.status = status; record.job.updatedAt = new Date().toISOString();
     if (error) record.job.error = error;
     this.audit?.record(record.job);
+    if (!wasTerminal && TERMINAL.has(status)) {
+      for (const listener of this.terminalListeners) {
+        // Delivery failures cannot change the outcome of an executed tool.
+        try { listener(structuredClone(record.job)); } catch { /* The observer owns its diagnostics. */ }
+      }
+    }
   }
   private expire(): void {
     for (const record of this.records.values()) {
@@ -155,8 +201,9 @@ export class JobManager {
   private drain(): void {
     if (this.paused || this.closed) return;
     for (const record of this.records.values()) {
-      if (this.running >= 4) break;
+      if (this.paused || this.closed || this.running >= 4) break;
       if (record.job.status !== 'queued') continue;
+      if (this.returnToPending(record)) continue;
       this.running++;
       this.change(record, 'running');
       void this.run(record).finally(() => { this.running--; this.drain(); });

@@ -28,7 +28,7 @@ export interface AppConfig {
   port: number;
   apiPort: number;
   publicUrl?: string;
-  approvalMode: 'mutations' | 'all';
+  approvalMode: 'mutations' | 'all' | 'automatic';
   projects: ProjectConfig[];
   upstreams: UpstreamConfig[];
 }
@@ -57,6 +57,7 @@ export interface Job {
   source: string;
   risk: Risk;
   status: JobStatus;
+  approval?: 'automatic' | 'manual';
   createdAt: string;
   updatedAt: string;
   arguments: Record<string, unknown>;

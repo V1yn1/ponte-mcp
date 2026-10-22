@@ -497,8 +497,15 @@ export class PonteOAuthProvider implements OAuthServerProvider {
       await this.synchronizeIssuer();
       const found = this.tokenGrant(token, 'access');
       if (!found) throw new InvalidTokenError('Access token is invalid, expired or revoked.');
-      return { token, clientId: found.grant.clientId, scopes: [...found.grant.scopes], expiresAt: found.token.expiresAt, resource: new URL(found.grant.resource) };
+      return { token, clientId: found.grant.clientId, scopes: [...found.grant.scopes], expiresAt: found.token.expiresAt, resource: new URL(found.grant.resource), extra: { grantId: found.grant.id, issuer: found.grant.issuer } };
     });
+  }
+
+  isGrantActive(id: string): boolean {
+    const issuer = publicOrigin(this.getPublicUrl());
+    const grant = this.state.grants.find(item => item.id === id);
+    return Boolean(issuer && this.state.issuer === issuer && grant && grant.issuer === issuer
+      && grant.resource === `${issuer}/mcp` && grant.expiresAt > now() && grant.scopes.includes('ponte:tools'));
   }
 
   revokeToken(client: OAuthClientInformationFull, request: OAuthTokenRevocationRequest): Promise<void> {

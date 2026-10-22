@@ -1,6 +1,51 @@
-# Validação da entrega — Ponte MCP 0.2.1
+# Validação da entrega — Ponte MCP 0.4.0
 
-## Correção da espera no OAuth com túneis
+## MCP Events e continuidade por trabalho — 0.4.0
+
+Verificação em 22 de outubro de 2026, com Node.js 24.19.0 e npm 11.9.0 em Linux. As integrações usam diretórios, credenciais, portas e um receptor de webhook controlados, separados da instalação do usuário. A versão 0.4.0 inclui também a aprovação automática e a espera de resultados da 0.3.0.
+
+| Verificação | Resultado observado |
+|---|---|
+| `npm run verify` | TypeScript, **188 testes**, zero falhas, zero testes ignorados e build concluído |
+| `npm run smoke` | Programa compilado completou OAuth, ferramentas MCP legadas, aprovação manual e automática, descoberta MCP 2.0, assinatura, desafio, HMAC, aviso de conclusão e encerramento da assinatura |
+| HTTP e OAuth | **6 testes** verificam descoberta autenticada, JSON malformado, escrita real após aprovação, evento sem conteúdo do arquivo, consulta do resultado após reinício, cancelamento administrativo, isolamento entre conexões e bloqueio após revogação/mudança de origem |
+| Serviço de Events | **22 testes** cobrem propriedade do trabalho, identidade determinística, renovação, conclusão antes/durante a inscrição, fila persistente, resultado retido, interrupção no reinício, cancelamento durante verificação/envio, rotação de chaves, validade, retentativas, capacidade, estado inválido e recusa imediata de verificações concorrentes excedentes |
+| Transporte de callback | **16 testes** cobrem vetor HMAC calculado independentemente, desafio, validação de chave/URL/IP/DNS, conexão ao IP verificado, alternativa IPv6/IPv4, ausência de redirects, limites de dados/tempo, cancelamento e diagnósticos sem segredos |
+| Adaptador MCP moderno | **15 testes** cobrem o protocolo `2026-07-28`, metadados, cabeçalhos espelhados, IDs válidos, descoberta, ferramentas, Events, erros e encaminhamento de clientes legados ao SDK anterior |
+| Trabalhos e autorização | **3 testes** de origem privada, idempotência por conexão e observação terminal, além da regressão OAuth para identidade estável após rotação de tokens |
+| JavaScript e diff | `node --check public/app.js`, `node --check scripts/smoke.mjs` e `git diff --check` passaram |
+
+As regressões foram reproduzidas antes das respectivas correções. Na revisão foram corrigidos a consulta/cancelamento de um trabalho por outra conexão que conhecesse seu ID, o aceite de IDs JSON-RPC fracionários e o acúmulo de verificações lentas na fila compartilhada. A consulta e o cancelamento agora seguem a identidade que criou o trabalho, tanto em memória quanto nos resultados retidos; o painel administrativo mantém acesso às execuções. A criação/renovação de assinaturas aceita somente uma chamada em andamento e recusa as excedentes com 429; uma única verificação ainda pode atrasar o estado de Events por até dez segundos. A revisão posterior confirmou as três correções, sem achados concretos pendentes.
+
+O fluxo HTTP executa a escrita real, aceita a inscrição após o desafio, confere a assinatura dos bytes entregues, reinicia a aplicação e recupera o resultado completo com a mesma autorização OAuth. O smoke repete a descoberta e a entrega usando o código em `dist`. Os testes de transporte inspecionam a resolução e as opções da conexão HTTPS sem enviar avisos a uma conversa real.
+
+**Limites desta verificação:** os testes comprovam o contrato implementado e o fluxo com receptor controlado. Não comprovam retomada de uma conversa real no ChatGPT, disponibilidade de Events na conta do usuário, entrega pelo túnel ngrok ou funcionamento no Windows. A conexão real consultada nesta etapa ainda informou a versão **0.2.1**. É necessário atualizar e reiniciar essa instalação, atualizar a descoberta do plugin e criar a assinatura pelo cliente compatível. Também não foi realizada nova inspeção visual do painel nesta entrega. Instruções e critérios para o teste real estão em [MCP-EVENTS.md](MCP-EVENTS.md).
+
+## Histórico: aprovação automática e espera de resultados — 0.3.0
+
+Verificação em 22 de outubro de 2026, com Node.js 24.19.0 e npm 11.9.0 em Linux. Os testes usam diretórios, credenciais e portas temporários, separados da instalação do usuário.
+
+| Verificação | Resultado observado |
+|---|---|
+| `npm run verify` | TypeScript, **125 testes**, zero falhas, zero testes ignorados e build concluído |
+| `npm run build && npm run smoke` | Programa compilado executou descoberta OAuth, DCR, consentimento, PKCE, chamadas MCP, revisão manual, backup, aprovação automática, retorno à revisão, renovação e revogação |
+| Aprovação automática | Todos os riscos (`read`, `write`, `execute`), origens locais e MCP, liberação de pendências e persistência da política cobertos |
+| Transições e controles | Pausa, cancelamento, idempotência, argumentos imutáveis, definições alteradas, permissões de projeto e separação administrativa preservados nos testes |
+| Espera MCP | Resultado de operação além dos antigos 750 ms, limite de 25 s, `bridge_job.waitMs`, aprovação durante a espera e retorno do mesmo trabalho ao vencer o prazo cobertos |
+| Proxy stdio | CLI e transporte MCP reais, com HTTP e relógio simulados no processo filho: preservação do resultado após a espera, limite finito e mensagem de resultado incerto em timeout |
+| JavaScript e diff | `node --check public/app.js` e `git diff --check` passaram |
+
+Os testes do modo automático, da espera MCP e do prazo do adaptador stdio falharam antes das respectivas implementações e passaram depois. A integração HTTP comprovou arquivos reais no disco após ativar o modo, persistência entre reinícios e revisão de novas alterações depois de desativá-lo. O smoke compilado repetiu esse fluxo usando a conexão OAuth e o cliente MCP.
+
+A revisão independente identificou o prazo anterior de 15 s no adaptador stdio, menor que a nova espera de 25 s, e um texto do painel que prometia enfileirar solicitações novas enquanto pausado. O prazo das chamadas de ferramentas foi ajustado para 35 s; o painel orienta retomar antes de enviar novas solicitações. A pausa continua bloqueando novas chamadas e a partida da fila. A revisão posterior confirmou as duas correções, sem achados concretos pendentes.
+
+**Limites daquela verificação:** a versão 0.3.0 ainda precisava ser instalada no computador do usuário e ter seu catálogo atualizado no ChatGPT. O acesso ao navegador local não estava disponível naquela etapa; não foi concluída uma nova inspeção visual do painel. MCP Events ainda não existia na 0.3.0, e aqueles testes de espera não demonstravam retomada de uma conversa já encerrada. A implementação de Events e sua validação na 0.4.0 estão descritas acima.
+
+## Histórico da validação 0.2.1
+
+Os resultados abaixo registram a etapa anterior, antes do teste posterior da conexão real com o ChatGPT e da listagem do Studio SubR. Não representam uma nova execução de testes de navegador na versão 0.3.0.
+
+### Correção da espera no OAuth com túneis
 
 A versão 0.2.1 corrige a consulta de decisão na página de consentimento: preserva cookies apenas da mesma origem, envia o cabeçalho oficial de dispensa do aviso de navegador do ngrok e distingue resposta HTML, erro HTTP, JSON inválido, falha de rede e timeout. A página continua tentando enquanto o pedido está válido e retira o indicador de carregamento após uma falha inicial.
 

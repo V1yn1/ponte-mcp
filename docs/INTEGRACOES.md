@@ -1,12 +1,13 @@
 # Conexão com chats e outros servidores
 
-Ponte MCP **0.2.1**. Documentação do ChatGPT consultada em **22 de outubro de 2026**. As telas e permissões dos fornecedores podem mudar. O roteiro da conexão nativa está em [CHATGPT.md](CHATGPT.md); os resultados efetivamente observados na entrega estão em [VALIDACAO.md](VALIDACAO.md).
+Ponte MCP **0.4.0**. Documentação do ChatGPT consultada em **22 de outubro de 2026**. As telas e permissões dos fornecedores podem mudar. O roteiro da conexão nativa está em [CHATGPT.md](CHATGPT.md); os resultados efetivamente observados na entrega estão em [VALIDACAO.md](VALIDACAO.md).
 
 ## Escolha a entrada compatível com seu cliente
 
 | Cliente | Entrada da ponte | Requisito adicional |
 |---|---|---|
 | ChatGPT com MCP nativo | `https://SUA_ORIGEM/mcp`, OAuth com DCR | Origem HTTPS encaminhando toda a API, `publicUrl` configurada e aprovação local |
+| ChatGPT com MCP Events | Mesma entrada `/mcp`, protocolo `2026-07-28` | Work no navegador ou Work + Cloud no desktop, evento descoberto e assinatura de um `jobId` pelo cliente |
 | Cliente desktop com MCP stdio | `node dist/cli.js stdio --state-dir CAMINHO` | Ponte iniciada no mesmo computador |
 | Cliente MCP HTTP com Bearer configurável | `http://127.0.0.1:4318/mcp` | Token API; remoto exige encaminhamento HTTPS |
 | ChatGPT com Secure MCP Tunnel disponível | Túnel oficial para uma entrada MCP compatível | Permissões, associação ao workspace e configuração própria do cliente de túnel |
@@ -48,13 +49,15 @@ O registro aceita `none` para cliente público e `client_secret_post` para clien
 
 O transporte MCP é **Streamable HTTP sem sessão persistente, com respostas JSON**. Mensagens usam POST em `/mcp`; GET autenticado retorna 405 e não mantém um canal SSE aberto. Sem credencial válida, a autenticação responde 401 antes dessa verificação de método. Isso não impede que a ponte se conecte a upstreams que usem SSE.
 
+Para o protocolo `2026-07-28`, um adaptador HTTP implementa `server/discover`, catálogo e chamadas de ferramentas, além de `events/list`, `events/subscribe` e `events/unsubscribe`. Ele exige os metadados de versão/capacidades e os cabeçalhos correspondentes por requisição. As versões legadas continuam no SDK 1.32.1. O modo stdio e as conexões upstream mantêm seus transportes existentes; esta atualização não migra o projeto inteiro para o SDK v2. O contrato detalhado está em [MCP-EVENTS.md](MCP-EVENTS.md#contrato-do-endpoint-mcp).
+
 ### Renovação e mudança de origem
 
 Pedidos de autorização aguardam revisão por até 10 minutos, códigos OAuth valem por 2 minutos e access tokens por até 1 hora. Refresh tokens rotacionam, sem prolongar o prazo absoluto de 30 dias da autorização. Reutilizar um refresh token já consumido revoga sua família de tokens. O painel permite revogar a autorização de uma conexão. Pedidos pendentes e códigos ainda não trocados ficam em memória; reiniciar o serviço exige começar novamente esses fluxos.
 
 Use uma origem estável. Alterar `publicUrl` muda os identificadores de emissor e recurso; configure novamente a conexão no ChatGPT para o novo endereço. Copiar apenas os arquivos do programa para outra pasta não transfere o estado OAuth: preserve o diretório `.ponte` ou passe seu caminho absoluto em `--state-dir`.
 
-Após mudar metadados das ferramentas, schemas ou autenticação, atualize a conexão no ChatGPT com **Refresh** e faça o teste em uma conversa nova. O procedimento implementado não substitui a verificação de uma chamada real na conta do usuário.
+Ao atualizar para 0.4.0, preserve `.ponte` e mantenha uma conexão OAuth já concluída. No plugin da Ponte, atualize as ferramentas e a descoberta de eventos; confirme `ponte.job.completed` na página do plugin. Atualizar o catálogo não exige recriar uma conexão que funciona. O procedimento completo de atualização está em [CHATGPT.md](CHATGPT.md).
 
 Fontes oficiais:
 
@@ -62,6 +65,32 @@ Fontes oficiais:
 - [OAuth, registro de clientes e identificação do emissor](https://developers.openai.com/plugins/build/auth)
 - [Metadados e erros de ferramentas](https://developers.openai.com/plugins/reference)
 - [Conectar e testar uma integração MCP](https://developers.openai.com/plugins/deploy/connect-chatgpt)
+
+## Aprovação e espera por resultados MCP
+
+A política é comum a todos os clientes autorizados. Em **Visão geral → Você no controle → Política de aprovação**, `mutations` mantém a revisão de alterações e comandos, `all` revisa todas as ferramentas e **Aprovar automaticamente todas** seleciona `automatic`. Esse modo libera pendentes válidos e chamadas futuras de ferramentas locais e MCP. A seleção persiste após reiniciar.
+
+Permissões de projeto, listas de ferramentas permitidas, validações e hashes continuam valendo. A pausa bloqueia novas solicitações e a partida da fila. Ao sair do modo automático, trabalhos automáticos ainda enfileirados voltam à revisão conforme a política; os que já começaram continuam. Novas conexões OAuth sempre exigem aprovação local.
+
+`bridge_status` retorna `approvalMode`. Trabalhos podem incluir `approval: "manual"` ou `approval: "automatic"`, também registrado na auditoria. Chamadas de ferramentas, diretas ou por `bridge_call`, aguardam até 25 segundos enquanto o trabalho está `queued` ou `running`; um `pending_approval` inicial retorna imediatamente.
+
+Para aguardar o mesmo trabalho durante o turno ativo, chame `bridge_job`:
+
+```json
+{ "jobId": "ID_RETORNADO", "waitMs": 25000 }
+```
+
+`waitMs` aceita inteiros de 0 a 25000, com padrão 0 para retornar imediatamente. A espera acompanha `pending_approval`, `queued` e `running` até um resultado final ou o prazo. Depois disso, o mesmo `jobId` continua consultável. Faça consultas limitadas e não reenvie a operação apenas porque ela ainda não terminou. Essa espera não retoma uma conversa encerrada; para isso, um cliente compatível precisa criar uma assinatura de Events.
+
+### MCP Events
+
+A Ponte 0.4.0 implementa o perfil de webhooks e verificação de [MCP Events da OpenAI](https://developers.openai.com/plugins/build/mcp-events), usando o protocolo `2026-07-28`. A disponibilidade documentada é **Work no navegador** ou **Work com Cloud selecionado no desktop**, sujeita à conta e ao workspace. Não se aplica automaticamente a toda conversa que tenha ferramentas MCP.
+
+O evento `ponte.job.completed` exige o `jobId` de um trabalho da mesma conexão. O cliente cria a assinatura e fornece callback e segredo; a Ponte verifica o destino e envia um evento assinado quando aquele trabalho atinge estado final. Ao recebê-lo, o chat consulta `bridge_job` e continua conforme as instruções dadas pelo usuário. Uma assinatura criada logo após a conclusão também recebe o estado final atual; não há reprodução de histórico por cursor.
+
+Atualize as ferramentas e eventos do plugin e confira a inscrição em **Conectar ChatGPT → Avisos de conclusão**. A opção **Encerrar aviso** cancela a inscrição, sem cancelar o trabalho. Callbacks e segredos não aparecem no painel. O modo automático de aprovação e Events podem ser usados juntos, mas um não ativa o outro.
+
+As assinaturas, tentativas de entrega e resultados dos trabalhos acompanhados persistem em estado privado, com prazo e capacidade limitados. Nenhuma operação é repetida ao reiniciar a Ponte. O status de entrega confirma o recebimento do aviso; a retomada exige suporte do cliente. Há exemplos, referência do protocolo e diagnóstico em [MCP-EVENTS.md](MCP-EVENTS.md).
 
 ## MCP local e privado
 
@@ -99,7 +128,9 @@ A Action tem cinco operações:
 
 O campo `argumentsJson` é uma string contendo um objeto JSON. Isso mantém o schema de Actions estável mesmo quando os MCPs conectados apresentam schemas dinâmicos. A API também aceita um objeto `arguments` para clientes próprios; envie apenas uma dessas formas.
 
-Não há endpoint remoto para aprovar trabalhos. O usuário revisa e aprova no computador. Após a aprovação, o chat precisa consultar o trabalho; não há garantia de que o cliente retomará uma conversa sozinho.
+Consultas e cancelamentos exigem a identidade que criou o trabalho. Clientes Actions/stdio com o mesmo token API compartilham essa identidade, enquanto cada autorização OAuth tem seu próprio vínculo. O token API não permite consultar nem cancelar pela REST um trabalho criado por uma autorização OAuth. O painel administrativo conserva acesso a todas as execuções.
+
+Não há endpoint remoto para aprovar manualmente trabalhos ou mudar a política. Se a política local exigir revisão, o usuário aprova no computador; em `automatic`, a ponte aprova os trabalhos válidos. A Action consulta o resultado por `getJob`; o parâmetro `waitMs` é exclusivo de `bridge_job` no MCP. Nenhum desses fluxos reabre uma conversa encerrada.
 
 Fontes oficiais:
 
@@ -123,8 +154,8 @@ Não há login OAuth interativo para upstreams nesta versão. É possível conec
 
 O agregador pagina `tools/list`, limita catálogos a 500 ferramentas por servidor e rejeita paginação circular. Nomes exportados têm namespace e hash determinísticos. Um servidor pode alterar suas ferramentas; a ponte atualiza o catálogo em resposta à notificação apropriada. Alguns clientes precisam atualizar ou reconectar a integração para enxergar alterações.
 
-`readOnlyTools` e `allowedTools` usam os **nomes originais** do upstream. A lista de leitura automática deve ser escolhida por quem administra o computador. A anotação `readOnlyHint` enviada por um servidor externo não concede essa autorização sozinha.
+`readOnlyTools` e `allowedTools` usam os **nomes originais** do upstream. `readOnlyTools` classifica as leituras que dispensam revisão no modo `mutations`; `all` exige revisão também dessas chamadas e `automatic` dispensa revisão de todas as ferramentas expostas. A anotação `readOnlyHint` enviada por um servidor externo não concede essa autorização sozinha.
 
-No painel, **Limitar ferramentas expostas** ativa a lista de nomes permitidos. Desmarcada, todas as ferramentas descobertas ficam disponíveis, ainda sujeitas à aprovação. Marcada com a lista vazia, nenhuma ferramenta é exposta. Em `config.json`, omitir `allowedTools` permite todas; `allowedTools: []` permite zero. Na API administrativa, `allowedTools: null` remove uma restrição anterior; omitir o campo preserva a configuração existente.
+No painel, **Limitar ferramentas expostas** ativa a lista de nomes permitidos. Desmarcada, todas as ferramentas descobertas ficam disponíveis e seguem a política de aprovação selecionada. Marcada com a lista vazia, nenhuma ferramenta é exposta. Em `config.json`, omitir `allowedTools` permite todas; `allowedTools: []` permite zero. Na API administrativa, `allowedTools: null` remove uma restrição anterior; omitir o campo preserva a configuração existente.
 
 Fonte oficial do SDK utilizado: [MCP TypeScript SDK v1 — servidor](https://ts.sdk.modelcontextprotocol.io/server) e [cliente](https://ts.sdk.modelcontextprotocol.io/client). A versão do SDK é fixada no `package.json` e as dependências exatas estão no `package-lock.json`.

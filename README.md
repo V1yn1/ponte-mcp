@@ -4,7 +4,7 @@
 
 Ponte MCP é um servidor local com painel em português. Ele reúne ferramentas de arquivos, execução de comandos e servidores MCP externos. O chat escolhe uma ferramenta; a ponte valida a solicitação, apresenta alterações para revisão quando necessário e devolve o resultado.
 
-Esta é a versão **0.2.1**, destinada a uso pessoal em um computador. Ela oferece OAuth para conectar a fachada MCP ao ChatGPT, com autorização no painel local e conexões revogáveis. Esta atualização corrige a consulta de aprovação por túneis como o ngrok e mostra erros de conexão na página de consentimento. O projeto inclui código TypeScript completo, frontend, testes, build e exemplos de integração. Não contém modelo de IA, assinatura, chave de fornecedor ou instalador proprietário.
+A versão **0.4.0** acrescenta **MCP Events**: uma conversa compatível pode acompanhar um trabalho e receber um aviso quando ele termina, para consultar o resultado e continuar a tarefa. O cliente precisa criar a assinatura desse trabalho. A Ponte mantém a aprovação automática opcional e a espera de até 25 segundos por resultados; o modo padrão continua pedindo revisão para alterações e comandos. A conexão com o ChatGPT usa OAuth, com autorização local e acesso revogável. O projeto é destinado a uso pessoal em um computador e inclui código TypeScript, painel, testes e exemplos de integração. Não contém modelo de IA, assinatura comercial, chave de fornecedor ou instalador proprietário.
 
 ## O que está implementado
 
@@ -12,13 +12,15 @@ Esta é a versão **0.2.1**, destinada a uso pessoal em um computador. Ela ofere
 |---|---|
 | Projetos | Cadastro de pastas, permissão de escrita e ativação explícita de comandos por projeto |
 | Arquivos | Listagem, leitura UTF-8, busca literal, criação de pastas, gravação completa e substituição de trecho exato |
-| Revisão | Diff, SHA-256 esperado, cópia de segurança antes da substituição, aprovação por trabalho |
+| Aprovação | Três políticas: revisar alterações e comandos, revisar todas ou aprovar automaticamente; diff, SHA-256 esperado e backup de arquivos |
 | Terminal | Executável e argumentos separados, diretório do projeto, limite de tempo e saída, cancelamento |
 | MCPs | Clientes stdio, Streamable HTTP e SSE legado; descoberta de ferramentas, namespaces e reconexão |
 | Roblox | Preset do servidor MCP integrado oficialmente ao Studio |
 | Conexão com chats | MCP Streamable HTTP com OAuth, adaptador stdio e API REST com OpenAPI para Actions |
+| Resultados MCP | Espera de até 25 segundos na chamada e consulta do mesmo trabalho com `bridge_job` e `waitMs` |
+| MCP Events | Evento `ponte.job.completed` por `jobId`, assinatura pelo cliente, callback HTTPS verificado e assinado, entrega persistente e diagnóstico no painel |
 | OAuth | Authorization code com PKCE S256, descoberta, cadastro dinâmico de clientes, renovação e revogação |
-| Painel | Visão geral, projetos, conexões, ferramentas, execuções e aprovação das conexões do ChatGPT |
+| Painel | Visão geral, projetos, conexões, ferramentas, execuções, aprovação das conexões do ChatGPT e avisos de conclusão |
 | Operação | Tokens distintos de administração e API, autorizações OAuth persistentes, pausa de novas execuções, idempotência, auditoria de metadados |
 
 ## O que a ponte resolve — e seus limites
@@ -71,7 +73,9 @@ npm.cmd run build
 npm.cmd start
 ```
 
-A versão mostrada no painel deve ser **0.2.1**. Após atualizar, cancele a tentativa de conexão OAuth antiga no ChatGPT e comece outra: os pedidos em andamento não sobrevivem ao reinício do serviço. Mantenha o ngrok encaminhando a porta da API, **4318**, e confira se a URL pública salva no painel corresponde ao endereço atual do túnel. O roteiro específico está em [Conectar ao ChatGPT](docs/CHATGPT.md).
+Confira **0.4.0** no painel. Preserve a pasta `.ponte`: a política de aprovação, os projetos e as autorizações OAuth já concluídas continuam disponíveis após reiniciar. Uma conexão que já funciona não precisa ser recriada. Somente pedidos OAuth ainda em andamento precisam ser iniciados novamente após o reinício.
+
+No ChatGPT, abra **Plugins → Ponte → Atualizar ferramentas** e atualize também a descoberta de eventos oferecida pela interface. Confira se `ponte.job.completed` aparece na página do plugin. Mantenha o ngrok encaminhando a API na porta **4318** e confira se a URL pública salva corresponde à origem atual do túnel. O roteiro específico está em [Conectar ao ChatGPT](docs/CHATGPT.md); o uso dos avisos está em [MCP Events](docs/MCP-EVENTS.md).
 
 ### Instalações por ZIP e atualização da versão 0.1.0
 
@@ -87,6 +91,20 @@ Use esse mesmo `--state-dir` nos comandos `token`, `doctor` e na configuração 
 
 Os clientes stdio, Actions e MCP com token API continuam funcionando. O fluxo nativo de OAuth do ChatGPT cria suas próprias autorizações; não exige substituir os tokens existentes. Veja o passo a passo em [Conectar ao ChatGPT](docs/CHATGPT.md).
 
+## Escolher a política de aprovação
+
+No painel, abra **Visão geral → Você no controle → Política de aprovação**. A seleção é salva imediatamente e permanece após reiniciar a Ponte.
+
+| Opção no painel | `approvalMode` | Comportamento |
+|---|---|---|
+| Aprovar alterações e comandos | `mutations` | Padrão: leituras podem executar diretamente; alterações e comandos aguardam revisão |
+| Aprovar todas as solicitações | `all` | Todas as chamadas de ferramentas aguardam revisão manual, inclusive leituras |
+| Aprovar automaticamente todas | `automatic` | Libera as solicitações pendentes válidas e as futuras chamadas de ferramentas locais e MCP |
+
+O modo automático vale para **todos os clientes autorizados** e para as chamadas pelo próprio painel. O aviso **Aprovação automática ativa** identifica a política em uso. A política preserva as permissões de escrita e execução dos projetos, as listas de ferramentas permitidas, a validação de argumentos, `expectedHash` e os backups. Novas conexões OAuth continuam exigindo aprovação no painel local.
+
+A pausa bloqueia novas solicitações e a partida da fila, inclusive no modo automático. Ao sair desse modo, trabalhos aprovados automaticamente que ainda estão na fila voltam à revisão quando a nova política exigir; trabalhos já em execução continuam. `bridge_status` informa `approvalMode`, e os detalhes e a auditoria dos trabalhos identificam aprovações `manual` ou `automatic` quando aplicável.
+
 ## Primeiro teste, sem depender de IA
 
 No painel, abra **Ferramentas** e procure `local_write_file`. Envie:
@@ -100,7 +118,7 @@ No painel, abra **Ferramentas** e procure `local_write_file`. Envie:
 }
 ```
 
-Abra a solicitação em **Execuções**, confira o diff e aprove. O arquivo aparecerá na pasta do projeto. Depois use `local_read_file` com o mesmo `projectId` e `path`.
+Na política padrão, abra a solicitação em **Execuções**, confira o diff e aprove. No modo automático, acompanhe diretamente o resultado. Após a conclusão, o arquivo aparecerá na pasta do projeto. Use `local_read_file` com o mesmo `projectId` e `path` para conferir.
 
 `expectedHash: null` significa **criar somente se ainda não existir**. Para alterar um arquivo existente, leia-o primeiro e envie o `sha256` retornado como `expectedHash`. A ponte recusa a alteração se o conteúdo tiver mudado. Arquivos suportados: texto UTF-8, até 1 MiB; para solicitações via HTTP, o JSON completo também precisa caber no limite de 1 MiB.
 
@@ -155,7 +173,7 @@ O adaptador stdio lê a credencial local e encaminha para o serviço já iniciad
 
 ### ChatGPT com MCP
 
-O caminho HTTP da versão 0.2.1 usa **OAuth com cadastro dinâmico de cliente (DCR)**. Você autoriza a conexão no seu computador; o ChatGPT recebe credenciais OAuth próprias e renováveis.
+O caminho HTTP da versão 0.4.0 usa **OAuth com cadastro dinâmico de cliente (DCR)**. Você autoriza a conexão no seu computador; o ChatGPT recebe credenciais OAuth próprias e renováveis.
 
 1. Inicie a ponte e encaminhe **toda a API da porta 4318** por uma origem HTTPS estável. O encaminhamento precisa atender `/mcp` e os endpoints de descoberta e OAuth. Mantenha a porta 4317 exclusivamente local.
 2. Em **Conectar ChatGPT**, salve a origem HTTPS em **URL pública da API**, por exemplo `https://sua-ponte.exemplo.com`, sem `/mcp`.
@@ -164,9 +182,26 @@ O caminho HTTP da versão 0.2.1 usa **OAuth com cadastro dinâmico de cliente (D
 5. Volte à página de autorização. Ela retorna automaticamente ao ChatGPT após a aprovação. Conclua **Create as a plugin**, instale o plugin e selecione-o com `@` em uma conversa.
 6. Peça: `Use a Ponte para consultar bridge_status e listar os projetos disponíveis.`
 
-O token de administração fica no painel local. A autorização da conexão não aprova futuras escritas ou comandos: essas operações continuam passando pelas permissões dos projetos e pela revisão de cada trabalho.
+O token de administração fica no painel local. Depois de autorizar a conexão, as chamadas seguem a política de aprovação escolhida, inclusive `automatic`. As permissões dos projetos e das ferramentas continuam valendo.
 
 O roteiro completo, testes de descoberta e solução de problemas estão em [docs/CHATGPT.md](docs/CHATGPT.md). A implementação pode ser verificada localmente; **a conexão com uma conta real do ChatGPT ainda precisa ser validada no seu ambiente**. A disponibilidade de MCP e as permissões para adicionar plugins dependem da conta e do workspace. A documentação oficial também prevê Secure MCP Tunnel; veja [outras opções de conexão](docs/INTEGRACOES.md).
+
+### Continuar uma tarefa com MCP Events
+
+Use uma conversa **Work no navegador** ou **Work com Cloud selecionado no aplicativo desktop**, conforme a [documentação da OpenAI](https://developers.openai.com/plugins/build/mcp-events). Atualize as ferramentas e os eventos do plugin depois de instalar a 0.4.0. A disponibilidade também depende das permissões da conta e do workspace.
+
+Quando uma chamada retornar um `jobId` ainda pendente, peça:
+
+```text
+Acompanhe a conclusão do trabalho JOB_ID pela Ponte, usando o evento
+ponte.job.completed. Quando o aviso chegar, consulte bridge_job para
+esse mesmo ID e continue esta tarefa a partir do resultado. Não reenvie
+a operação que criou o trabalho.
+```
+
+O cliente cria a assinatura com `arguments.jobId` e fornece o callback e a chave de assinatura. A Ponte verifica o destino antes de ativar o aviso. Você pode acompanhar a inscrição, as tentativas e a entrega em **Conectar ChatGPT → Avisos de conclusão**, ou usar **Encerrar aviso**.
+
+A aprovação automática e os avisos são independentes: `automatic` libera ferramentas; MCP Events informa o cliente sobre uma execução específica. A retomada depende da assinatura, do suporte do cliente e das instruções da conversa. **Aviso recebido** confirma a entrega ao cliente, e não a conclusão das próximas ações do ChatGPT. O [guia completo](docs/MCP-EVENTS.md) explica o teste, a retenção de resultados e os limites.
 
 ### GPT personalizado com Actions
 
@@ -201,7 +236,7 @@ Cadastre a configuração em **Conexões MCP**. Para MCPs stdio, instale o execu
 }
 ```
 
-Defina `MEU_SERVICO_TOKEN` no ambiente do processo da ponte. Uma mudança na variável requer reiniciar o processo. O formulário preserva credenciais omitidas durante a edição. `allowedTools` pode limitar os nomes originais expostos. `readOnlyTools` é uma lista explícita de ferramentas que você autoriza executar automaticamente como leitura; não coloque ferramentas com efeitos colaterais nessa lista.
+Defina `MEU_SERVICO_TOKEN` no ambiente do processo da ponte. Uma mudança na variável requer reiniciar o processo. O formulário preserva credenciais omitidas durante a edição. `allowedTools` pode limitar os nomes originais expostos. `readOnlyTools` declara quais ferramentas são de leitura: elas dispensam revisão no modo `mutations`, mas aguardam aprovação em `all`. O modo `automatic` dispensa a revisão de todas as ferramentas expostas. Não classifique ferramentas com efeitos colaterais como leitura.
 
 MCPs stdio são programas executados com a conta do usuário. Instale e conecte programas em que você confia. O agregador não isola processos de terceiros.
 
@@ -209,26 +244,39 @@ MCPs stdio são programas executados com a conta do usuário. Instale e conecte 
 
 1. O cliente consulta o catálogo.
 2. A ponte valida argumentos e permissões.
-3. Leitura local pode executar imediatamente; alterações aguardam revisão.
-4. O usuário aprova os argumentos exatos no painel.
-5. A ponte executa e armazena o resultado em memória.
-6. O chat consulta o trabalho e usa o resultado na resposta.
+3. A ponte aplica a política `mutations`, `all` ou `automatic`.
+4. Se o trabalho ficar em `pending_approval`, o usuário revisa os argumentos exatos no painel; a aprovação automática libera os trabalhos válidos pela política escolhida.
+5. A ponte executa e armazena o resultado. Trabalhos com assinatura de Events também têm estado e resultado retidos em disco por prazo limitado.
+6. O chat consulta o trabalho e usa o resultado na resposta. Se o cliente criou uma assinatura, a Ponte envia o aviso de conclusão ao callback daquela conversa.
 
-`bridge_job` acompanha solicitações MCP. A API REST devolve um `id` consultável por `getJob`. `bridge_call` e a API aceitam `idempotencyKey`. Reenvios com a mesma chave e os mesmos argumentos recuperam o trabalho existente enquanto ele estiver retido; não reaproveite a chave para uma operação diferente.
+Chamadas MCP de ferramentas, inclusive `bridge_call`, aguardam até **25 segundos** enquanto o trabalho está `queued` ou `running`. Se a chamada inicial exigir aprovação, `pending_approval` retorna imediatamente para o chat informar onde revisar.
+
+Para acompanhar o mesmo trabalho durante o turno ativo, use:
+
+```json
+{ "jobId": "ID_RETORNADO", "waitMs": 25000 }
+```
+
+`bridge_job` aceita `waitMs` inteiro de **0 a 25000**, com padrão **0** para consulta imediata. A espera acompanha `pending_approval`, `queued` e `running`, retornando ao concluir ou vencer o prazo. O `jobId` continua consultável; use consultas limitadas, sem reenviar a operação nem manter um ciclo ilimitado. Essa espera **não reabre uma conversa encerrada**.
+
+A API REST devolve um `id` consultável por `getJob`; a espera `waitMs` pertence à ferramenta MCP `bridge_job`. `bridge_call` e a API aceitam `idempotencyKey`. Reenvios com a mesma chave e os mesmos argumentos recuperam o trabalho existente enquanto ele estiver retido; não reaproveite a chave para uma operação diferente.
+
+A fachada HTTP oferece os métodos `server/discover`, `tools/list`, `tools/call` e `events/list`, `events/subscribe`, `events/unsubscribe` do protocolo `2026-07-28` por um adaptador específico. O SDK MCP 1.32.1 continua atendendo clientes legados e conexões upstream. Isso mantém a compatibilidade existente sem anunciar recursos modernos que não foram implementados. Events usa webhooks; não depende de um GET/SSE aberto em `/mcp`. Consulte [MCP Events](docs/MCP-EVENTS.md) para o contrato e as referências oficiais.
 
 ## Configuração, cópias de segurança e histórico
 
 O diretório `.ponte` é criado somente na instalação local e fica fora do pacote:
 
-- `config.json`: projetos, portas e MCPs.
+- `config.json`: projetos, portas, MCPs e `approvalMode`.
 - `secrets.json`: dois tokens aleatórios distintos.
 - `oauth.json`: clientes registrados e autorizações OAuth, incluindo segredos de clientes e hashes dos tokens.
-- `audit.jsonl`: metadados das execuções, sem argumentos, códigos ou resultados.
+- `events.json`: assinaturas, callbacks e chaves de webhook, fila de entrega e resultados dos trabalhos acompanhados; é um arquivo privado e sensível.
+- `audit.jsonl`: metadados das execuções e tipo de aprovação, sem argumentos, códigos ou resultados.
 - `backups/ID.bak`: conteúdo anterior de arquivos substituídos.
 
 O resultado da escrita informa `backupId`. Para restaurar, identifique a cópia correspondente e substitua o arquivo manualmente após revisar seu conteúdo. Não há botão de desfazer nesta versão.
 
-Trabalhos e resultados são voláteis e limitados. Reiniciar a ponte não reexecuta trabalhos antigos. A auditoria permanece, mas não recupera resultados completos. Aprovações de trabalhos expiram após 15 minutos. Ações em execução têm limite de 120 segundos; os limites específicos de cada ferramenta podem ser menores. Cancelar ou receber timeout não garante que um serviço externo desfez a operação.
+Trabalhos comuns e seus resultados permanecem em memória. A consulta e o cancelamento pelo cliente são vinculados à autorização OAuth ou identidade do token API que criou o trabalho; o painel administrativo mantém acesso a todas as execuções. Para trabalhos acompanhados por Events, a Ponte retém uma cópia sem os argumentos de entrada e com o resultado por até o prazo da assinatura, que tem padrão e máximo de 24 horas; renovações podem estender a retenção. `bridge_job` recupera essa cópia para a mesma conexão após reiniciar. Um trabalho acompanhado que estava em andamento ao reiniciar é marcado como interrompido/cancelado, sem repetir a operação. A auditoria guarda metadados e não substitui esse resultado. Aprovações de trabalhos expiram após 15 minutos. Ações em execução têm limite de 120 segundos; os limites específicos de cada ferramenta podem ser menores. Cancelar ou receber timeout não garante que um serviço externo desfez a operação.
 
 Clientes e autorizações OAuth persistem em `oauth.json`. Pedidos de conexão aguardam aprovação por até 10 minutos; o código OAuth emitido no retorno após aprovar vale por 2 minutos. Access tokens valem por até 1 hora. A renovação usa refresh tokens rotativos e tem prazo absoluto de 30 dias a partir da autorização; renovar não reinicia esse prazo. O painel permite revogar uma autorização antes do vencimento. Pedidos e códigos OAuth ainda em andamento ficam em memória: após reiniciar o serviço, inicie esses fluxos novamente.
 
@@ -249,6 +297,7 @@ src/
   core/        configuração, auditoria e fila de trabalhos
   tools/       filesystem e execução local
   mcp/         clientes upstream e fachada do servidor
+  events/      assinaturas, resultados retidos e entrega de webhooks
   app.ts       composição e ciclo de vida
   http.ts      administração, REST e transporte MCP
   cli.ts       inicialização e adaptador stdio
@@ -261,10 +310,10 @@ docs/          arquitetura, integração, Roblox e limites
 
 ## Limitações desta entrega
 
-- Uso pessoal, com um único proprietário. Todas as conexões OAuth usam o mesmo conjunto de projetos e políticas; não há isolamento por usuário ou por conexão.
+- Uso pessoal, com um único proprietário. Catálogo, projetos e políticas são compartilhados. Consultas e cancelamentos de trabalhos, assinaturas e resultados arquivados ficam vinculados à identidade que criou o trabalho; isso não cria isolamento dos projetos entre usuários.
 - Acesso a arquivos é restrito às pastas cadastradas; **terminal e MCPs externos não são sandboxes do sistema operacional**.
 - O proxy cobre ferramentas MCP. Resources, prompts, sampling, elicitation e login OAuth interativo de upstreams não são encaminhados.
-- Reconexão é manual. A ponte nunca repete uma operação externa automaticamente.
+- Reconexão de upstreams é manual. A ponte não reexecuta ferramentas externas automaticamente; tentativas de entrega de avisos repetem somente o evento.
 - Não há captura genérica de desktop, controle de mouse fora do MCP conectado, processo autônomo de planejamento ou serviço Windows instalado.
 - Não inclui LLM local; pode ser conectado a um cliente compatível que use modelos locais.
 - Consulte `docs/VALIDACAO.md` para os testes efetivamente executados. A integração com Windows, Studio real e sua conta do ChatGPT precisa ser validada no seu computador; publicar a URL e configurar a conta são etapas de implantação.

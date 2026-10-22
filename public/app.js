@@ -42,9 +42,10 @@
     token: '', state: null, tools: [], view: 'overview', offline: false,
     refreshing: false, refreshQueued: false, refreshToolsQueued: false, toolsLoading: false, selectedTool: null, jobId: null,
     jobLoading: false, job: null, jobActions: new Set(), publicUrlDirty: false,
+    approvalModeSaving: false, approvalModeRevision: 0,
     serverEditing: false, confirmResolve: null, navOpen: false, lastSync: null,
     pendingToken: '', sessionGeneration: 0, serverOriginalUrl: '',
-    oauthRequestId: null, oauthRequestSnapshot: '', oauthActions: new Set()
+    oauthRequestId: null, oauthRequestSnapshot: '', oauthActions: new Set(), eventActions: new Set()
   };
 
   function badge(label, variant = 'neutral', iconName) {
@@ -166,6 +167,10 @@
     app.oauthRequestId = null;
     app.oauthRequestSnapshot = '';
     app.publicUrlDirty = false;
+    app.approvalModeSaving = false;
+    app.approvalModeRevision += 1;
+    $('#approval-mode').disabled = false;
+    $('#approval-mode').removeAttribute('aria-busy');
     app.refreshQueued = false;
     app.refreshToolsQueued = false;
     $('#tool-search').value = '';
@@ -227,6 +232,7 @@
     app.refreshing = true;
     const token = app.token;
     const generation = app.sessionGeneration;
+    const approvalModeRevision = app.approvalModeRevision;
     const refreshIcon = $('#refresh-button .icon');
     if (!silent) refreshIcon.classList.add('busy-spin');
     try {
@@ -234,6 +240,11 @@
       const previousServers = JSON.stringify(app.state?.servers?.map(server => [server.id, server.status, server.toolCount]));
       const state = await request('/admin/state');
       if (token !== app.token || generation !== app.sessionGeneration) return;
+      // A snapshot requested before a policy change may also contain an old queue.
+      if (approvalModeRevision !== app.approvalModeRevision) {
+        app.refreshQueued = true;
+        return;
+      }
       app.state = state;
       app.offline = false;
       app.lastSync = new Date();
@@ -312,28 +323,53 @@
     const state = app.state;
     if (!state) return;
     updateConnectionStatus();
-    $('#sidebar-version').textContent = `Ponte MCP · v${state.version || '0.2.1'}`;
+    $('#sidebar-version').textContent = `Ponte MCP · v${state.version || '0.4.0'}`;
     $('#nav-project-count').textContent = number(state.config?.projects?.length);
     $('#nav-pending-count').textContent = number(state.stats?.pending);
     $('#nav-pending-count').hidden = !state.stats?.pending;
-    const mode = $('#approval-mode');
-    if (document.activeElement !== mode && !mode.disabled) mode.value = state.config?.approvalMode || 'mutations';
-    $('#approval-mode-help').textContent = state.config?.approvalMode === 'all'
-      ? 'Todas as ferramentas, incluindo leituras, aguardam sua aprovação.'
-      : 'Leituras podem executar diretamente. Alterações e comandos aguardam sua aprovação.';
+    renderApprovalPolicy();
     if (!app.publicUrlDirty && document.activeElement !== $('#public-url')) $('#public-url').value = state.config?.publicUrl || '';
     renderOverview();
     renderProjects();
     renderServers();
     renderJobs();
     renderConnect();
-    const requestNotice = $('#tool-request-notice');
-    if (requestNotice && app.selectedTool) {
-      const selected = app.tools.find(tool => tool.name === app.selectedTool);
-      const approval = state.config?.approvalMode === 'all' || selected?.risk !== 'read';
-      requestNotice.className = `notice ${approval ? 'notice-warning' : 'notice-subtle'} tool-request-notice`;
-      replaceMarkup(requestNotice, `${icon(approval ? 'shield' : 'info')}<span>${approval ? 'Esta solicitação passará pela sua aprovação antes de executar.' : 'Esta ferramenta é de leitura e pode executar assim que for enviada.'}</span>`);
-    }
+    renderToolRequestNotice();
+  }
+
+  function renderApprovalPolicy() {
+    const policy = app.state?.config?.approvalMode || 'mutations';
+    const automatic = policy === 'automatic';
+    const select = $('#approval-mode');
+    select.disabled = app.approvalModeSaving;
+    select.setAttribute('aria-busy', String(app.approvalModeSaving));
+    if (!app.approvalModeSaving && document.activeElement !== select) select.value = policy;
+    const descriptions = {
+      mutations: 'Leituras podem executar diretamente. Alterações e comandos aguardam sua aprovação.',
+      all: 'Todas as ferramentas, incluindo leituras, aguardam sua aprovação manual.',
+      automatic: 'Aprova solicitações pendentes válidas e novas chamadas de ferramentas locais e MCP, para todos os clientes autorizados.'
+    };
+    const description = app.approvalModeSaving ? 'Salvando política de aprovação…' : descriptions[policy] || descriptions.mutations;
+    if ($('#approval-mode-help').textContent !== description) $('#approval-mode-help').textContent = description;
+    $('#approval-mode-active').hidden = !automatic;
+    $('#approval-mode-limits').hidden = !automatic;
+    $('#approval-control-panel').classList.toggle('automatic-enabled', automatic);
+    $('#automatic-approval-banner').hidden = !automatic;
+  }
+
+  function renderToolRequestNotice() {
+    const notice = $('#tool-request-notice');
+    const tool = app.tools.find(item => item.name === app.selectedTool);
+    if (!notice || !tool) return;
+    const policy = app.state?.config?.approvalMode || 'mutations';
+    const approval = policy !== 'automatic' && (policy === 'all' || tool.risk !== 'read');
+    const message = approval ? 'Esta solicitação passará pela sua aprovação antes de executar.'
+      : policy === 'automatic' ? app.state?.paused
+        ? 'A ponte está pausada. Retome as execuções antes de enviar uma nova solicitação.'
+        : 'Aprovação automática ativa. A solicitação pode executar assim que for enviada, conforme as permissões configuradas.'
+      : 'Esta ferramenta é de leitura e pode executar assim que for enviada.';
+    notice.className = `notice ${approval ? 'notice-warning' : 'notice-subtle'} tool-request-notice`;
+    replaceMarkup(notice, `${icon(approval ? 'shield' : policy === 'automatic' ? 'check' : 'info')}<span>${message}</span>`);
   }
 
   function renderOverview() {
@@ -348,7 +384,7 @@
     const pending = jobs.filter(job => job.status === 'pending_approval');
     $('#approval-count').textContent = number(stats.pending);
     replaceMarkup($('#approval-list'), pending.length ? pending.slice(0, 4).map(job => `<article class="approval-card"><div class="approval-top"><div class="approval-name"><span class="soft-icon">${icon((risks[job.risk] || risks.execute)[2])}</span><div><h3>${escape(job.tool)}</h3><p>${escape(job.source)} · ${escape(relativeTime(job.createdAt))}</p></div></div>${riskBadge(job.risk)}</div><p class="approval-arguments">Confira os argumentos e a prévia nos detalhes antes de aprovar.</p><div class="approval-actions"><button class="text-link plain-button" data-action="job-detail" data-id="${escape(job.id)}">Revisar detalhes${icon('arrow')}</button><button class="button button-ghost" data-action="reject-job" data-id="${escape(job.id)}">Recusar</button><button class="button button-primary" data-action="approve-job" data-id="${escape(job.id)}">${icon('check')}Aprovar</button></div></article>`).join('')
-      : emptyState('check', 'Sua fila está em dia.', 'As solicitações que precisarem da sua aprovação aparecerão aqui.'));
+      : emptyState('check', 'Sua fila está em dia.', app.state.config?.approvalMode === 'automatic' ? 'As solicitações de ferramentas são aprovadas automaticamente. Acompanhe cada resultado no histórico.' : 'As solicitações que precisarem da sua aprovação aparecerão aqui.'));
     const recent = [...jobs].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
     replaceMarkup($('#recent-activity'), recent.length ? recent.map(job => `<button class="activity-row ${job.status === 'failed' ? 'failed' : ''}" data-action="job-detail" data-id="${escape(job.id)}"><span class="activity-indicator">${icon((statuses[job.status] || statuses.queued)[2])}</span><span class="activity-main"><strong>${escape(job.tool)}</strong><span>${escape(job.source)} · ${escape(String(job.id).slice(0, 12))}</span></span>${statusBadge(job.status)}<time datetime="${escape(job.createdAt)}">${escape(relativeTime(job.createdAt))}</time></button>`).join('')
       : emptyState('activity', 'O primeiro passo começa com você.', 'Envie uma solicitação pelo catálogo ou por um cliente conectado.', '<a href="#tools" class="text-link">Explorar ferramentas' + icon('arrow') + '</a>'));
@@ -372,7 +408,11 @@
       const endpoint = config.transport === 'stdio' ? [config.command, ...(config.args || [])].filter(Boolean).join(' ') : config.url;
       const secretCount = Object.keys(config.env || {}).length + Object.keys(config.headers || {}).length;
       const allowedLabel = Array.isArray(config.allowedTools) ? `${number(config.allowedTools.length)} permitidas` : 'Todas permitidas';
-      return `<article class="config-card"><div class="config-card-top"><span class="soft-icon">${icon(config.transport === 'stdio' ? 'terminal' : 'plug')}</span><div class="config-card-heading"><h3>${escape(config.name || config.id)}</h3><span class="mono">${escape(config.id)} · ${escape(config.transport)}</span></div><div class="card-actions"><button class="icon-button" data-action="edit-server" data-id="${escape(config.id)}" aria-label="Editar conexão ${escape(config.name || config.id)}" title="Editar conexão">${icon('edit')}</button><button class="icon-button danger" data-action="delete-server" data-id="${escape(config.id)}" aria-label="Remover conexão ${escape(config.name || config.id)}" title="Remover conexão">${icon('trash')}</button></div></div><div class="config-path">${icon(config.transport === 'stdio' ? 'terminal' : 'plug')}<code>${escape(endpoint || 'Sem endpoint configurado')}</code></div><div class="config-card-footer">${badge(statusLabel, statusVariant)}${badge(`${number(server.toolCount)} ferramentas`, 'neutral')}${secretCount ? badge('Credenciais configuradas', 'neutral', 'lock') : ''}</div><p class="config-description">${number(config.readOnlyTools?.length)} ${config.readOnlyTools?.length === 1 ? 'ferramenta declarada' : 'ferramentas declaradas'} como leitura · ${allowedLabel}</p>${server.error ? `<pre class="server-card-error">${escape(server.error)}</pre>` : ''}<div class="server-card-bottom"><p>${config.enabled === false ? 'Conexão desativada na configuração.' : Array.isArray(config.allowedTools) && !config.allowedTools.length ? 'Nenhuma ferramenta está exposta por esta conexão.' : config.readOnlyTools?.length ? 'Demais ferramentas exigem aprovação.' : 'Todas as ferramentas exigem aprovação.'}</p><button class="button button-secondary" data-action="reconnect-server" data-id="${escape(config.id)}" ${config.enabled === false ? 'disabled' : ''}>${icon('refresh')}Reconectar</button></div></article>`;
+      const approvalNote = app.state.config?.approvalMode === 'automatic'
+        ? 'Aprovação automática ativa para as ferramentas desta conexão.'
+        : app.state.config?.approvalMode !== 'all' && config.readOnlyTools?.length
+          ? 'Demais ferramentas aguardam aprovação manual.' : 'Todas as ferramentas aguardam aprovação manual.';
+      return `<article class="config-card"><div class="config-card-top"><span class="soft-icon">${icon(config.transport === 'stdio' ? 'terminal' : 'plug')}</span><div class="config-card-heading"><h3>${escape(config.name || config.id)}</h3><span class="mono">${escape(config.id)} · ${escape(config.transport)}</span></div><div class="card-actions"><button class="icon-button" data-action="edit-server" data-id="${escape(config.id)}" aria-label="Editar conexão ${escape(config.name || config.id)}" title="Editar conexão">${icon('edit')}</button><button class="icon-button danger" data-action="delete-server" data-id="${escape(config.id)}" aria-label="Remover conexão ${escape(config.name || config.id)}" title="Remover conexão">${icon('trash')}</button></div></div><div class="config-path">${icon(config.transport === 'stdio' ? 'terminal' : 'plug')}<code>${escape(endpoint || 'Sem endpoint configurado')}</code></div><div class="config-card-footer">${badge(statusLabel, statusVariant)}${badge(`${number(server.toolCount)} ferramentas`, 'neutral')}${secretCount ? badge('Credenciais configuradas', 'neutral', 'lock') : ''}</div><p class="config-description">${number(config.readOnlyTools?.length)} ${config.readOnlyTools?.length === 1 ? 'ferramenta declarada' : 'ferramentas declaradas'} como leitura · ${allowedLabel}</p>${server.error ? `<pre class="server-card-error">${escape(server.error)}</pre>` : ''}<div class="server-card-bottom"><p>${config.enabled === false ? 'Conexão desativada na configuração.' : Array.isArray(config.allowedTools) && !config.allowedTools.length ? 'Nenhuma ferramenta está exposta por esta conexão.' : approvalNote}</p><button class="button button-secondary" data-action="reconnect-server" data-id="${escape(config.id)}" ${config.enabled === false ? 'disabled' : ''}>${icon('refresh')}Reconectar</button></div></article>`;
     }).join('') : emptyState('plug', 'Sua ponte pode ir além.', 'Conecte um servidor MCP local ou remoto para reunir suas ferramentas neste painel.', `<button class="button button-primary" data-action="new-server">${icon('plus')}Adicionar primeira conexão</button>`));
   }
 
@@ -416,9 +456,9 @@
     const argumentFocus = document.activeElement === $('#tool-arguments');
     app.selectedTool = name;
     renderToolsList();
-    const needsApproval = app.state?.config?.approvalMode === 'all' || tool.risk !== 'read';
     const sample = sampleFromSchema(tool.inputSchema || { type: 'object' });
-    replaceMarkup($('#tool-detail'), `<div class="tool-detail-heading"><div><span class="section-kicker">${escape(tool.source || 'FERRAMENTA LOCAL')}</span><h2>${escape(tool.name)}</h2></div>${riskBadge(tool.risk)}</div><p class="tool-description">${escape(tool.description || tool.title || 'Esta ferramenta não forneceu uma descrição.')}</p><details class="schema-details"><summary>Ver esquema dos parâmetros (JSON Schema)</summary><pre>${escape(pretty(tool.inputSchema))}</pre></details><form id="tool-form"><div class="tool-form-header"><label for="tool-arguments">Argumentos em JSON</label><button class="button button-ghost" type="button" data-action="sample-arguments">Usar exemplo</button></div><textarea id="tool-arguments" class="code-input tool-args" rows="9" spellcheck="false" required aria-describedby="tool-arguments-help">${escape(previousArguments ?? pretty(sample && typeof sample === 'object' ? sample : {}))}</textarea><p id="tool-arguments-help" class="field-help">Edite os valores do exemplo para o seu projeto.</p><div id="tool-request-notice" class="notice ${needsApproval ? 'notice-warning' : 'notice-subtle'} tool-request-notice">${icon(needsApproval ? 'shield' : 'info')}<span>${needsApproval ? 'Esta solicitação passará pela sua aprovação antes de executar.' : 'Esta ferramenta é de leitura e pode executar assim que for enviada.'}</span></div><p id="tool-error" class="form-error" role="alert" hidden></p><div class="tool-submit-row"><span class="small muted">A solicitação será registrada no histórico.</span><button class="button button-primary" type="submit">${icon('play')}Enviar solicitação</button></div><div id="tool-last-job" hidden></div></form>`);
+    replaceMarkup($('#tool-detail'), `<div class="tool-detail-heading"><div><span class="section-kicker">${escape(tool.source || 'FERRAMENTA LOCAL')}</span><h2>${escape(tool.name)}</h2></div>${riskBadge(tool.risk)}</div><p class="tool-description">${escape(tool.description || tool.title || 'Esta ferramenta não forneceu uma descrição.')}</p><details class="schema-details"><summary>Ver esquema dos parâmetros (JSON Schema)</summary><pre>${escape(pretty(tool.inputSchema))}</pre></details><form id="tool-form"><div class="tool-form-header"><label for="tool-arguments">Argumentos em JSON</label><button class="button button-ghost" type="button" data-action="sample-arguments">Usar exemplo</button></div><textarea id="tool-arguments" class="code-input tool-args" rows="9" spellcheck="false" required aria-describedby="tool-arguments-help">${escape(previousArguments ?? pretty(sample && typeof sample === 'object' ? sample : {}))}</textarea><p id="tool-arguments-help" class="field-help">Edite os valores do exemplo para o seu projeto.</p><div id="tool-request-notice" class="notice tool-request-notice"></div><p id="tool-error" class="form-error" role="alert" hidden></p><div class="tool-submit-row"><span class="small muted">A solicitação será registrada no histórico.</span><button class="button button-primary" type="submit">${icon('play')}Enviar solicitação</button></div><div id="tool-last-job" hidden></div></form>`);
+    renderToolRequestNotice();
     if (argumentFocus) $('#tool-arguments').focus({ preventScroll: true });
   }
 
@@ -471,6 +511,10 @@
     const pending = Array.isArray(oauth.pending) ? oauth.pending : [];
     const grants = Array.isArray(oauth.grants) ? oauth.grants : [];
     const enabled = Boolean(oauth.enabled && oauth.resource);
+    const policy = app.state.config?.approvalMode || 'mutations';
+    $('#oauth-execution-policy').textContent = policy === 'automatic'
+      ? 'Aprovação automática ativa: as ferramentas chamadas por este cliente serão aprovadas automaticamente. Novas conexões OAuth continuam exigindo aprovação local. Você pode revogar o acesso neste painel.'
+      : `${policy === 'all' ? 'Todas as chamadas de ferramentas' : 'Alterações e comandos'} aguardam sua aprovação manual. Você pode revogar o acesso deste cliente neste painel.`;
     $('#stdio-config').textContent = pretty({ mcpServers: { ponte: { command: connection.stdioCommand || 'node', args: connection.stdioArgs || [] } } });
     replaceMarkup($('#connection-endpoints'), [['API / Actions', 'apiUrl'], ['OpenAPI', 'openapiUrl']].map(([label, key]) => `<div class="endpoint-row"><div><span>${label}</span><code>${escape(connection[key] || 'Indisponível')}</code></div><button class="icon-button" data-action="copy-endpoint" data-key="${key}" aria-label="Copiar endpoint ${label}" ${connection[key] ? '' : 'disabled'}>${icon('copy')}</button></div>`).join(''));
     $('#chatgpt-mcp-url').textContent = enabled ? oauth.resource : 'Configure a URL pública primeiro';
@@ -493,7 +537,41 @@
     $('#oauth-grants-count').textContent = number(grants.length);
     replaceMarkup($('#oauth-grants-list'), grants.length ? grants.map(grant => `<article class="oauth-grant"><span class="soft-icon">${icon('chat')}</span><div class="oauth-grant-main"><h3>${escape(grant.clientName || 'Cliente sem nome')}</h3><p>Nome informado pelo cliente · autorizado em ${escape(oauthDate(grant.createdAt))}</p><p>Válido até ${escape(oauthDate(grant.expiresAt))}</p><p class="mono oauth-grant-resource">${escape(grant.resource || oauth.resource || '')}</p><span class="oauth-grant-scopes">${escape((Array.isArray(grant.scopes) ? grant.scopes : []).join(', '))}</span></div><button class="button button-secondary button-small" data-action="revoke-oauth" data-id="${escape(grant.id)}" ${app.oauthActions.has(grant.id) ? 'disabled' : ''}>Revogar acesso</button></article>`).join('')
       : emptyState('shield', 'Nenhum cliente autorizado.', 'Ao concluir o OAuth, a conexão aparecerá aqui. Você poderá revogar o acesso quando quiser.', '', true));
+    renderEvents();
     if ($('#oauth-dialog').open) renderOAuthReview();
+  }
+
+  function renderEvents() {
+    const events = app.state?.events || {};
+    const subscriptions = Array.isArray(events.subscriptions) ? events.subscriptions : [];
+    const labels = { waiting: ['Aguardando conclusão', 'neutral'], queued: ['Aviso na fila', 'blue'], retrying: ['Tentando novamente', 'warning'], delivered: ['Aviso recebido', 'success'], failed: ['Falha na entrega', 'danger'] };
+    $('#events-count').textContent = number(subscriptions.length);
+    $('#events-status').textContent = events.enabled ? 'Disponível' : 'Indisponível';
+    $('#events-status').className = `badge badge-${events.enabled ? 'success' : 'neutral'}`;
+    $('#events-error').hidden = !events.error;
+    $('#events-error').textContent = events.error ? String(events.error) : '';
+    replaceMarkup($('#events-list'), subscriptions.length ? subscriptions.map(item => {
+      const [label, variant] = labels[item.status] || ['Acompanhando', 'neutral'];
+      return `<article class="oauth-grant"><span class="soft-icon">${icon('activity')}</span><div class="oauth-grant-main"><h3>Execução <code>${escape(String(item.jobId || '').slice(0, 12))}</code></h3><p>Válido até ${escape(dateLabel(item.refreshBefore, true))}</p><div>${badge(label, variant)}${item.attempts ? badge(`${number(item.attempts)} ${item.attempts === 1 ? 'tentativa' : 'tentativas'}`, 'neutral') : ''}</div>${item.lastError ? `<p class="event-delivery-error">${escape(item.lastError)}</p>` : ''}</div><button class="button button-secondary button-small" data-action="cancel-event" data-id="${escape(item.id)}" ${app.eventActions.has(item.id) || app.offline ? 'disabled' : ''}>Encerrar aviso</button></article>`;
+    }).join('') : emptyState('chat', 'Nenhuma execução acompanhada.', 'As inscrições criadas pelo ChatGPT aparecerão aqui. Cada inscrição acompanha uma execução específica.', '', true));
+  }
+
+  async function cancelEvent(id) {
+    if (app.eventActions.has(id) || app.offline) return;
+    const generation = app.sessionGeneration;
+    app.eventActions.add(id);
+    renderEvents();
+    try {
+      await request(`/admin/events/subscriptions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (generation !== app.sessionGeneration) return;
+      toast('Aviso encerrado. A execução mantém seu estado atual.');
+      await refresh({ silent: true });
+    } catch (error) {
+      if (generation === app.sessionGeneration) handleError(error);
+    } finally {
+      app.eventActions.delete(id);
+      if (app.state && generation === app.sessionGeneration) renderEvents();
+    }
   }
 
   function oauthDate(seconds) {
@@ -787,8 +865,10 @@
       expired: 'A solicitação expirou antes de ser aprovada.'
     };
     const preview = typeof job.preview === 'string' ? job.preview : job.preview ? job.preview.diff || pretty(job.preview) : '';
+    const approval = job.approval === 'automatic' ? badge('Aprovação automática', 'blue', 'check')
+      : job.approval === 'manual' ? badge('Aprovação manual', 'neutral', 'shield') : '';
     const diff = preview ? preview.split('\n').map(line => `<span class="diff-line${line.startsWith('+') && !line.startsWith('+++') ? ' diff-add' : line.startsWith('-') && !line.startsWith('---') ? ' diff-remove' : line.startsWith('@@') || line.startsWith('+++') || line.startsWith('---') ? ' diff-header' : ''}">${escape(line)}</span>`).join('') : '';
-    replaceMarkup(body, `<div class="job-detail-meta">${statusBadge(job.status)}${riskBadge(job.risk)}${badge(job.source || 'Origem desconhecida', 'neutral')}</div>${notes[job.status] ? `<div class="job-status-note">${escape(notes[job.status])}</div>` : ''}<dl class="job-meta-grid"><div><dt>ID da solicitação</dt><dd>${escape(job.id)}</dd></div><div><dt>Origem</dt><dd>${escape(job.source)}</dd></div><div><dt>Criada em</dt><dd>${escape(dateLabel(job.createdAt, true))}</dd></div><div><dt>Atualizada em</dt><dd>${escape(dateLabel(job.updatedAt, true))}</dd></div></dl><details class="job-section" data-section="arguments" ${open('arguments')}><summary>Argumentos</summary><pre>${escape(pretty(job.arguments))}</pre></details>${preview ? `<details class="job-section" data-section="preview" ${open('preview')}><summary>Prévia de alterações</summary><pre class="diff-preview">${diff}</pre></details>` : job.status === 'pending_approval' ? '<p class="job-no-preview">Esta ferramenta não forneceu uma prévia de alterações. Confira os argumentos antes de aprovar.</p>' : ''}${job.error ? `<div class="form-error" role="status">${escape(typeof job.error === 'string' ? job.error : pretty(job.error))}</div>` : ''}${job.result !== undefined && job.result !== null ? `<details class="job-section" data-section="result" ${open('result')}><summary>Resultado</summary>${resultMarkup(job.result)}</details>` : job.status === 'succeeded' ? '<p class="job-no-preview">Execução concluída sem conteúdo de resultado.</p>' : ''}`);
+    replaceMarkup(body, `<div class="job-detail-meta">${statusBadge(job.status)}${riskBadge(job.risk)}${approval}${badge(job.source || 'Origem desconhecida', 'neutral')}</div>${notes[job.status] ? `<div class="job-status-note">${escape(notes[job.status])}</div>` : ''}<dl class="job-meta-grid"><div><dt>ID da solicitação</dt><dd>${escape(job.id)}</dd></div><div><dt>Origem</dt><dd>${escape(job.source)}</dd></div><div><dt>Criada em</dt><dd>${escape(dateLabel(job.createdAt, true))}</dd></div><div><dt>Atualizada em</dt><dd>${escape(dateLabel(job.updatedAt, true))}</dd></div></dl><details class="job-section" data-section="arguments" ${open('arguments')}><summary>Argumentos</summary><pre>${escape(pretty(job.arguments))}</pre></details>${preview ? `<details class="job-section" data-section="preview" ${open('preview')}><summary>Prévia de alterações</summary><pre class="diff-preview">${diff}</pre></details>` : job.status === 'pending_approval' ? '<p class="job-no-preview">Esta ferramenta não forneceu uma prévia de alterações. Confira os argumentos antes de aprovar.</p>' : ''}${job.error ? `<div class="form-error" role="status">${escape(typeof job.error === 'string' ? job.error : pretty(job.error))}</div>` : ''}${job.result !== undefined && job.result !== null ? `<details class="job-section" data-section="result" ${open('result')}><summary>Resultado</summary>${resultMarkup(job.result)}</details>` : job.status === 'succeeded' ? '<p class="job-no-preview">Execução concluída sem conteúdo de resultado.</p>' : ''}`);
     const busy = app.jobActions.has(job.id) ? 'disabled' : '';
     let actions = '<button class="button button-secondary" data-close-dialog>Fechar</button>';
     if (job.status === 'pending_approval') actions = `<span class="footer-note">A decisão vale para esta solicitação.</span><button class="button button-secondary" data-action="reject-job" data-id="${escape(job.id)}" ${busy}>Recusar</button><button class="button button-primary" data-action="approve-job" data-id="${escape(job.id)}" ${busy}>${icon('check')}Aprovar e executar</button>`;
@@ -940,6 +1020,7 @@
     else if (action === 'review-oauth') openOAuthRequest(id);
     else if (['approve-oauth', 'reject-oauth'].includes(action)) await oauthRequestAction(action.split('-')[0], id, button);
     else if (action === 'revoke-oauth') await revokeOAuthGrant(id);
+    else if (action === 'cancel-event') await cancelEvent(id);
     else if (action === 'copy-stdio') await copyText($('#stdio-config').textContent);
     else if (action === 'copy-endpoint') await copyText(app.state?.connection?.[button.dataset.key]);
     else if (action === 'copy-chatgpt-url') await copyText(app.state?.connection?.oauth?.resource);
@@ -981,13 +1062,35 @@
 
   $('#approval-mode').addEventListener('change', async event => {
     const select = event.target;
+    if (!app.token || app.approvalModeSaving) return;
+    const approvalMode = select.value;
+    const generation = app.sessionGeneration;
+    app.approvalModeSaving = true;
+    app.approvalModeRevision += 1;
     select.disabled = true;
+    renderApprovalPolicy();
     try {
-      await request('/admin/settings', { method: 'PATCH', body: { approvalMode: select.value } });
-      toast('Política de aprovação atualizada.');
-      await refresh();
-    } catch (error) { handleError(error); select.value = app.state?.config?.approvalMode || 'mutations'; }
-    finally { select.disabled = false; }
+      const result = await request('/admin/settings', { method: 'PATCH', body: { approvalMode } });
+      if (generation !== app.sessionGeneration) return;
+      app.state.config.approvalMode = result.approvalMode || approvalMode;
+      const { approved = 0, rejected = 0, returnedToPending = 0 } = result.approvals || {};
+      const messages = [app.state.config.approvalMode === 'automatic' ? 'Aprovação automática ativada.' : 'Política de aprovação atualizada.'];
+      if (approved) messages.push(`${number(approved)} ${approved === 1 ? 'solicitação pendente aprovada' : 'solicitações pendentes aprovadas'}.`);
+      if (rejected) messages.push(`${number(rejected)} ${rejected === 1 ? 'solicitação recusada' : 'solicitações recusadas'}.`);
+      if (returnedToPending) messages.push(`${number(returnedToPending)} ${returnedToPending === 1 ? 'solicitação voltou à revisão' : 'solicitações voltaram à revisão'}.`);
+      toast(messages.join(' '));
+    } catch (error) {
+      if (generation === app.sessionGeneration) handleError(error);
+    } finally {
+      if (generation === app.sessionGeneration) {
+        app.approvalModeSaving = false;
+        app.approvalModeRevision += 1;
+        select.disabled = false;
+        select.value = app.state?.config?.approvalMode || 'mutations';
+        renderState();
+        await refresh();
+      }
+    }
   });
 
   $('#pause-button').addEventListener('click', async event => {

@@ -54,7 +54,7 @@ const configSchema = z.object({
   port: z.number().int().min(1024).max(65535),
   apiPort: z.number().int().min(1024).max(65535),
   publicUrl: publicUrlSchema.optional(),
-  approvalMode: z.enum(['mutations', 'all']),
+  approvalMode: z.enum(['mutations', 'all', 'automatic']),
   projects: z.array(projectSchema).max(100),
   upstreams: z.array(upstreamSchema).max(30),
 }).strict().superRefine((config, ctx) => {

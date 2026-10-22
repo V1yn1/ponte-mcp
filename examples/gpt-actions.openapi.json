@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Ponte MCP",
-    "version": "0.2.1",
-    "description": "Ferramentas locais e MCPs conectados. Alterações exigem aprovação no painel do computador. Não altera cotas de IA. Descubra o schema usando listTools; envie argumentsJson com JSON válido. Consulte getJob até estado final; não confunda pending_approval com sucesso."
+    "version": "0.4.0",
+    "description": "Ferramentas locais e MCPs conectados. A aprovação segue a política selecionada no painel do computador. Não altera cotas de IA. Descubra o schema usando listTools; envie argumentsJson com JSON válido. Consulte getJob até estado final; não confunda pending_approval com sucesso."
   },
   "servers": [
     {
