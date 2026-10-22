@@ -1,0 +1,8 @@
+node_modules/
+.ponte/
+dist/
+coverage/
+*.log
+workspace/*
+!workspace/LEIA-ME.txt
+
