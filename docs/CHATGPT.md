@@ -1,4 +1,4 @@
-# Conectar a Ponte MCP 0.2.0 ao ChatGPT
+# Conectar a Ponte MCP 0.2.1 ao ChatGPT
 
 A Ponte oferece OAuth para a conexão MCP nativa do ChatGPT. O usuário autoriza o acesso no painel do próprio computador e pode revogá-lo depois. O ChatGPT não recebe a credencial de administração.
 
@@ -13,6 +13,20 @@ Configure um encaminhamento HTTPS para **toda a API em `http://127.0.0.1:4318`**
 Em **Conectar ChatGPT → URL pública da API**, salve essa origem, sem caminho, credenciais, query string ou fragmento. O valor é `https://sua-ponte.exemplo.com`; a URL a cadastrar no ChatGPT será `https://sua-ponte.exemplo.com/mcp`.
 
 O painel da porta **4317 permanece local**. A Ponte não cria o túnel ao salvar a URL. Mantenha o processo da ponte e o encaminhamento em execução durante o uso.
+
+### Se usa ngrok
+
+Encaminhe a porta da API:
+
+```sh
+ngrok http 4318
+```
+
+Use a origem HTTPS exibida pelo ngrok como **URL pública da API** no painel e acrescente `/mcp` somente no endereço cadastrado no ChatGPT. Se o ngrok apresentar seu aviso de visita ao abrir a página, prossiga para o site e mantenha a página de autorização aberta.
+
+A versão **0.2.1** preserva os cookies da própria origem ao consultar a decisão e envia o cabeçalho `ngrok-skip-browser-warning` nessa consulta, conforme a [documentação oficial do ngrok](https://ngrok.com/docs/pricing-limits/free-plan-limits#removing-the-interstitial-page). Isso evita que a página intermediária do túnel seja interpretada como o status OAuth. A página também informa quando recebe HTML, erro HTTP, dados inválidos ou falha de rede.
+
+Na versão anterior, a consulta descartava os cookies e escondia essas falhas atrás de “Aguardando a Ponte responder”. Esse comportamento pode impedir a página de perceber uma aprovação que já ocorreu no painel.
 
 ## 2. Conferir a descoberta
 
@@ -84,6 +98,17 @@ Ao vencer o prazo de renovação, conecte novamente pelo ChatGPT e autorize no p
 
 Pedidos aguardando decisão e códigos OAuth ainda não trocados ficam em memória. Se o serviço reiniciar durante a autorização, recomece esse fluxo no ChatGPT. Conexões já concluídas usam o estado persistido em `oauth.json`.
 
+Para atualizar uma instalação clonada do GitHub, encerre a Ponte com `Ctrl+C` e execute na pasta do projeto:
+
+```powershell
+git pull --ff-only
+npm.cmd ci --ignore-scripts
+npm.cmd run build
+npm.cmd start
+```
+
+Preserve o diretório `.ponte`. Confira **0.2.1** no painel, feche a página de autorização antiga e inicie uma nova tentativa no ChatGPT. Antes de aprovar, o código de oito caracteres precisa aparecer tanto na página pública quanto no painel local.
+
 Após atualizar ferramentas, schemas ou autenticação, atualize a conexão em **Plugins → sua conexão → Refresh** e teste em uma conversa nova. Ao mudar a origem HTTPS, atualize `publicUrl` e configure novamente a conexão para a nova URL: emissor, recurso e destino dos tokens dependem desse endereço.
 
 ## Resolver problemas
@@ -97,7 +122,11 @@ Após atualizar ferramentas, schemas ou autenticação, atualize a conexão em *
 | A autorização pede uma senha/token da Ponte | Use o login apenas no painel local; confirme que abriu a origem configurada e o fluxo descrito neste guia |
 | O pedido não aparece no painel | Verifique se navegador, túnel e painel apontam para a mesma instância e o mesmo diretório de estado |
 | Código de verificação expirou ou não coincide | Rejeite o pedido incorreto e inicie uma nova autorização |
-| A aprovação ocorreu, mas não houve retorno | Mantenha a página de autorização aberta; confira se a ponte e o túnel estão ativos e reinicie o fluxo se o código OAuth expirou |
+| A aprovação ocorreu, mas a página continua em “Carregando…” ou “Aguardando a Ponte responder” | Atualize para 0.2.1, reinicie a Ponte e inicie uma nova tentativa no ChatGPT; confira o código nas duas telas antes de aprovar |
+| A página informa que o túnel devolveu uma página inesperada | A consulta recebeu uma página intermediária, em vez do JSON da Ponte; confira o ngrok, o encaminhamento para a API 4318 e a URL pública configurada |
+| A página informa um erro HTTP | Confira o número exibido e se a API e o túnel continuam ativos; a tela tenta consultar novamente enquanto o pedido estiver válido |
+| A página informa falha de rede ou demora na resposta | Confira a conexão, o processo da Ponte e o túnel; se o serviço reiniciou, recomece a autorização no ChatGPT |
+| A aprovação ocorreu, o código apareceu, mas não houve retorno | Mantenha a página de autorização aberta, observe a mensagem de status e reinicie o fluxo se o pedido expirou |
 | `invalid_client` após reiniciar | Confira se o processo usa o mesmo `.ponte/oauth.json`; não recrie o estado entre reinícios |
 | Token recusado após mudar a URL | O token está vinculado ao recurso e emissor anteriores; conecte de novo usando a nova origem |
 | Uma escrita está pendente | Abra **Execuções** no painel; o consentimento OAuth não substitui a aprovação do trabalho |

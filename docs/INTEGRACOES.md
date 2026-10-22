@@ -1,6 +1,6 @@
 # Conexão com chats e outros servidores
 
-Ponte MCP **0.2.0**. Documentação do ChatGPT consultada em **22 de outubro de 2026**. As telas e permissões dos fornecedores podem mudar. O roteiro da conexão nativa está em [CHATGPT.md](CHATGPT.md); os resultados efetivamente observados na entrega estão em [VALIDACAO.md](VALIDACAO.md).
+Ponte MCP **0.2.1**. Documentação do ChatGPT consultada em **22 de outubro de 2026**. As telas e permissões dos fornecedores podem mudar. O roteiro da conexão nativa está em [CHATGPT.md](CHATGPT.md); os resultados efetivamente observados na entrega estão em [VALIDACAO.md](VALIDACAO.md).
 
 ## Escolha a entrada compatível com seu cliente
 

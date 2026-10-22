@@ -1,4 +1,4 @@
-# Limites de confiança da Ponte MCP 0.2.0
+# Limites de confiança da Ponte MCP 0.2.1
 
 Este documento explica o que os controles do aplicativo fazem. Eles não substituem permissões do sistema operacional, isolamento de processos ou revisão do código que será executado.
 

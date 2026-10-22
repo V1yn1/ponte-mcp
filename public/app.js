@@ -312,7 +312,7 @@
     const state = app.state;
     if (!state) return;
     updateConnectionStatus();
-    $('#sidebar-version').textContent = `Ponte MCP · v${state.version || '0.2.0'}`;
+    $('#sidebar-version').textContent = `Ponte MCP · v${state.version || '0.2.1'}`;
     $('#nav-project-count').textContent = number(state.config?.projects?.length);
     $('#nav-pending-count').textContent = number(state.stats?.pending);
     $('#nav-pending-count').hidden = !state.stats?.pending;

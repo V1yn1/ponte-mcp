@@ -11,10 +11,42 @@
   let loaded = false;
   let polling = false;
 
+  class StatusError extends Error {
+    constructor(kind, status) {
+      super(kind);
+      this.status = status;
+    }
+  }
+
   function showStatus(state, title, description) {
     $('#consent-status').dataset.state = state;
     $('#status-title').textContent = title;
     $('#status-description').textContent = description;
+  }
+
+  function showRetryError(error, timedOut) {
+    let title = 'Não foi possível consultar a Ponte';
+    let description = 'Falha de rede. Confira sua conexão, o processo da Ponte e o túnel.';
+    if (timedOut) {
+      title = 'A Ponte demorou para responder';
+      description = 'A consulta excedeu o tempo de espera. Confira se a Ponte e o túnel estão em execução.';
+    } else if (error instanceof StatusError) {
+      if (error.message === 'http') {
+        title = `Falha ao consultar a Ponte: HTTP ${error.status}`;
+        description = 'A API ou o túnel recusou a consulta. Confira o serviço e a URL pública configurada no painel.';
+      } else if (error.message === 'non-json') {
+        title = 'O túnel devolveu uma página inesperada';
+        description = 'A consulta recebeu HTML ou outro conteúdo em vez de JSON. Confira o aviso do ngrok, a URL pública e o encaminhamento para a porta da API.';
+      } else {
+        title = 'Resposta inválida da Ponte';
+        description = 'Os dados da solicitação não puderam ser lidos. Confira se a URL pública aponta para a instância atualizada da Ponte.';
+      }
+    }
+    if (!loaded) {
+      $('#verification-code').textContent = '—';
+      $('#verification-code').classList.remove('is-loading');
+    }
+    showStatus('waiting', title, `${description} Tentaremos novamente em instantes.`);
   }
 
   function finish(state, title, description) {
@@ -45,9 +77,9 @@
   }
 
   function renderRequest(item, adminUrl) {
-    if (!item || item.id !== requestId || typeof item.verificationCode !== 'string' || !item.verificationCode) throw new Error('invalid-request');
+    if (!item || item.id !== requestId || typeof item.verificationCode !== 'string' || !item.verificationCode) throw new StatusError('invalid-request');
     const seconds = Number(item.expiresAt);
-    if (!Number.isFinite(seconds) || seconds <= 0) throw new Error('invalid-expiry');
+    if (!Number.isFinite(seconds) || seconds <= 0) throw new StatusError('invalid-expiry');
     expiresAt = Math.min(seconds * 1000, startedAt + maximumWaitMs);
     $('#verification-code').textContent = item.verificationCode;
     $('#verification-code').classList.remove('is-loading');
@@ -78,16 +110,25 @@
     const timeout = setTimeout(() => controller.abort(), Math.max(1, Math.min(10000, expiresAt - Date.now())));
     try {
       const response = await fetch(`/oauth/consent/status?request=${encodeURIComponent(requestId)}`, {
-        headers: { Accept: 'application/json' }, credentials: 'omit', cache: 'no-store',
+        // Preserve the tunnel's visitor cookie and request JSON past ngrok's browser warning.
+        headers: { Accept: 'application/json', 'ngrok-skip-browser-warning': '1' },
+        credentials: 'same-origin', mode: 'same-origin', cache: 'no-store',
         referrerPolicy: 'no-referrer', signal: controller.signal
       });
       if (response.status === 404) {
         finish('error', 'Solicitação indisponível', 'O pedido não foi encontrado ou seu prazo já terminou.');
         return;
       }
-      if (!response.ok) throw new Error('request-failed');
-      const data = await response.json();
-      if (!['pending', 'approved', 'rejected', 'expired'].includes(data.status)) throw new Error('invalid-status');
+      if (!response.ok) throw new StatusError('http', response.status);
+      const contentType = (response.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+      if (contentType !== 'application/json') throw new StatusError('non-json');
+      let data;
+      try { data = await response.json(); }
+      catch (error) {
+        if (error?.name === 'SyntaxError') throw new StatusError('invalid-json');
+        throw error;
+      }
+      if (!data || !['pending', 'approved', 'rejected', 'expired'].includes(data.status)) throw new StatusError('invalid-status');
       if (data.status === 'approved' || data.status === 'rejected') {
         stopped = true;
         clearTimeout(timer);
@@ -107,9 +148,9 @@
         return;
       }
       showStatus('pending', 'Aguardando sua decisão no painel local', 'Depois de autorizar ou recusar, esta página retornará ao cliente automaticamente.');
-    } catch {
+    } catch (error) {
       if (Date.now() >= expiresAt) finish('expired', 'O prazo de confirmação terminou', 'Inicie uma nova conexão no cliente para tentar novamente.');
-      else showStatus('waiting', 'Aguardando a Ponte responder', 'Verifique se a Ponte e o túnel estão em execução. Tentaremos novamente em instantes.');
+      else showRetryError(error, controller.signal.aborted);
     } finally {
       clearTimeout(timeout);
       polling = false;

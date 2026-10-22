@@ -1,8 +1,42 @@
-# Validação da entrega — Ponte MCP 0.2.0
+# Validação da entrega — Ponte MCP 0.2.1
+
+## Correção da espera no OAuth com túneis
+
+A versão 0.2.1 corrige a consulta de decisão na página de consentimento: preserva cookies apenas da mesma origem, envia o cabeçalho oficial de dispensa do aviso de navegador do ngrok e distingue resposta HTML, erro HTTP, JSON inválido, falha de rede e timeout. A página continua tentando enquanto o pedido está válido e retira o indicador de carregamento após uma falha inicial.
+
+| Verificação desta atualização | Resultado observado |
+|---|---|
+| `npm run verify` | TypeScript, **82 testes**, zero falhas, zero testes ignorados e build concluído |
+| `npm run smoke` | OAuth, MCP, leitura, escrita aprovada, backup, renovação e revogação concluídos com o programa compilado |
+| JavaScript | `node --check` passou no painel e no consentimento |
+| Regressões de consentimento | **10 testes** executam o JavaScript real, com DOM e transporte simulados: sessão do túnel, cabeçalho sem cookie, HTML, HTTP 503, rede, leitura interrompida, JSON malformado, recuperação, 404, expiração e rejeição |
+| Chromium real com proxy local | Falha anterior reproduzida em dois cenários; versão corrigida exibe código, acompanha aprovação, chega ao callback e troca o código com PKCE nos dois |
+| Revisão independente | Sem achados pendentes; classificação de falha de transporte durante a leitura JSON corrigida e coberta por teste |
+
+### Reprodução do problema e verificação da correção
+
+O teste em Chromium usa as rotas, HTML e JavaScript reais da aplicação. Um proxy HTTP de teste em `127.0.0.1` devolve uma página HTML quando a consulta não traz o cookie esperado ou o cabeçalho de dispensa do aviso. Foram executados quatro fluxos:
+
+| JavaScript | Condição do proxy de teste | Resultado |
+|---|---|---|
+| 0.2.0 | Cookie HttpOnly já estabelecido na navegação | O fetch omite o cookie; a aprovação local ocorre, mas a página permanece em “Carregando…” e “Aguardando a Ponte responder” |
+| 0.2.0 | Cabeçalho necessário, sem cookies no contexto | O fetch não envia o cabeçalho; a mesma espera persiste depois da aprovação |
+| 0.2.1 | Cookie HttpOnly já estabelecido na navegação | O cookie chega ao proxy; código exibido, aprovação detectada, callback alcançado e troca PKCE com HTTP 200 |
+| 0.2.1 | Cabeçalho necessário, sem cookies no contexto | O cabeçalho chega ao proxy; código exibido, aprovação detectada, callback alcançado e troca PKCE com HTTP 200 |
+
+Os fluxos corrigidos verificaram `state`, `iss` e a obtenção de um token Bearer sem imprimir credenciais. Não houve exceções JavaScript nem violações de CSP capturadas. O ambiente temporário foi encerrado e removido.
+
+A suíte permanente primeiro reproduziu a falha de sessão e a ausência de diagnósticos na versão anterior. Também reproduziu a classificação incorreta de uma queda de rede durante a leitura do JSON antes de corrigir esse caso. Os testes depois confirmaram a recuperação por nova tentativa e o retorno após aprovação.
+
+**Limite da evidência:** o proxy é uma simulação local dos comportamentos de cookie e página intermediária. Não foi feita uma conexão pelo túnel ngrok do usuário nem pela sua conta real do ChatGPT. O teste comprova o defeito e a correção nesses cenários; a instalação local precisa ser atualizada e uma nova tentativa OAuth precisa ser iniciada, conforme [CHATGPT.md](CHATGPT.md).
+
+## Histórico da validação 0.2.0
+
+Os resultados abaixo registram a entrega anterior e permanecem como referência para os recursos que este hotfix não modificou.
 
 Verificação concluída em 22 de outubro de 2026. Ambiente: Linux, Node.js 24.19.0 e npm 11.9.0. Os resultados descrevem testes executados nesta entrega; não presumem acesso ao Windows, ao Roblox Studio ou à conta ChatGPT do usuário.
 
-## Resultado observado
+### Resultado observado
 
 | Verificação | Resultado |
 |---|---|
@@ -16,7 +50,7 @@ Verificação concluída em 22 de outubro de 2026. Ambiente: Linux, Node.js 24.1
 
 As verificações de rede usaram listeners reais em `127.0.0.1`. Os testes OAuth mantêm identificadores canônicos HTTPS e encaminham as requisições para esses listeners locais. Isso verifica o contrato OAuth e a implementação MCP, mas não comprova TLS, alcance de um túnel externo nem conexão com uma conta real do ChatGPT.
 
-## Os 24 testes de OAuth
+### Os 24 testes de OAuth
 
 São **19 testes do provider** e **5 testes HTTP**, cobrindo:
 
@@ -35,13 +69,13 @@ São **19 testes do provider** e **5 testes HTTP**, cobrindo:
 - Estado OAuth persistente privado, rejeição de links/estado malformado e armazenamento de hashes de access/refresh tokens.
 - Limite de registros sem bloqueio permanente por clientes anônimos: descarte do mais antigo nunca autorizado, com preservação de clientes já autorizados e fluxos ativos.
 
-## Os 48 testes de regressão
+### Os 48 testes de regressão
 
 Os testes anteriores continuam passando. Eles cobrem configuração e credenciais separadas; políticas de aprovação; argumentos imutáveis; pausa, cancelamento e idempotência; schemas modernos; alterações reais depois de aprovar; proteção dos caminhos e do estado; leitura UTF-8 com SHA-256; diffs, backups e escrita concorrente; busca limitada; execução de processos com limites; e agregação de MCPs stdio, HTTP e SSE reais.
 
 Os testes da fachada legada com token API continuam passando, incluindo chamada MCP e escrita que só ocorre após aprovação administrativa. Tokens OAuth não passam a dar acesso à API de administração nem às rotas REST legadas.
 
-## Smoke do programa compilado
+### Smoke do programa compilado
 
 `scripts/smoke.mjs` importa o código em `dist`, inicia uma instalação temporária em portas livres e usa o cliente oficial do SDK. O roteiro:
 
@@ -63,7 +97,7 @@ npm run smoke
 
 No PowerShell, use `npm.cmd` se a política local bloquear o lançador `npm.ps1`. O smoke não usa seu estado existente, limpa os temporários e encerra as conexões ao terminar.
 
-## Verificação do painel e da página de consentimento
+### Verificação do painel e da página de consentimento
 
 O navegador executou login no painel, salvou a URL pública, abriu a página de consentimento e comparou o código mostrado nas duas telas. O botão de autorização ficou desabilitado até marcar a confirmação; a atualização automática preservou a confirmação da solicitação revisada e o texto ainda não salvo no campo de URL.
 
@@ -71,7 +105,7 @@ Depois da autorização, o teste capturou localmente o redirect HTTP que seria e
 
 A página de consentimento e a tela de conexão foram inspecionadas em desktop e celular. Não houve overflow horizontal nem erros JavaScript/CSP capturados. Uma junção de palavras no título móvel foi corrigida durante a inspeção visual.
 
-## O que precisa ser validado no ambiente do usuário
+### O que precisa ser validado no ambiente do usuário
 
 - Instalação e operação no Windows ou macOS; esta entrega foi testada em Linux.
 - Encaminhamento HTTPS público de toda a API, incluindo descoberta e endpoints OAuth, ou configuração de um Secure MCP Tunnel compatível.

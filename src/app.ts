@@ -31,7 +31,7 @@ export class Application {
   getTools(): ToolDefinition[] { return [...createLocalTools(() => this.store.config, this.store.stateDir), ...this.hub.tools()]; }
   publicStatus() {
     return {
-      name: 'Ponte MCP', version: '0.2.0', paused: this.jobs.paused,
+      name: 'Ponte MCP', version: '0.2.1', paused: this.jobs.paused,
       projects: this.store.config.projects.map(({ id, name, allowWrite, allowExec }) => ({ id, name, allowWrite, allowExec })),
       servers: this.hub.statuses(), toolCount: this.getTools().length,
       note: 'O chat precisa suportar ferramentas. Cotas e custos dos provedores permanecem válidos.',
@@ -43,7 +43,7 @@ export class Application {
     const tools = this.getTools();
     const counts = (status: string) => jobs.filter(job => job.status === status).length;
     return {
-      name: 'Ponte MCP', version: '0.2.0', paused: this.jobs.paused, startedAt: this.startedAt,
+      name: 'Ponte MCP', version: '0.2.1', paused: this.jobs.paused, startedAt: this.startedAt,
       config, servers: this.hub.statuses(),
       jobs: jobs.slice(0, 50).map(({ result: _result, preview: _preview, arguments: _arguments, ...job }) => ({ ...job, arguments: {} })),
       stats: { tools: tools.length, projects: config.projects.length, pending: counts('pending_approval'), running: counts('running') + counts('queued'), succeeded: counts('succeeded'), failed: counts('failed') },

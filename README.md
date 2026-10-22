@@ -4,7 +4,7 @@
 
 Ponte MCP é um servidor local com painel em português. Ele reúne ferramentas de arquivos, execução de comandos e servidores MCP externos. O chat escolhe uma ferramenta; a ponte valida a solicitação, apresenta alterações para revisão quando necessário e devolve o resultado.
 
-Esta é a versão **0.2.0**, destinada a uso pessoal em um computador. Ela acrescenta OAuth para conectar a fachada MCP ao ChatGPT, com autorização no painel local e conexões revogáveis. O projeto inclui código TypeScript completo, frontend, testes, build e exemplos de integração. Não contém modelo de IA, assinatura, chave de fornecedor ou instalador proprietário.
+Esta é a versão **0.2.1**, destinada a uso pessoal em um computador. Ela oferece OAuth para conectar a fachada MCP ao ChatGPT, com autorização no painel local e conexões revogáveis. Esta atualização corrige a consulta de aprovação por túneis como o ngrok e mostra erros de conexão na página de consentimento. O projeto inclui código TypeScript completo, frontend, testes, build e exemplos de integração. Não contém modelo de IA, assinatura, chave de fornecedor ou instalador proprietário.
 
 ## O que está implementado
 
@@ -60,7 +60,20 @@ O comando `init` preserva uma configuração existente; para mudar as pastas dep
 
 No macOS/Linux, os mesmos comandos funcionam com `npm` no lugar de `npm.cmd`. O Roblox Studio deve rodar em uma plataforma oficialmente suportada por ele.
 
-## Atualizar da versão 0.1.0
+## Atualizar uma instalação existente
+
+Se instalou pelo GitHub, encerre a Ponte com `Ctrl+C` e execute na mesma pasta:
+
+```powershell
+git pull --ff-only
+npm.cmd ci --ignore-scripts
+npm.cmd run build
+npm.cmd start
+```
+
+A versão mostrada no painel deve ser **0.2.1**. Após atualizar, cancele a tentativa de conexão OAuth antiga no ChatGPT e comece outra: os pedidos em andamento não sobrevivem ao reinício do serviço. Mantenha o ngrok encaminhando a porta da API, **4318**, e confira se a URL pública salva no painel corresponde ao endereço atual do túnel. O roteiro específico está em [Conectar ao ChatGPT](docs/CHATGPT.md).
+
+### Instalações por ZIP e atualização da versão 0.1.0
 
 Encerre a ponte antiga com `Ctrl+C` e faça uma cópia privada do diretório de estado antes de substituir os arquivos do programa. Preserve a pasta `.ponte`: ela contém os projetos cadastrados, credenciais e backups. Na mesma pasta de instalação, execute novamente `npm.cmd ci --ignore-scripts` e `npm.cmd run build`, depois inicie o serviço.
 
@@ -142,7 +155,7 @@ O adaptador stdio lê a credencial local e encaminha para o serviço já iniciad
 
 ### ChatGPT com MCP
 
-O caminho HTTP da versão 0.2.0 usa **OAuth com cadastro dinâmico de cliente (DCR)**. Você autoriza a conexão no seu computador; o ChatGPT recebe credenciais OAuth próprias e renováveis.
+O caminho HTTP da versão 0.2.1 usa **OAuth com cadastro dinâmico de cliente (DCR)**. Você autoriza a conexão no seu computador; o ChatGPT recebe credenciais OAuth próprias e renováveis.
 
 1. Inicie a ponte e encaminhe **toda a API da porta 4318** por uma origem HTTPS estável. O encaminhamento precisa atender `/mcp` e os endpoints de descoberta e OAuth. Mantenha a porta 4317 exclusivamente local.
 2. Em **Conectar ChatGPT**, salve a origem HTTPS em **URL pública da API**, por exemplo `https://sua-ponte.exemplo.com`, sem `/mcp`.
