@@ -1,200 +1,466 @@
 # Ponte MCP
 
-**Ferramentas do seu computador e dos seus servidores MCP em uma única conexão para o chat.**
+**Conecte ChatGPT, Claude, Gemini ou Grok às ferramentas do seu computador sem precisar entender MCP por dentro.**
 
-A Ponte é um serviço local com painel em português. Ela permite que clientes compatíveis de ChatGPT, Claude, Gemini e Grok trabalhem em projetos autorizados, executem comandos e usem ferramentas de outros servidores MCP, incluindo Roblox Studio e Playwright. Cada solicitação segue as permissões e a política de aprovação definidas no painel.
+A Ponte MCP roda **no seu próprio computador**. Ela cria um painel local onde você escolhe quais pastas e ferramentas a IA pode usar, acompanha o que está acontecendo e decide quando uma ação precisa de aprovação.
 
-**Versão atual: 0.10.0.** O painel oferece quatro abas de conexão e exporta configurações para Gemini CLI, Grok Build e as APIs Gemini/xAI. Os apps de chat usam o mesmo endpoint MCP com OAuth; os CLIs podem usar stdio local ou HTTP. Os exemplos de API começam somente com uma consulta de estado e permitem habilitar as demais ferramentas explicitamente. [Gemini](docs/GEMINI.md) e [Grok](docs/GROK.md) descrevem instalação, autenticação e limites de cada produto.
+> [!TIP]
+> **Nunca instalou um projeto pelo terminal?** Sem problema. Este README já traz o caminho mais simples. Se quiser explicações ainda mais detalhadas, com “o que você deve ver” em cada etapa, abra o [Guia para iniciantes](docs/GUIA-INICIANTE.md).
 
-A fachada de descoberta, schema e execução JSON da 0.9.0 continua disponível. A Ponte executa o código e as chamadas aos MCPs no seu computador, sem depender de abrir uma sessão Work ou Codex. A disponibilidade das ferramentas e a decisão de delegar no ChatGPT continuam sob controle do cliente. O [guia de dots](docs/DOTS.md) separa a capacidade do servidor da validação na conversa real.
+**Versão atual: 0.10.0**
 
-[Documentação completa](docs/README.md) · [Instalar e atualizar](docs/OPERACAO.md) · [ChatGPT](docs/CHATGPT.md) · [Dots](docs/DOTS.md) · [Claude](docs/CLAUDE.md) · [Gemini](docs/GEMINI.md) · [Grok](docs/GROK.md) · [MCPs pelo chat](docs/MCPS-PELO-CHAT.md) · [Watchers](docs/WATCHERS.md) · [Histórico de versões](CHANGELOG.md)
+## O que a Ponte faz?
 
-## Recursos
+Imagine a Ponte como um intermediário entre o chat e o seu computador:
 
-| Área | O que a Ponte oferece |
+```text
+ChatGPT / Claude / Gemini / Grok
+                │
+                ▼
+            Ponte MCP
+                │
+       ┌────────┼─────────┐
+       ▼        ▼         ▼
+   Arquivos   Terminal   Outros MCPs
+                         Roblox, Playwright…
+```
+
+O chat não recebe acesso irrestrito ao computador. Você cadastra projetos, escolhe permissões e define a política de aprovação no painel.
+
+### Antes de instalar: 5 termos em linguagem simples
+
+| Termo | Significado |
 |---|---|
-| Projetos e arquivos | Pastas autorizadas, leitura UTF-8, busca literal, criação de diretórios, gravação e edição com hash e backup |
-| Comandos | Executável e argumentos separados, limites de tempo e saída, cancelamento e permissão por projeto |
-| Aprovação | Revisar alterações e comandos, revisar todas as execuções ou aprovar automaticamente |
-| Agregação MCP | Clientes stdio, Streamable HTTP e SSE legado; descoberta de schemas e namespace |
-| MCPs pelo chat | Listar conexões, cadastrar e reconectar com justificativa, revisão e uso imediato pelo catálogo dinâmico |
-| Dots e uso direto | Catálogo compacto com 12 ferramentas estáveis, descoberta sob demanda, invocação JSON e leitura restrita por risco |
-| Chats | MCP HTTP com OAuth, MCP local por stdio e API REST com OpenAPI para GPT Actions |
-| Gemini e Grok | Apps com MCP personalizado nas contas elegíveis, perfis CLI JSON/TOML e exemplos de Remote MCP pelas APIs |
-| Watchers | Criar, consultar, listar, aguardar e cancelar; gatilhos `signal` e `job`; estado e resultados persistidos |
-| MCP Events | Eventos `ponte.job.completed` por trabalho e `ponte.watcher.completed` por acompanhamento, com inscrição e callback fornecidos por um cliente compatível |
-| Painel | Projetos, conexões, ferramentas, execuções, acompanhamentos, autorização OAuth e diagnóstico de Events |
+| **Node.js** | Programa necessário para executar a Ponte. Você instala uma vez. |
+| **Terminal / PowerShell** | Janela onde você cola os comandos deste guia. |
+| **MCP** | Padrão que permite a um chat usar ferramentas externas. Você não precisa programar MCP para usar a Ponte. |
+| **Token de administração** | Senha local do painel da Ponte. Não compartilhe esse token. |
+| **Túnel HTTPS** | Endereço público temporário usado quando um chat na internet precisa alcançar a Ponte no seu PC. |
 
-A Ponte não inclui um modelo de IA e não remove cotas do chat ou dos serviços conectados. O cliente precisa oferecer integração de ferramentas; apenas colar uma URL em uma conversa não dá acesso ao computador. O projeto foi feito para uso pessoal em um computador, com um único administrador.
+---
 
-## Começar no Windows
+# Instalação rápida no Windows
 
-Instale **Node.js 22.12 ou superior** pelo [site oficial](https://nodejs.org/). Para usar Git, clone o repositório:
+Este é o caminho recomendado para quem está instalando pela primeira vez.
+
+## 1. Instale o Node.js
+
+A Ponte precisa de **Node.js 22.12.0 ou superior**.
+
+1. Abra <https://nodejs.org/>.
+2. Baixe a versão **LTS**.
+3. Instale usando as opções padrão.
+4. Depois da instalação, feche e abra novamente o terminal.
+
+### Confirme que funcionou
+
+Abra o **PowerShell** ou **Terminal do Windows** e execute:
+
+```powershell
+node --version
+```
+
+Você deve ver algo parecido com:
+
+```text
+v24.x.x
+```
+
+Se aparecer `node não é reconhecido`, reinicie o Windows ou reinstale o Node.js marcando a opção de adicionar ao PATH.
+
+---
+
+## 2. Baixe a Ponte
+
+### Opção mais simples: ZIP
+
+1. No GitHub, clique em **Code → Download ZIP**.
+2. Extraia o ZIP para uma pasta permanente, por exemplo:
+
+```text
+C:\PonteMCP
+```
+
+Evite deixar a instalação dentro do arquivo ZIP ou em uma pasta que você pretende apagar depois.
+
+### Opção para quem já usa Git
 
 ```powershell
 git clone https://github.com/V1yn1/ponte-mcp.git
 cd ponte-mcp
+```
+
+Se usou o ZIP, abra a pasta extraída e continue na próxima etapa.
+
+---
+
+## 3. Abra um terminal dentro da pasta da Ponte
+
+No Explorador de Arquivos:
+
+1. Abra a pasta que contém o arquivo `package.json`.
+2. Clique com o botão direito em uma área vazia.
+3. Escolha **Abrir no Terminal**.
+
+Você também pode clicar na barra de endereço da pasta, digitar:
+
+```text
+powershell
+```
+
+e pressionar Enter.
+
+> [!IMPORTANT]
+> Os comandos seguintes precisam ser executados **na pasta que contém `package.json`**.
+
+---
+
+## 4. Instale as dependências
+
+Cole:
+
+```powershell
 npm.cmd ci --ignore-scripts
+```
+
+Esse comando baixa as bibliotecas que a Ponte usa.
+
+**Resultado esperado:** o comando termina sem erro e volta a mostrar a linha do PowerShell.
+
+Depois compile:
+
+```powershell
 npm.cmd run build
+```
+
+**Resultado esperado:** a compilação termina sem mensagens de erro.
+
+---
+
+## 5. Faça a configuração inicial
+
+Execute:
+
+```powershell
 npm.cmd run setup
+```
+
+Na primeira execução, a Ponte cria uma pasta privada chamada `.ponte` e um projeto de exemplo chamado `principal`.
+
+Você não precisa editar esses arquivos manualmente.
+
+---
+
+## 6. Inicie a Ponte
+
+Execute:
+
+```powershell
 npm.cmd start
 ```
 
-Se baixou um ZIP pelo GitHub, extraia-o, abra o PowerShell na pasta que contém `package.json` e execute a partir de `npm.cmd ci --ignore-scripts`.
+Deixe essa janela aberta enquanto estiver usando a Ponte.
 
-Mantenha o terminal aberto. Acesse [http://127.0.0.1:4317](http://127.0.0.1:4317) e, em outro terminal na mesma pasta, obtenha a credencial do painel:
+Você deve ver algo semelhante a:
+
+```text
+Ponte MCP pronta.
+Painel: http://127.0.0.1:4317
+MCP: http://127.0.0.1:4318/mcp
+```
+
+Agora abra no navegador:
+
+<http://127.0.0.1:4317>
+
+Se a página abrir, **a instalação local está funcionando**.
+
+---
+
+## 7. Entre no painel
+
+O painel pede um token de administração.
+
+Sem fechar a janela onde a Ponte está rodando:
+
+1. Abra **outro terminal** na mesma pasta.
+2. Execute:
 
 ```powershell
 node dist/cli.js token admin
 ```
 
-Cole a credencial somente no login do painel local. O `setup` cria um projeto de demonstração em `workspace`. Adicione sua pasta real em **Projetos**; a execução de comandos precisa ser habilitada explicitamente para cada projeto.
+3. Copie o valor exibido.
+4. Cole no login do painel.
 
-No macOS/Linux, use `npm` no lugar de `npm.cmd`. O preset do Roblox requer Windows ou macOS. Instalação com pasta própria, scripts auxiliares, portas e diagnóstico estão em [Operação](docs/OPERACAO.md).
+> [!WARNING]
+> O token `admin` controla o painel local. Não envie esse token para chats, prints públicos, repositórios ou outras pessoas.
 
-## Escolher a conexão com o chat
+---
 
-| Cliente | Caminho | Guia |
-|---|---|---|
-| ChatGPT com plugin/conector MCP | API pública HTTPS em `/mcp`, OAuth e autorização no painel local | [ChatGPT](docs/CHATGPT.md) |
-| Dot do ChatGPT | Mesma conexão MCP da Ponte; catálogo completo ou compacto e execução no servidor | [Dots](docs/DOTS.md) |
-| Claude com conector remoto | API pública HTTPS em `/mcp`, OAuth e autorização local | [Claude](docs/CLAUDE.md) |
-| Claude Desktop ou outro cliente stdio | Processo local `node dist/cli.js stdio`; serviço da Ponte já iniciado | [Claude](docs/CLAUDE.md) |
-| Claude Code | MCP HTTP ou stdio, conforme o ambiente | [Claude](docs/CLAUDE.md) |
-| Gemini Apps | MCP personalizado com HTTPS e OAuth; elegibilidade regional e de conta descrita no guia | [Gemini](docs/GEMINI.md) |
-| Gemini CLI | JSON com stdio local ou `httpUrl` HTTPS com OAuth | [Gemini](docs/GEMINI.md) |
-| Grok no chat | Conector MCP personalizado com HTTPS e OAuth | [Grok](docs/GROK.md) |
-| Grok Build | TOML nativo com stdio local ou HTTP com OAuth | [Grok](docs/GROK.md) |
-| Gemini Interactions API ou xAI Responses API | Remote MCP em `/mcp` com token API da Ponte; chave do provedor separada | [Gemini](docs/GEMINI.md), [Grok](docs/GROK.md) |
-| GPT personalizado com Actions | OpenAPI da Ponte e autenticação Bearer com token API | [Integrações](docs/INTEGRACOES.md) |
+# Primeiro teste seguro
 
-Para conexões remotas, encaminhe **toda a API da porta 4318** por HTTPS e salve somente a origem em **Conectar IA → URL pública da API**, por exemplo `https://sua-ponte.exemplo.com`. A URL do servidor MCP será `https://sua-ponte.exemplo.com/mcp`. Mantenha o painel da porta **4317** local. O túnel precisa atender também descoberta, OAuth e callbacks de watchers; publicar apenas `/mcp` é insuficiente.
+Antes de conectar qualquer chat, confirme que a Ponte consegue usar as próprias ferramentas.
 
-O token `admin` autentica o painel; o token `api` atende REST/Actions, o adaptador stdio e MCP remoto com Bearer; clientes OAuth recebem suas próprias credenciais. A chave Google/xAI é outra credencial, usada pela aplicação que chama a API do modelo. O token exclusivo de um callback de watcher tem outra finalidade. Veja os contratos em [API e ferramentas](docs/API.md).
+1. No painel, abra **Ferramentas**.
+2. Procure por `local_projects`.
+3. Abra a ferramenta.
+4. Use estes argumentos:
 
-Após conectar, peça ao chat para consultar `bridge_status` e usar `bridge_read` com `tool: "local_projects"` e `argumentsJson: "{}"`. A aprovação OAuth confirma a autorização; uma chamada de leitura confirma o uso efetivo das ferramentas.
+```json
+{}
+```
 
-### Gemini e Grok: escolher o produto e exportar
+5. Clique em **Enviar solicitação**.
 
-Em **Conectar IA**, selecione **ChatGPT**, **Claude**, **Gemini** ou **Grok**. As abas Gemini/Grok mostram o caminho do app, as configurações dos CLIs e os modelos de requisição das APIs. O comando `export-client` gera os mesmos seis perfis sem gravar na configuração do cliente:
+O resultado deve mostrar pelo menos o projeto `principal`.
+
+Se isso funcionou, você já confirmou:
+
+- a Ponte iniciou;
+- o painel está conectado;
+- as ferramentas locais estão funcionando.
+
+## Adicione sua pasta real
+
+Abra **Projetos → Adicionar projeto**.
+
+Exemplo:
+
+| Campo | Exemplo |
+|---|---|
+| Nome | Meu projeto |
+| Identificador | `meu-projeto` |
+| Diretório raiz | `C:\Users\SeuNome\Documents\MeuProjeto` |
+| Permitir escrita | Marque somente se quiser permitir alterações |
+| Permitir comandos | Deixe desligado até realmente precisar |
+
+A Ponte não precisa ter acesso ao seu disco inteiro. Prefira adicionar somente as pastas necessárias.
+
+---
+
+# Conectar ao ChatGPT
+
+> [!NOTE]
+> A instalação local já funciona sem túnel. O túnel só é necessário quando um serviço na internet, como o ChatGPT web, precisa alcançar a Ponte no seu computador.
+
+O ChatGPT precisa receber uma URL **HTTPS pública** que leve até a porta **4318** da Ponte.
+
+A documentação oficial da OpenAI recomenda expor o servidor MCP por uma URL pública durante o desenvolvimento. Um exemplo simples é o ngrok.
+
+## 1. Crie um túnel para a porta 4318
+
+Instale e configure o ngrok seguindo <https://ngrok.com/docs/getting-started/>.
+
+Depois execute em um terminal:
 
 ```powershell
-node dist/cli.js export-client gemini-cli-stdio --output gemini-ponte.json
-node dist/cli.js export-client grok-build-stdio --output grok-ponte.toml
+ngrok http 4318
 ```
 
-Os outros perfis são `gemini-cli-http`, `grok-build-http`, `gemini-api` e `grok-api`. Perfis remotos exigem a origem pública configurada ou `--url https://sua-ponte.exemplo.com`; instalações com estado personalizado devem incluir `--state-dir` apontando para esse estado. O exportador recusa sobrescrever um arquivo existente. Mescle a entrada gerada preservando as demais configurações. O [guia de operação](docs/OPERACAO.md#exportar-configurações-para-gemini-e-grok) detalha formatos, prazos e exemplos.
-
-Os exemplos [Gemini API](examples/gemini-api.mjs) e [Grok API](examples/grok-api.mjs) leem credenciais do ambiente e, por padrão, permitem somente `bridge_status`. A opção `--tools` disponibiliza as 12 ferramentas centrais para um pedido autorizado. As APIs têm autenticação e cobrança próprias; a Ponte não fornece essas chaves.
-
-**Gemini Apps tem uma limitação de disponibilidade:** na documentação consultada em 22/10/2026, apps personalizados exigem usuário com 18 anos ou mais nos EUA, conta pessoal, interface em inglês e Keep Activity ativado; não estão disponíveis para contas de trabalho/escola. O [guia oficial](https://support.google.com/gemini/answer/17209137?hl=en-12) não confirma o recurso no Brasil. Gemini CLI e API têm caminhos próprios descritos no guia. As novas integrações foram preparadas a partir dos contratos oficiais e de testes controlados; **não houve login nem execução em contas reais Gemini/Grok** nesta entrega.
-
-## Usar as ferramentas diretamente no dot
-
-A Ponte executa as operações no computador onde o serviço está rodando. O dot envia chamadas MCP: não precisa de terminal próprio para ler/editar arquivos, executar um programa autorizado, usar Playwright ou chamar o Roblox Studio.
-
-1. Atualize a Ponte, reinicie o serviço e confirme **0.10.0** em `bridge_status`.
-2. Em **Conectar IA → Catálogo MCP**, escolha **Compacto (dots)** se quiser apresentar somente a fachada estável. O padrão continua **Completo** para instalações existentes; as novas chamadas funcionam nos dois perfis.
-3. Use **Refresh/Scan Tools** na conexão do ChatGPT e abra uma conversa nova com o dot.
-4. Peça a descoberta por `bridge_list_tools` com `includeSchemas: false`, seguida de `bridge_tool_schema` para o nome escolhido. Use `bridge_read` quando o risco retornado for `read`; use `bridge_invoke` nos demais casos. Ambos recebem `tool`, `argumentsJson` e `idempotencyKey` opcional.
-5. Se houver `jobId` pendente, continue com `bridge_job` usando o mesmo ID. Confirme o resultado antes de apresentar a tarefa como concluída.
-
-O painel inclui uma instrução copiável para esse fluxo. O modo compacto mantém as ferramentas locais, watchers, gerenciamento e upstreams no catálogo dinâmico, inclusive servidores adicionados durante a conversa. Os nomes diretos já conhecidos também continuam chamáveis; o perfil controla a descoberta, não a autorização.
-
-A classificação de leitura é conferida no servidor. Um upstream cadastrado pelo chat continua com risco `execute`, mesmo que anuncie `readOnlyHint: true`. A aprovação automática não amplia `allowWrite`, `allowExec` ou o acesso concedido pelo ChatGPT. Veja [Dots](docs/DOTS.md) para exemplos e o roteiro de validação na própria conversa.
-
-## Acompanhar uma tarefa externa
-
-Para um fluxo como “enviar uma demanda ao Claude e aguardar a conclusão”, configure um watcher **antes de delegar**:
-
-1. Chame `bridge_watch_create` com `trigger.type: "signal"`, `source` e um `runId` único. Se a criação exigir aprovação, acompanhe seu `jobId` até obter o resultado.
-2. Configure o executor com a URL e a credencial exclusivas retornadas em `callback`. O executor deve informar `succeeded`, `failed` ou `needs_input` quando tiver verificado o resultado real.
-3. Delegue a demanda uma única vez e chame `bridge_watch_wait` com o `watcherId` criado e `waitMs: 25000`.
-4. Se retornar `waiting`, continue o turno ativo com novas esperas pelo mesmo ID até um estado terminal ou um limite concreto do cliente. Se a comunicação falhar, consulte primeiro `bridge_watch_get` com o mesmo ID; depois de reconectar, `bridge_watch_list` também ajuda a localizá-lo.
-5. Informe o resultado ao usuário. `needs_input` é terminal: apresente a intervenção necessária e aguarde a decisão. Uma nova etapa explicitamente autorizada recebe outro watcher.
-
-Exemplo de argumentos para criar o acompanhamento:
-
-```json
-{
-  "name": "Aguardar tarefa delegada ao Claude",
-  "trigger": {
-    "type": "signal",
-    "source": "claude-code",
-    "runId": "demanda-2026-10-22-001"
-  },
-  "timeoutMs": 3600000,
-  "idempotencyKey": "watch-demanda-2026-10-22-001"
-}
-```
-
-O produtor [ponte-watch-notify.mjs](scripts/ponte-watch-notify.mjs) envia o resultado a partir do executor. O guia [Watchers](docs/WATCHERS.md) explica o preparo das credenciais, as chamadas, os estados finais, as tentativas de entrega e um fluxo com Claude remoto.
-
-| Mecanismo | O que acompanha | Limite da continuidade |
-|---|---|---|
-| `bridge_job` | Uma execução da Ponte | Espera de até 25 s por chamada, durante o turno ativo |
-| Watcher `signal` | O resultado explícito informado por um executor externo | Persiste após desconexão/reinício; espera de 25 s por padrão, máximo de 45 s por chamada |
-| Watcher `job` | O estado final de uma execução da Ponte | Não atribui ao trabalho um significado maior que a própria execução |
-| MCP Events | O estado terminal de um job ou watcher com inscrição ativa do cliente | Pode avisar um cliente compatível por webhook; depende da inscrição e do processamento pelo cliente |
-
-**Watchers pertencem à Ponte e não usam o agendador do cliente.** `monitorDurable: true` e `canWakeClosedConversation: false` permanecem no contrato desta versão. O fim de `tmux send-keys`, do comando que enviou a demanda ou de uma resposta do Claude não comprova a conclusão da tarefa. Cancelar o watcher encerra somente o acompanhamento, sem interromper o executor. `expired` significa que o prazo do acompanhamento acabou; não comprova falha da tarefa externa.
-
-`waitMs` vale para uma chamada. O prazo total usa `timeoutMs` na criação, com padrão de uma hora e máximo de sete dias, e fica registrado em `expiresAt`; repetir uma espera não o renova. Valores acima de 45000 ms são rejeitados com orientação para consultar o mesmo ID, sem reduzir silenciosamente o valor. Um timeout de comunicação também não autoriza recriar o watcher ou reenviar a demanda.
-
-MCP Events é uma integração opcional de entrega ao cliente. Ela usa `events/subscribe`, um método do protocolo, com callback e segredo fornecidos pelo cliente. No ChatGPT, esse fluxo usa o mecanismo do host de tarefas acionadas por eventos; o watcher e seu prazo continuam na Ponte, sem agendamento por horário ou polling do chat. Para uma tarefa externa, a inscrição usa `ponte.watcher.completed` e `{watcherId}`; depois do evento, o cliente consulta `bridge_watch_get`. Criar o watcher não cria essa inscrição. HTTP 2xx confirma recebimento do aviso, sem provar que o chat respondeu. Veja [MCP Events](docs/MCP-EVENTS.md).
-
-## Política de aprovação
-
-Em **Visão geral → Você no controle → Política de aprovação**, escolha:
-
-| Opção | Valor | Comportamento dos trabalhos |
-|---|---|---|
-| Aprovar alterações e comandos | `mutations` | Padrão; leitura pode executar, escrita e execução aguardam revisão |
-| Aprovar todas as solicitações | `all` | Todos os trabalhos, inclusive leituras, aguardam revisão |
-| Aprovar automaticamente todas | `automatic` | Libera trabalhos pendentes válidos e os futuros, preservando as permissões e validações |
-
-A política inclui ferramentas locais, ferramentas upstream, `bridge_watch_create` e as três ferramentas `bridge_mcp_*`. `bridge_mcp_list` é uma leitura submetida à fila; cadastro e reconexão são execuções. Consultas de estado/catálogo, acompanhamento de trabalhos e os controles `bridge_watch_get/list/wait/cancel` não criam trabalhos e não passam por essa fila de aprovação. A criação de uma conexão OAuth continua exigindo autorização local.
-
-A pausa impede novas submissões e o início de trabalhos na fila. Ela não interrompe automaticamente o que já está executando nem apaga watchers. Consulte [Segurança](docs/SEGURANCA.md) para o alcance das permissões.
-
-## Primeiro teste pelo painel
-
-Em **Ferramentas**, selecione `local_write_file` e envie:
-
-```json
-{
-  "projectId": "principal",
-  "path": "teste-ponte.txt",
-  "content": "Arquivo criado pela Ponte MCP.\n",
-  "expectedHash": null
-}
-```
-
-Na política padrão, confira o diff em **Execuções** e aprove. Depois de `succeeded`, leia o arquivo com `local_read_file`. `expectedHash: null` cria somente um arquivo inexistente. Para editar um arquivo existente, use o `sha256` retornado pela leitura; se o conteúdo tiver mudado, a Ponte recusa a gravação.
-
-## Conectar outros MCPs
-
-Você pode cadastrar pelo painel **Conexões MCP** ou pedir ao chat:
+O ngrok mostrará um endereço parecido com:
 
 ```text
-Adicione o Playwright MCP à minha Ponte para testar a página deste projeto.
-Confira o sistema, se já existe uma conexão e a configuração oficial.
+https://abcd-1234.ngrok-free.app
 ```
 
-O chat usa `bridge_mcp_list`, solicita `bridge_mcp_add` com configuração e motivo, acompanha o job e confirma o estado real da conexão. Se o modo for `mutations` ou `all`, revise em **Execuções**; em `automatic`, a solicitação válida executa sem nova aprovação local. O cadastro fica no painel e não substitui uma conexão existente com configuração diferente.
+Mantenha esse terminal aberto.
 
-Depois de conectar, `bridge_list_tools` com `source: "mcp:playwright"` devolve os nomes e schemas atuais. O chat usa `bridge_call` para chamar essas ferramentas na mesma conversa, mesmo quando o cliente mantém o catálogo inicial em cache. Uma falha pode deixar o cadastro salvo com estado de erro; `bridge_mcp_reconnect` permite tentar novamente após corrigir a causa. O contrato completo está em [MCPs pelo chat](docs/MCPS-PELO-CHAT.md).
+## 2. Salve essa URL na Ponte
 
-- [Roblox Studio](docs/ROBLOX.md): habilitar o servidor integrado, adicionar o preset e selecionar a sessão correta.
-- [Playwright MCP](docs/PLAYWRIGHT.md): cadastrar pelo chat ou pelo painel, configurar o processo local e testar a conexão.
-- [Outros upstreams](docs/INTEGRACOES.md): stdio, HTTP e SSE legado, variáveis de ambiente, filtros e tempos limite.
+No painel da Ponte:
 
-Processos MCP e comandos executam com os privilégios da conta local. As permissões das ferramentas de arquivos da Ponte não transformam esses processos em sandboxes do sistema operacional.
+1. Abra **Conectar IA**.
+2. Em **URL pública da API**, cole somente a origem:
 
-## Atualizar a instalação
+```text
+https://abcd-1234.ngrok-free.app
+```
 
-Encerre com `Ctrl+C`, faça uma cópia privada do diretório de estado e, na instalação clonada pelo Git, execute:
+3. **Não** coloque `/mcp` nesse campo.
+4. Clique em **Salvar**.
+
+A Ponte mostrará a URL MCP completa:
+
+```text
+https://abcd-1234.ngrok-free.app/mcp
+```
+
+## 3. Adicione a Ponte ao ChatGPT
+
+No ChatGPT web:
+
+1. Abra **Plugins**.
+2. Clique em **+**.
+3. Escolha **Add custom MCP server**.
+4. Nome: `Ponte`.
+5. Server URL: use a URL HTTPS terminada em `/mcp`.
+6. Em autenticação, escolha **OAuth**.
+7. Não invente Client ID ou Client Secret; a Ponte oferece registro automático.
+8. Revise o aviso de segurança e crie o plugin.
+
+A documentação oficial da OpenAI para MCP personalizado está em:
+<https://developers.openai.com/api/docs/guides/custom-mcp-server>
+
+## 4. Autorize no computador
+
+Durante o OAuth, aparecerá uma página com um código.
+
+No painel local da Ponte:
+
+1. Abra **Conectar IA**.
+2. Entre em **Solicitações de conexão**.
+3. Confirme que o código é o mesmo.
+4. Confira o cliente e a URL de retorno.
+5. Autorize.
+
+Depois volte ao ChatGPT para concluir a conexão.
+
+## 5. Teste a conexão
+
+No ChatGPT, selecione a Ponte com `@` e peça:
+
+```text
+Use a Ponte e consulte bridge_status.
+```
+
+Depois teste:
+
+```text
+Use a Ponte para listar meus projetos locais.
+```
+
+Se ambos funcionarem, o caminho completo está pronto:
+
+```text
+ChatGPT → HTTPS → Ponte → ferramentas do computador
+```
+
+---
+
+# Qual política de aprovação escolher?
+
+No painel, abra **Visão geral → Você no controle**.
+
+Para começar, use:
+
+**Aprovar alterações e comandos**
+
+Nesse modo:
+
+- leituras simples podem acontecer diretamente;
+- escrita de arquivos e execução de comandos pedem aprovação;
+- você consegue revisar cada ação antes de liberar.
+
+Quando já conhecer bem a instalação, você pode escolher outros modos.
+
+---
+
+# Conectar Roblox Studio, Playwright e outros MCPs
+
+Depois da instalação básica funcionar, você pode ampliar a Ponte.
+
+| Quero conectar | Guia |
+|---|---|
+| Roblox Studio | [Roblox Studio](docs/ROBLOX.md) |
+| Navegador com Playwright | [Playwright MCP](docs/PLAYWRIGHT.md) |
+| Outro servidor MCP | [MCPs pelo chat](docs/MCPS-PELO-CHAT.md) |
+| ChatGPT | [ChatGPT](docs/CHATGPT.md) |
+| Claude | [Claude](docs/CLAUDE.md) |
+| Gemini | [Gemini](docs/GEMINI.md) |
+| Grok | [Grok](docs/GROK.md) |
+| Dots | [Dots](docs/DOTS.md) |
+
+Você também pode pedir ao próprio chat para cadastrar um MCP quando a Ponte já estiver conectada.
+
+---
+
+# Problemas comuns
+
+## `node não é reconhecido`
+
+O Node.js não está instalado corretamente ou o terminal ainda não recebeu o PATH novo.
+
+Tente:
+
+1. fechar todos os terminais;
+2. abrir novamente;
+3. executar `node --version`;
+4. se continuar falhando, reinstalar o Node.js LTS.
+
+## `npm.ps1 cannot be loaded`
+
+Use os comandos deste guia com `npm.cmd`, por exemplo:
+
+```powershell
+npm.cmd run build
+```
+
+Não é necessário mudar a política de execução do PowerShell.
+
+## O painel não abre
+
+Confirme se a janela com:
+
+```powershell
+npm.cmd start
+```
+
+continua aberta.
+
+Depois tente novamente:
+
+<http://127.0.0.1:4317>
+
+## A porta já está em uso
+
+Outro programa — ou outra instância da Ponte — pode estar usando a porta.
+
+Feche a instância antiga antes de iniciar outra. Não execute duas Pontes usando o mesmo diretório `.ponte`.
+
+## O ChatGPT não consegue conectar
+
+Confirme, nesta ordem:
+
+1. a Ponte continua aberta;
+2. o ngrok continua aberto;
+3. o túnel aponta para a porta **4318**;
+4. a URL salva em **Conectar IA** é a origem HTTPS atual;
+5. no ChatGPT você usou a URL com `/mcp`;
+6. se a URL do ngrok mudou, salve a nova origem e faça uma nova autorização.
+
+## Não sei se o erro é da Ponte ou do ChatGPT
+
+Faça o teste local primeiro:
+
+- painel abre em `127.0.0.1:4317`;
+- `local_projects` funciona no painel.
+
+Se os dois funcionam, a instalação local está boa e o problema provavelmente está no túnel ou na conexão do cliente.
+
+---
+
+# Como iniciar novamente depois de reiniciar o PC
+
+Entre na pasta da Ponte e execute:
+
+```powershell
+npm.cmd start
+```
+
+Você **não** precisa repetir `npm ci`, `build` ou `setup` toda vez.
+
+Só repita esses passos quando estiver instalando ou atualizando a versão.
+
+---
+
+# Como atualizar
+
+Se instalou por Git:
+
+1. Pare a Ponte com `Ctrl+C`.
+2. Faça uma cópia privada da pasta `.ponte`.
+3. Execute:
 
 ```powershell
 git pull --ff-only
@@ -203,11 +469,50 @@ npm.cmd run build
 npm.cmd start
 ```
 
-Preserve a pasta `.ponte` inteira, incluindo `secrets.json`, `oauth.json`, `events.json`, `watchers.json` e backups. O watcher usa a chave da instalação; apagar ou recriar as credenciais isoladamente pode impedir a leitura do estado existente. Não execute duas instâncias sobre o mesmo diretório.
+Se instalou por ZIP, leia [Atualizar sem perder a configuração](docs/OPERACAO.md#atualizar-sem-perder-a-configuração).
 
-Confira **0.10.0** com `bridge_status` ou `doctor` e atualize o catálogo no cliente. Verifique `bridge_tool_schema`, `bridge_read` e `bridge_invoke`; `bridge_watch_wait` deve anunciar máximo de **45000 ms**, e Events deve listar **`ponte.watcher.completed`** junto de `ponte.job.completed`. As três ferramentas `bridge_mcp_*` e as cinco `bridge_watch_*` continuam disponíveis. Se o cliente mantiver o catálogo de ferramentas em cache, use `bridge_list_tools` e `bridge_call`; isso não substitui a atualização da descoberta de Events. Para instalações por ZIP, diretório personalizado, mudança de túnel e recuperação, siga [Operação](docs/OPERACAO.md).
+> [!IMPORTANT]
+> Não apague a pasta `.ponte` durante uma atualização. Ela contém sua configuração, autorizações e credenciais locais.
 
-## Desenvolvimento e evidência
+---
+
+# Documentação por nível
+
+### Estou começando
+
+- [Guia para iniciantes](docs/GUIA-INICIANTE.md)
+- [Índice da documentação](docs/README.md)
+
+### Já instalei e quero configurar
+
+- [Operação e configuração](docs/OPERACAO.md)
+- [ChatGPT](docs/CHATGPT.md)
+- [Claude](docs/CLAUDE.md)
+- [Gemini](docs/GEMINI.md)
+- [Grok](docs/GROK.md)
+
+### Quero usar recursos avançados
+
+- [Dots](docs/DOTS.md)
+- [MCPs pelo chat](docs/MCPS-PELO-CHAT.md)
+- [Watchers](docs/WATCHERS.md)
+- [MCP Events](docs/MCP-EVENTS.md)
+- [API e ferramentas](docs/API.md)
+- [Segurança](docs/SEGURANCA.md)
+- [Arquitetura](docs/ARQUITETURA.md)
+- [Validação](docs/VALIDACAO.md)
+
+---
+
+# Segurança em uma frase
+
+**A Ponte executa ações no seu computador, então conecte somente clientes e MCPs em que você confia e habilite escrita/comandos apenas nas pastas necessárias.**
+
+A Ponte foi feita para uso pessoal, com um único administrador. Ela não é uma sandbox de sistema operacional e não remove limites, custos ou regras dos provedores de IA.
+
+## Para desenvolver a Ponte
+
+Se você está contribuindo com o projeto, e não apenas instalando:
 
 ```sh
 npm ci --ignore-scripts
@@ -216,22 +521,4 @@ npm run smoke
 npm run dev
 ```
 
-`verify` confere tipos, executa testes e compila. `smoke` usa o programa compilado, estado temporário e listeners locais para verificar OAuth, MCP, aprovação, cadastro de upstream pelo chat, catálogo dinâmico, Events e watcher com sinal autenticado.
-
-A evidência de cada versão está em [Validação](docs/VALIDACAO.md), separando testes controlados, observações em clientes reais e limites de cada etapa. Esses testes não validam todos os clientes e sistemas operacionais: cadastro de upstream, dependências externas e watchers precisam ser conferidos com o cliente e o executor da instalação.
-
-| Diretório | Responsabilidade |
-|---|---|
-| `src/core/`, `src/tools/` | Configuração, auditoria, trabalhos e ferramentas locais |
-| `src/auth/`, `src/mcp/` | OAuth, fachada MCP e clientes upstream |
-| `src/clients/` | Perfis exportáveis de Gemini/Grok e construção das requisições de exemplo das APIs |
-| `src/watchers/`, `src/events/` | Acompanhamentos nativos e entrega de eventos ao cliente |
-| `public/` | Painel e consentimento OAuth |
-| `tests/`, `scripts/` | Testes, smoke, instalação e produtor de sinais |
-| `examples/`, `docs/` | Configurações, instruções e guias |
-
-## Escopo atual
-
-O proxy agrega **ferramentas** MCP. Não encaminha resources, prompts, sampling, elicitation ou login OAuth interativo de upstreams. A reconexão de upstreams é solicitada pelo painel ou pelo chat; não há um ciclo automático de tentativas em segundo plano. Não há controle genérico de desktop, serviço Windows instalado ou processo autônomo de planejamento.
-
-Projetos e políticas são compartilhados pelo administrador. A posse de trabalhos, watchers e assinaturas é verificada por identidade de conexão, mas isso não cria isolamento completo entre usuários. Os limites, estados persistidos e fronteiras de confiança estão em [Arquitetura](docs/ARQUITETURA.md) e [Segurança](docs/SEGURANCA.md).
+O histórico de alterações está em [CHANGELOG.md](CHANGELOG.md).

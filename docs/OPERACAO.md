@@ -1,5 +1,8 @@
 # Operação e configuração — Ponte MCP 0.10.0
 
+> [!TIP]
+> **Primeira vez usando a Ponte?** Comece pelo [Guia para iniciantes](GUIA-INICIANTE.md). Ele explica o que é Node.js, como abrir o terminal, instalar a Ponte no Windows, fazer o primeiro teste e só depois conectar um chat. Este documento é a referência operacional mais completa para quem já concluiu a instalação inicial.
+
 [Índice da documentação](README.md) · [Integrações](INTEGRACOES.md) · [Dots](DOTS.md) · [Segurança](SEGURANCA.md)
 
 ## Pré-requisitos e instalação
