@@ -15,6 +15,7 @@
     connections: { title: 'Conexões MCP', eyebrow: 'FERRAMENTAS, CONECTADAS', description: 'Seus servidores MCP, reunidos em uma única ponte.' },
     tools: { title: 'Ferramentas', eyebrow: 'EXPLORE E EXPERIMENTE', description: 'Inspecione parâmetros e envie solicitações com contexto.' },
     jobs: { title: 'Execuções', eyebrow: 'CADA AÇÃO, VISÍVEL', description: 'Revise solicitações e acompanhe o resultado de cada execução.' },
+    watchers: { title: 'Acompanhamentos', eyebrow: 'AGUARDE A CONCLUSÃO REAL', description: 'Acompanhe sinais de tarefas externas e estados finais de execuções da Ponte.' },
     connect: { title: 'Conectar IA', eyebrow: 'SEU CHAT, SUAS FERRAMENTAS', description: 'Conecte ChatGPT ou Claude, revise autorizações e controle o acesso ao seu ambiente.' }
   };
   const statuses = {
@@ -33,6 +34,15 @@
     disabled: ['Desativado', 'neutral'],
     error: ['Erro de conexão', 'danger']
   };
+  const watcherStatuses = {
+    waiting: ['Aguardando', 'blue', 'clock'],
+    succeeded: ['Concluído', 'success', 'check'],
+    failed: ['Falhou', 'danger', 'close'],
+    needs_input: ['Precisa de resposta', 'warning', 'chat'],
+    cancelled: ['Cancelado', 'neutral', 'close'],
+    expired: ['Expirado', 'neutral', 'clock'],
+    interrupted: ['Interrompido', 'warning', 'info']
+  };
   const risks = {
     read: ['Leitura', 'neutral', 'folder'],
     write: ['Escrita', 'warning', 'edit'],
@@ -42,6 +52,7 @@
     token: '', state: null, tools: [], view: 'overview', offline: false,
     refreshing: false, refreshQueued: false, refreshToolsQueued: false, toolsLoading: false, selectedTool: null, jobId: null,
     jobLoading: false, job: null, jobActions: new Set(), publicUrlDirty: false,
+    watcherId: null, watcher: null, watcherLoading: false, watcherRevision: 0, watcherActions: new Set(),
     approvalModeSaving: false, approvalModeRevision: 0,
     serverEditing: false, confirmResolve: null, navOpen: false, lastSync: null,
     pendingToken: '', sessionGeneration: 0, serverOriginalUrl: '',
@@ -60,6 +71,20 @@
   function riskBadge(risk) {
     const [label, variant, iconName] = risks[risk] || ['Revisão necessária', 'warning', 'shield'];
     return badge(label, variant, iconName);
+  }
+
+  function watcherBadge(status) {
+    return badge(...(Object.hasOwn(watcherStatuses, status) ? watcherStatuses[status] : ['Estado desconhecido', 'neutral', 'info']));
+  }
+
+  function watcherDate(value) {
+    return typeof value === 'string' || typeof value === 'number' ? dateLabel(value, true) : '—';
+  }
+
+  function watcherSource(trigger) {
+    if (trigger?.type === 'signal') return trigger.source || 'Fonte não informada';
+    if (trigger?.type === 'job') return `Execução ${trigger.jobId || 'não informada'}`;
+    return 'Gatilho desconhecido';
   }
 
   function dateLabel(value, full = false) {
@@ -164,6 +189,10 @@
     app.selectedTool = null;
     app.jobId = null;
     app.job = null;
+    app.watcherId = null;
+    app.watcher = null;
+    app.watcherLoading = false;
+    app.watcherRevision += 1;
     app.oauthRequestId = null;
     app.oauthRequestSnapshot = '';
     app.publicUrlDirty = false;
@@ -177,6 +206,8 @@
     $('#tool-risk-filter').value = 'all';
     $('#job-search').value = '';
     $('#job-status-filter').value = 'all';
+    $('#watcher-search').value = '';
+    $('#watcher-status-filter').value = 'all';
     replaceMarkup($('#tool-detail'), '<div class="empty-state tall"><span class="empty-icon">' + icon('tool') + '</span><h3>Explore suas ferramentas.</h3><p>Selecione uma ferramenta para ver os parâmetros e enviar uma solicitação.</p></div>');
     rememberToken('');
     $$('dialog[open]').forEach(dialog => dialog.close());
@@ -257,6 +288,10 @@
           await refreshJob(true);
         }
       }
+      if ($('#watcher-dialog').open && app.watcherId) {
+        const latest = state.watchers?.watchers?.find(watcher => watcher.watcherId === app.watcherId);
+        if (!app.watcher || !latest || app.watcher.status === 'waiting' || app.watcher.updatedAt !== latest.updatedAt) await refreshWatcher(true);
+      }
     } catch (error) {
       if (token !== app.token || generation !== app.sessionGeneration) return;
       if (error.status === 401 || error.status === 403) handleError(error);
@@ -323,7 +358,7 @@
     const state = app.state;
     if (!state) return;
     updateConnectionStatus();
-    $('#sidebar-version').textContent = `Ponte MCP · v${state.version || '0.5.0'}`;
+    $('#sidebar-version').textContent = `Ponte MCP · v${state.version || '0.6.0'}`;
     $('#nav-project-count').textContent = number(state.config?.projects?.length);
     $('#nav-pending-count').textContent = number(state.stats?.pending);
     $('#nav-pending-count').hidden = !state.stats?.pending;
@@ -333,6 +368,7 @@
     renderProjects();
     renderServers();
     renderJobs();
+    renderWatchers();
     renderConnect();
     renderToolRequestNotice();
   }
@@ -503,6 +539,118 @@
     $('#jobs-count').textContent = `${number(jobs.length)} ${jobs.length === 1 ? 'solicitação' : 'solicitações'}`;
     replaceMarkup($('#jobs-list'), jobs.length ? `<table class="jobs-table"><thead><tr><th scope="col">Ferramenta / ID</th><th scope="col">Origem</th><th scope="col">Status</th><th scope="col">Permissão</th><th scope="col">Criada em</th><th scope="col"><span class="sr-only">Detalhes</span></th></tr></thead><tbody>${jobs.map(job => `<tr><td class="tool-cell"><button class="job-link" data-action="job-detail" data-id="${escape(job.id)}">${escape(job.tool)}</button><span class="job-id">${escape(String(job.id).slice(0, 16))}</span></td><td>${escape(job.source)}</td><td>${statusBadge(job.status)}</td><td>${riskBadge(job.risk)}</td><td><time datetime="${escape(job.createdAt)}">${escape(dateLabel(job.createdAt))}</time></td><td><button class="icon-button" data-action="job-detail" data-id="${escape(job.id)}" aria-label="Abrir execução ${escape(job.id)}">${icon('arrow')}</button></td></tr>`).join('')}</tbody></table>`
       : emptyState('activity', query || status !== 'all' ? 'Nenhuma execução encontrada.' : 'Seu histórico começa aqui.', query || status !== 'all' ? 'Altere os filtros para encontrar uma solicitação.' : 'As chamadas de ferramentas aparecerão aqui, com seus argumentos, status e resultados.', !query && status === 'all' ? '<a class="button button-primary" href="#tools">Explorar ferramentas' + icon('arrow') + '</a>' : ''));
+  }
+
+  function renderWatchers() {
+    const snapshot = app.state?.watchers;
+    const watchers = Array.isArray(snapshot?.watchers) ? snapshot.watchers : [];
+    const stats = snapshot?.stats || {};
+    const waiting = stats.waiting ?? watchers.filter(watcher => watcher.status === 'waiting').length;
+    $('#nav-watcher-count').textContent = number(waiting);
+    $('#nav-watcher-count').hidden = !waiting;
+    const metrics = Object.entries(watcherStatuses).map(([status, [label, , iconName]]) => `<div class="watcher-stat"><span>${icon(iconName)}${escape(label)}</span><strong>${number(stats[status] ?? watchers.filter(watcher => watcher.status === status).length)}</strong></div>`);
+    metrics.push(`<div class="watcher-stat watcher-stat-waiters"><span>${icon('plug')}Chamadas em espera</span><strong>${number(snapshot?.activeWaiters)}</strong><small>Chamadas de espera ativas; não indica chats conectados.</small></div>`);
+    replaceMarkup($('#watcher-stats'), metrics.join(''));
+    const serviceError = $('#watcher-service-error');
+    serviceError.hidden = !snapshot?.error && Boolean(snapshot);
+    serviceError.textContent = snapshot?.error ? `Acompanhamentos indisponíveis: ${snapshot.error}` : !snapshot ? 'O serviço de acompanhamentos não está disponível nesta versão da Ponte.' : '';
+    const query = $('#watcher-search').value.trim().toLocaleLowerCase('pt-BR');
+    const status = $('#watcher-status-filter').value;
+    const filtered = watchers.filter(watcher => (status === 'all' || watcher.status === status)
+      && [watcher.name, watcher.watcherId, watcherSource(watcher.trigger), watcher.trigger?.runId].some(value => String(value || '').toLocaleLowerCase('pt-BR').includes(query)))
+      .sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
+    $('#watchers-count').textContent = `${number(filtered.length)} ${filtered.length === 1 ? 'acompanhamento' : 'acompanhamentos'}`;
+    replaceMarkup($('#watchers-list'), filtered.length ? `<table class="jobs-table watchers-table"><thead><tr><th scope="col">Nome / ID</th><th scope="col">Gatilho / fonte</th><th scope="col">Status</th><th scope="col">Prazo local</th><th scope="col"><span class="sr-only">Detalhes</span></th></tr></thead><tbody>${filtered.map(watcher => `<tr><td class="tool-cell"><button class="job-link" data-action="watcher-detail" data-id="${escape(watcher.watcherId)}">${escape(watcher.name || 'Sem nome')}</button><span class="job-id">${escape(watcher.watcherId)}</span></td><td><span class="watcher-trigger-label">${escape(watcher.trigger?.type === 'signal' ? 'Sinal externo' : watcher.trigger?.type === 'job' ? 'Estado final de execução' : 'Desconhecido')}</span><span class="watcher-source">${escape(watcherSource(watcher.trigger))}</span></td><td>${watcherBadge(watcher.status)}</td><td>${escape(watcherDate(watcher.expiresAt))}</td><td><button class="icon-button" data-action="watcher-detail" data-id="${escape(watcher.watcherId)}" aria-label="Abrir acompanhamento ${escape(watcher.name || watcher.watcherId)}">${icon('arrow')}</button></td></tr>`).join('')}</tbody></table>`
+      : query || status !== 'all' ? emptyState('search', 'Nenhum acompanhamento encontrado.', 'Altere os filtros para encontrar um acompanhamento.')
+        : emptyState('clock', 'Acompanhe uma tarefa até o resultado.', 'No chat, use bridge_watch_create antes de delegar e bridge_watch_wait para aguardar. O gatilho signal recebe um sinal explícito do executor; o gatilho job acompanha o estado final de uma execução da Ponte. O término do envio de um comando não comprova a conclusão da tarefa externa.'));
+  }
+
+  async function openWatcher(id) {
+    if (!id) return;
+    app.watcherId = id;
+    app.watcher = null;
+    app.watcherLoading = false;
+    app.watcherRevision += 1;
+    $('#watcher-dialog-title').textContent = 'Carregando acompanhamento…';
+    replaceMarkup($('#watcher-detail-body'), emptyState('clock', 'Buscando acompanhamento', 'Carregando o gatilho e o resultado.'));
+    replaceMarkup($('#watcher-detail-actions'), '<button class="button button-secondary" data-close-dialog>Fechar</button>');
+    if (!$('#watcher-dialog').open) $('#watcher-dialog').showModal();
+    await refreshWatcher(false);
+  }
+
+  async function refreshWatcher(silent) {
+    if (!app.watcherId || app.watcherLoading || !app.token) return;
+    const id = app.watcherId;
+    const revision = app.watcherRevision;
+    const generation = app.sessionGeneration;
+    app.watcherLoading = true;
+    try {
+      const watcher = await request(`/admin/watchers/${encodeURIComponent(id)}`);
+      if (revision !== app.watcherRevision || generation !== app.sessionGeneration) return;
+      app.watcher = watcher;
+      renderWatcherDetail(watcher);
+    } catch (error) {
+      if (revision !== app.watcherRevision || generation !== app.sessionGeneration) return;
+      if (error.status === 401 || error.status === 403) handleError(error);
+      else if (!silent || !app.watcher) {
+        $('#watcher-dialog-title').textContent = 'Não foi possível abrir o acompanhamento';
+        replaceMarkup($('#watcher-detail-body'), `<div class="notice notice-warning">${icon('info')}<span>${escape(error.message)}</span></div>`);
+        replaceMarkup($('#watcher-detail-actions'), `<button class="button button-secondary" data-close-dialog>Fechar</button><button class="button button-primary" data-action="watcher-detail" data-id="${escape(id)}">Tentar novamente</button>`);
+      } else {
+        const note = $('#watcher-detail-sync');
+        if (note) { note.textContent = 'Não foi possível atualizar o detalhe. Os dados abaixo são da última consulta.'; note.hidden = false; }
+      }
+    } finally {
+      if (revision === app.watcherRevision) app.watcherLoading = false;
+    }
+  }
+
+  function renderWatcherDetail(watcher) {
+    const dialog = $('#watcher-dialog');
+    const body = $('#watcher-detail-body');
+    const scroll = dialog.scrollTop;
+    const detailsOpen = Object.fromEntries($$('details[data-section]', body).map(element => [element.dataset.section, element.open]));
+    const open = key => detailsOpen[key] === false ? '' : 'open';
+    const trigger = watcher.trigger?.type === 'signal' ? { type: 'signal', source: watcher.trigger.source, runId: watcher.trigger.runId }
+      : watcher.trigger?.type === 'job' ? { type: 'job', jobId: watcher.trigger.jobId } : { type: 'unknown' };
+    const notes = {
+      waiting: 'A Ponte aguarda o gatilho ou o prazo deste acompanhamento.',
+      succeeded: 'O gatilho registrou uma conclusão bem-sucedida.',
+      failed: 'O gatilho registrou uma falha. Consulte o resultado disponível.',
+      needs_input: 'O executor precisa de uma resposta. Consulte o resumo para decidir o próximo passo.',
+      cancelled: 'O acompanhamento foi cancelado. Isso não interrompe nem desfaz o trabalho externo.',
+      expired: 'O prazo terminou sem uma conclusão registrada.',
+      interrupted: 'A execução acompanhada não pôde ser recuperada após uma interrupção.'
+    };
+    $('#watcher-dialog-title').textContent = watcher.name || 'Acompanhamento';
+    // Only public contract fields are rendered; callback credentials and owner data have no UI path.
+    const result = watcher.result;
+    const publicResult = result && typeof result === 'object' ? { summary: result.summary, ...(result.exitCode !== undefined ? { exitCode: result.exitCode } : {}), ...(result.evidence !== undefined ? { evidence: result.evidence } : {}) } : null;
+    replaceMarkup(body, `<div class="job-detail-meta">${watcherBadge(watcher.status)}${badge(trigger.type === 'signal' ? 'Sinal externo' : trigger.type === 'job' ? 'Estado final de execução' : 'Gatilho desconhecido', 'neutral')}</div><div id="watcher-detail-sync" class="notice notice-warning" role="status" hidden></div><p class="job-status-note">${escape(Object.hasOwn(notes, watcher.status) ? notes[watcher.status] : 'Estado não reconhecido. Consulte o serviço da Ponte.')}</p><dl class="job-meta-grid"><div><dt>ID do acompanhamento</dt><dd>${escape(watcher.watcherId)}</dd></div><div><dt>Fonte</dt><dd>${escape(watcherSource(trigger))}</dd></div><div><dt>Criado em</dt><dd>${escape(watcherDate(watcher.createdAt))}</dd></div><div><dt>Atualizado em</dt><dd>${escape(watcherDate(watcher.updatedAt))}</dd></div><div><dt>Prazo local</dt><dd>${escape(watcherDate(watcher.expiresAt))}</dd></div></dl><details class="job-section" data-section="trigger" ${open('trigger')}><summary>Gatilho (JSON)</summary><pre>${escape(pretty(trigger))}</pre></details>${trigger.type === 'job' ? '<p class="job-no-preview">Este gatilho acompanha o estado final do job da Ponte. O término de um comando de delegação não comprova a conclusão do trabalho externo.</p>' : ''}${publicResult ? `<details class="job-section" data-section="result" ${open('result')}><summary>Resultado (JSON)</summary><pre>${escape(pretty(publicResult))}</pre></details>` : `<p class="job-no-preview">${watcher.status === 'waiting' ? 'O resultado aparecerá quando o gatilho for concluído.' : 'Nenhum resultado registrado.'}</p>`}${watcher.error ? `<p class="form-error" role="status">${escape(typeof watcher.error === 'string' ? watcher.error : pretty(watcher.error))}</p>` : ''}<p class="watcher-detail-note">O acompanhamento continua na Ponte; a retomada do chat depende do cliente.</p>`);
+    replaceMarkup($('#watcher-detail-actions'), `<button class="button button-secondary" data-close-dialog>Fechar</button>${watcher.status === 'waiting' ? `<button class="button button-danger" data-action="cancel-watcher" data-id="${escape(watcher.watcherId)}" ${app.watcherActions.has(watcher.watcherId) || app.offline ? 'disabled' : ''}>${icon('close')}Cancelar acompanhamento</button>` : ''}`);
+    dialog.scrollTop = scroll;
+  }
+
+  async function cancelWatcher(id) {
+    if (!id || app.watcherActions.has(id)) return;
+    const generation = app.sessionGeneration;
+    const yes = await confirmAction('Cancelar acompanhamento?', 'A Ponte deixará de aguardar este gatilho. O cancelamento não interrompe nem desfaz a tarefa ou o processo externo.', 'Cancelar acompanhamento');
+    if (!yes || generation !== app.sessionGeneration || !app.token || app.watcherActions.has(id)) return;
+    app.watcherActions.add(id);
+    if (app.watcher?.watcherId === id) renderWatcherDetail(app.watcher);
+    try {
+      const watcher = await request(`/admin/watchers/${encodeURIComponent(id)}/cancel`, { method: 'POST', body: {} });
+      if (generation !== app.sessionGeneration) return;
+      app.watcherRevision += 1;
+      app.watcherLoading = false;
+      if (app.watcherId === id) { app.watcher = watcher; renderWatcherDetail(watcher); }
+      toast(watcher.status === 'cancelled' ? 'Acompanhamento cancelado. O trabalho externo não foi interrompido.' : 'O acompanhamento já foi encerrado. Estado atualizado.');
+      await refresh();
+    } catch (error) { if (generation === app.sessionGeneration) handleError(error); }
+    finally {
+      app.watcherActions.delete(id);
+      if (app.watcher?.watcherId === id && $('#watcher-dialog').open) renderWatcherDetail(app.watcher);
+    }
   }
 
   function renderConnect() {
@@ -1086,6 +1234,8 @@
       const tool = app.tools.find(item => item.name === app.selectedTool);
       if (tool) { $('#tool-arguments').value = pretty(sampleFromSchema(tool.inputSchema || { type: 'object' })); showFormError('#tool-error'); }
     } else if (action === 'job-detail') await openJob(id);
+    else if (action === 'watcher-detail') await openWatcher(id);
+    else if (action === 'cancel-watcher') await cancelWatcher(id);
     else if (['approve-job', 'reject-job', 'cancel-job'].includes(action)) await jobAction(action.split('-')[0], id, button);
     else if (action === 'review-oauth') openOAuthRequest(id);
     else if (['approve-oauth', 'reject-oauth'].includes(action)) await oauthRequestAction(action.split('-')[0], id, button);
@@ -1214,6 +1364,8 @@
   $('#tool-risk-filter').addEventListener('change', renderToolsList);
   $('#job-search').addEventListener('input', renderJobs);
   $('#job-status-filter').addEventListener('change', renderJobs);
+  $('#watcher-search').addEventListener('input', renderWatchers);
+  $('#watcher-status-filter').addEventListener('change', renderWatchers);
   $('#server-transport').addEventListener('change', updateTransportFields);
   $('#server-restrict-tools').addEventListener('change', updateAllowedTools);
   $('#confirm-cancel').addEventListener('click', () => resolveConfirmation(false));
@@ -1221,6 +1373,7 @@
   $('#confirm-dialog').addEventListener('close', () => { const resolve = app.confirmResolve; app.confirmResolve = null; resolve?.(false); });
   $('#server-dialog').addEventListener('close', () => { $('#server-env').value = ''; $('#server-headers').value = ''; });
   $('#job-dialog').addEventListener('close', () => { app.jobId = null; app.job = null; });
+  $('#watcher-dialog').addEventListener('close', () => { app.watcherId = null; app.watcher = null; app.watcherLoading = false; app.watcherRevision += 1; });
   $('#oauth-code-match').addEventListener('change', renderOAuthReview);
   $('#oauth-dialog').addEventListener('close', () => { app.oauthRequestId = null; app.oauthRequestSnapshot = ''; $('#oauth-code-match').checked = false; });
   $('#menu-button').addEventListener('click', () => app.navOpen ? closeNavigation() : openNavigation());

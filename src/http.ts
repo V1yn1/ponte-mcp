@@ -11,6 +11,8 @@ import { makeOpenApi } from './openapi.js';
 import { makeMcpServer, publicTools, callGateway, SERVER_INSTRUCTIONS } from './mcp/server.js';
 import { handleModernMcp } from './mcp/modern.js';
 import { authenticateMcp, isOAuthProtocolPath, mountOAuth } from './auth/http.js';
+import { WatchError } from './watchers/service.js';
+import { jobForObservation, watcherResult, WATCH_DEFAULT_WAIT_MS, WATCH_MAX_WAIT_MS } from './watchers/tools.js';
 
 function equalSecret(value: string, secret: string): boolean {
   const a = Buffer.from(value); const b = Buffer.from(secret);
@@ -69,6 +71,18 @@ function parseInvocation(body: unknown) {
 function errors(error: unknown, req: Request, res: Response, _next: NextFunction) {
   if (res.headersSent) return;
   const parserError = error as { type?: string; body?: unknown; status?: number };
+  if (req.path.startsWith('/hooks/watchers/')) {
+    const reason = error instanceof WatchError ? error.data?.reason : undefined;
+    const status = ['not_found', 'authorization_required'].includes(reason ?? '') ? 401 : reason === 'conflict' ? 409 : parserError?.status === 413 || reason === 'payload_too_large' ? 413 : error instanceof WatchError ? error.code === -32000 ? 503 : 400 : parserError?.type ? 400 : 503;
+    if (status === 401) res.set('WWW-Authenticate', 'Bearer realm="ponte-watch"');
+    res.status(status).json({ error: status === 401 ? 'Sinal não autorizado.' : status === 413 ? 'Sinal excede 32 KiB.' : status === 409 ? 'O acompanhamento já possui um resultado terminal.' : status === 503 ? 'Não foi possível persistir o sinal. Tente novamente com o mesmo eventId.' : 'Sinal inválido.' });
+    return;
+  }
+  if (error instanceof WatchError) {
+    const reason = error.data?.reason;
+    const status = reason === 'not_found' ? 404 : reason === 'authorization_required' ? 401 : reason === 'conflict' ? 409 : ['watcher_limit', 'waiter_limit'].includes(reason ?? '') ? 429 : reason === 'payload_too_large' ? 413 : reason === 'storage_limit' ? 503 : 400;
+    res.status(status).json({ error: error.message }); return;
+  }
   if (req.path === '/mcp' && ['entity.parse.failed', 'entity.too.large', 'charset.unsupported', 'encoding.unsupported'].includes(parserError?.type ?? '')) {
     const modern = req.get('MCP-Protocol-Version') === '2026-07-28';
     let code = -32700;
@@ -89,6 +103,17 @@ function errors(error: unknown, req: Request, res: Response, _next: NextFunction
   res.status(status === 413 ? 413 : 400).json({ error: status === 413 ? 'Solicitação excede 1 MiB.' : error instanceof Error ? error.message : 'Não foi possível processar a solicitação.' });
 }
 
+/** Client disconnect stops this wait only, without cancelling a durable watcher. */
+function requestSignal(req: Request, res: Response): AbortSignal {
+  const controller = new AbortController();
+  const aborted = () => controller.abort();
+  const closed = () => { if (!res.writableEnded) controller.abort(); cleanup(); };
+  const cleanup = () => { req.off('aborted', aborted); res.off('close', closed); res.off('finish', cleanup); };
+  req.once('aborted', aborted); res.once('close', closed); res.once('finish', cleanup);
+  if (req.aborted || res.destroyed) controller.abort();
+  return controller.signal;
+}
+
 export function createHttpApps(runtime: Application): { admin: Express; api: Express } {
   const admin = express(); const api = express();
   security(admin, runtime, 'admin'); security(api, runtime, 'api');
@@ -97,6 +122,28 @@ export function createHttpApps(runtime: Application): { admin: Express; api: Exp
   admin.use('/admin', bearer(runtime.store.secrets.adminToken), express.json({ limit: '1mb', strict: true }));
   api.get('/openapi.json', (_req, res) => { res.json(makeOpenApi(runtime.store.config.publicUrl ?? runtime.apiUrl)); });
   mountOAuth(admin, api, runtime);
+  // Scoped callbacks are authenticated by WatchService, never by the broad API/admin token.
+  // This parser precedes the general 1 MiB parser so the signal limit cannot be bypassed.
+  let signalWindow = Date.now(); const signalRequests = new Map<string, number>();
+  api.post('/hooks/watchers/:id/signal', async (req, res, next) => {
+    if (!/^Bearer [A-Za-z0-9_-]{43}$/.test(req.headers.authorization ?? '') || !z.string().uuid().safeParse(req.params.id).success) {
+      res.set('WWW-Authenticate', 'Bearer realm="ponte-watch"').status(401).json({ error: 'Sinal não autorizado.' }); return;
+    }
+    const id = String(req.params.id);
+    await runtime.watchers.authenticateSignal(id, req.headers.authorization!.slice(7));
+    if (Date.now() - signalWindow >= 60000) { signalWindow = Date.now(); signalRequests.clear(); }
+    // Invalid credentials cannot consume a legitimate watcher's delivery budget.
+    // A token is scoped to one watcher, so its traffic cannot starve other tasks.
+    const count = signalRequests.get(id) ?? 0;
+    if (count >= 60) { res.set('Retry-After', String(Math.max(1, Math.ceil((60000 - Date.now() + signalWindow) / 1000)))).status(429).json({ error: 'Limite de sinais deste acompanhamento atingido. Aguarde um minuto.' }); return; }
+    if (!signalRequests.has(id) && signalRequests.size >= 500) signalRequests.delete(signalRequests.keys().next().value!);
+    signalRequests.set(id, count + 1);
+    next();
+  }, express.json({ limit: '32kb', strict: true, inflate: false }), async (req, res) => {
+    const token = req.headers.authorization!.slice(7);
+    const watcher = await runtime.watchers.signal(String(req.params.id), token, req.body);
+    res.json(watcherResult(watcher));
+  });
   const apiBearer = bearer(runtime.store.secrets.apiToken);
   api.use('/v1', apiBearer);
   api.use('/mcp', authenticateMcp(runtime, apiBearer));
@@ -104,17 +151,19 @@ export function createHttpApps(runtime: Application): { admin: Express; api: Exp
 
   admin.get('/admin/state', (_req, res) => { res.json(runtime.state()); });
   admin.get('/admin/tools', (_req, res) => { res.json({ tools: runtime.toolCatalog() }); });
-  admin.get('/admin/jobs/:id', (req, res) => { res.json(runtime.jobs.get(String(req.params.id))); });
+  admin.get('/admin/jobs/:id', (req, res) => { res.json(jobForObservation(runtime.jobs.get(String(req.params.id)))); });
+  admin.get('/admin/watchers/:id', async (req, res) => { res.json(await runtime.watchers.adminGet(z.string().uuid().parse(req.params.id))); });
+  admin.post('/admin/watchers/:id/cancel', async (req, res) => { res.json(await runtime.watchers.adminCancel(z.string().uuid().parse(req.params.id))); });
   admin.post('/admin/invoke', async (req, res) => {
     const { name, args, key } = parseInvocation(req.body);
-    res.status(202).json(await runtime.jobs.submit(name, args, key, runtime.apiPrincipal));
+    res.status(202).json(jobForObservation(await runtime.jobs.submit(name, args, key, runtime.apiPrincipal)));
   });
   admin.delete('/admin/events/subscriptions/:id', async (req, res) => {
     const removed = await runtime.events.cancel(String(req.params.id));
     res.json({ ok: true, removed });
   });
   for (const action of ['approve', 'reject', 'cancel'] as const) {
-    admin.post('/admin/jobs/:id/' + action, (req, res) => { res.json(runtime.jobs[action](String(req.params.id))); });
+    admin.post('/admin/jobs/:id/' + action, (req, res) => { res.json(jobForObservation(runtime.jobs[action](String(req.params.id)))); });
   }
   admin.post('/admin/pause', (req, res) => {
     const { paused } = z.object({ paused: z.boolean() }).strict().parse(req.body);
@@ -199,18 +248,29 @@ export function createHttpApps(runtime: Application): { admin: Express; api: Exp
     const job = runtime.getJobForClient(id, runtime.apiPrincipal);
     res.json(['pending_approval', 'queued', 'running'].includes(job.status) ? runtime.jobs.cancel(id) : job);
   });
+  api.get('/v1/watchers', async (req, res) => {
+    const query = z.object({ offset: z.coerce.number().int().min(0).max(500).default(0), limit: z.coerce.number().int().min(1).max(500).default(50) }).strict().parse(req.query);
+    res.json(await runtime.watchers.list(runtime.apiPrincipal, query));
+  });
+  api.get('/v1/watchers/:id', async (req, res) => { res.json(watcherResult(await runtime.watchers.get(runtime.apiPrincipal, z.string().uuid().parse(req.params.id)))); });
+  api.post('/v1/watchers/:id/wait', async (req, res) => {
+    const { waitMs } = z.object({ waitMs: z.number().int().min(0).max(WATCH_MAX_WAIT_MS).default(WATCH_DEFAULT_WAIT_MS) }).strict().parse(req.body ?? {});
+    res.json(watcherResult(await runtime.watchers.wait(runtime.apiPrincipal, z.string().uuid().parse(req.params.id), waitMs, requestSignal(req, res))));
+  });
+  api.post('/v1/watchers/:id/cancel', async (req, res) => { res.json(watcherResult(await runtime.watchers.cancel(runtime.apiPrincipal, z.string().uuid().parse(req.params.id)))); });
   api.get('/v1/mcp/tools', (_req, res) => { res.json({ tools: publicTools(runtime) }); });
   api.post('/v1/mcp/call', async (req, res) => {
     const value = z.object({ name: z.string().min(1).max(128), arguments: z.record(z.unknown()).default({}) }).strict().parse(req.body);
-    res.json(await callGateway(runtime, value.name, value.arguments, runtime.apiPrincipal));
+    res.json(await callGateway(runtime, value.name, value.arguments, runtime.apiPrincipal, requestSignal(req, res)));
   });
   api.post('/mcp', async (req, res) => {
     const grantId = req.auth?.extra?.grantId;
     if (req.auth && typeof grantId !== 'string') { res.status(401).json({ error: 'Identidade da conexão indisponível.' }); return; }
     const principal = typeof grantId === 'string' ? 'oauth:' + grantId : runtime.apiPrincipal;
     const getTools = () => publicTools(runtime, Boolean(runtime.store.config.publicUrl));
-    const call = (name: string, args: Record<string, unknown>) => callGateway(runtime, name, args, principal);
-    if (await handleModernMcp(req, res, { getTools, call, events: runtime.events, principal, version: '0.5.0', instructions: SERVER_INSTRUCTIONS })) return;
+    const disconnected = requestSignal(req, res);
+    const call = (name: string, args: Record<string, unknown>, signal?: AbortSignal) => callGateway(runtime, name, args, principal, signal ? AbortSignal.any([disconnected, signal]) : disconnected);
+    if (await handleModernMcp(req, res, { getTools, call, events: runtime.events, principal, version: '0.6.0', instructions: SERVER_INSTRUCTIONS })) return;
     const server = makeMcpServer(getTools, call);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     try { await server.connect(transport); await transport.handleRequest(req, res, req.body); }

@@ -1,6 +1,28 @@
-# Validação da entrega — Ponte MCP 0.5.0
+# Validação da entrega — Ponte MCP 0.6.0
 
-## Claude, diagnóstico de Events e identidade visual — 0.5.0
+## Watchers nativos da Ponte — 0.6.0
+
+Verificação em **22 de outubro de 2026**, em Linux com Node.js 24.19.0. Os testes usam arquivos, credenciais, portas e executores controlados. Nenhuma demanda real do Slack foi encaminhada e nenhuma sessão Claude neurolaudos foi alterada nesta validação.
+
+| Verificação | Resultado observado |
+|---|---|
+| `npm run verify` | TypeScript, **237 testes**, zero falhas, zero ignorados e build concluído |
+| `npm run smoke` | Aplicação compilada completou OAuth, MCP legado/moderno, aprovação, Events existente e watcher nativo com sinal autenticado e resultado persistido |
+| Serviço de watchers | **18 testes**: persistência, reinício, proprietário, correlação, replay, conflito, expiração, revogação, pausa, limites, corrupção, falha de disco, concorrência, encerramento e retenção do resultado de job removido |
+| Integração HTTP | **7 testes**: criação com aprovação, quatro esperas sem ocupar a fila, produtor real, desconexão/reinício, isolamento OAuth, MCP legado/moderno, REST, ocultação de token no painel, I/O com retry e tráfego inválido sem esgotar a cota legítima |
+| Produtor | **7 testes HTTP**: sinal autenticado, código de saída, validação antes do envio, limites UTF-8, retries com UUID e bytes estáveis, recusa de redirect e erros sem credenciais |
+| Stdio real | Processo CLI conectado ao serviço real descobriu as cinco ferramentas, criou um watcher e recebeu a conclusão pela chamada em espera |
+| Prazo do stdio | Duas regressões novas exercitam 300 segundos com relógio controlado, inclusive via `bridge_call`, preservando prazos menores para as demais ferramentas e prazo finito para a espera |
+| Painel e documentação | Sintaxe JavaScript, IDs/ARIA, contratos de consulta/cancelamento, projeção de campos públicos, escape de resultado e schemas OpenAPI conferidos; `git diff --check` passou |
+| Revisão independente | Correções conferidas para token no painel, erro de disco classificado como 400, cota global consumida sem autenticação, registro tardio de waiter durante close e perda de evento terminal após remoção do job |
+
+O teste de ponta a ponta manteve quatro chamadas em espera enquanto outra ferramenta gravou um arquivo normalmente. Esse job de delegação concluído não encerrou o watcher `signal`. O script produtor enviou o resultado, que foi salvo antes da confirmação e liberou as quatro esperas. Outro teste interrompeu a conexão HTTP, reiniciou o serviço e concluiu o mesmo watcher com sua credencial original.
+
+O acompanhamento usa `bridge_watch_create/get/list/wait/cancel` e o endpoint de entrada `/hooks/watchers/:watcherId/signal`. Não usa agendamento do ChatGPT ou do Claude. A cota do sinal é autenticada e escopada por watcher. O segredo aparece apenas no resultado de criação recuperável pelo proprietário; o arquivo de watchers mantém seu hash e os caminhos de painel/arquivamento removem a credencial.
+
+**Limites desta verificação:** não houve nova execução no Windows 11, inspeção visual renderizada do painel, teste do watcher por uma conversa real do ChatGPT, sessão real do Claude ou túnel ngrok. As esperas foram exercitadas por clientes MCP de teste e pelo produtor real em loopback. O watcher persiste durante reconexões/reinícios do processo, mas isso não prova tolerância a falha física de disco/energia. A Ponte não promete reabrir um turno encerrado: a espera requer uma chamada mantida pelo cliente. Atualize a instalação, reinicie o serviço e recarregue o catálogo antes de usar a versão 0.6.0.
+
+## Histórico: Claude, diagnóstico de Events e identidade visual — 0.5.0
 
 Verificação em **22 de outubro de 2026**, com Node.js 24.19.0 e npm 11.9.0 em Linux, mais uma conferência restrita de argumentos no PowerShell da instalação Windows conectada. Os testes do servidor usam estado, portas e credenciais temporários.
 

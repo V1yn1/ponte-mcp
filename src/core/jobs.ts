@@ -219,7 +219,7 @@ export class JobManager {
         controller.signal.addEventListener('abort', () => reject(controller.signal.reason ?? new Error('Execução interrompida.')), { once: true });
       });
       timeout = setTimeout(() => controller.abort(new Error('Tempo limite de 120 segundos. A ação externa pode ter continuado; verifique o estado antes de reenviar.')), 120000);
-      const result = await Promise.race([current.execute(structuredClone(record.job.arguments), { signal: controller.signal }), abort]);
+      const result = await Promise.race([current.execute(structuredClone(record.job.arguments), { signal: controller.signal, ...(record.owner ? { principal: record.owner } : {}) }), abort]);
       if (record.job.status !== 'running') return;
       if (Buffer.byteLength(JSON.stringify(result)) > MAX_RESULT) throw new Error('A resposta excedeu 4 MiB. A ação pode ter sido concluída; consulte seu estado e reduza o resultado.');
       record.job.result = result;

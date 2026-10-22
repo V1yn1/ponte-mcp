@@ -94,6 +94,7 @@
         <a href="#connections" data-view="connections"><svg class="icon"><use href="#i-plug"/></svg><span>Conexões MCP</span></a>
         <a href="#tools" data-view="tools"><svg class="icon"><use href="#i-tool"/></svg><span>Ferramentas</span></a>
         <a href="#jobs" data-view="jobs"><svg class="icon"><use href="#i-activity"/></svg><span>Execuções</span><span class="nav-count nav-pending" id="nav-pending-count" hidden>0</span></a>
+        <a href="#watchers" data-view="watchers"><svg class="icon"><use href="#i-clock"/></svg><span>Acompanhamentos</span><span class="nav-count" id="nav-watcher-count" hidden>0</span></a>
         <div class="nav-divider"></div>
         <a href="#connect" data-view="connect"><svg class="icon"><use href="#i-chat"/></svg><span>Conectar IA</span><span class="nav-count nav-pending" id="nav-oauth-count" hidden>0</span><svg class="icon nav-arrow"><use href="#i-arrow"/></svg></a>
       </nav>
@@ -155,6 +156,15 @@
           <div class="section-toolbar"><div class="search-field"><svg class="icon"><use href="#i-search"/></svg><input id="job-search" type="search" placeholder="Buscar por ferramenta ou ID…" aria-label="Buscar execuções"></div><select id="job-status-filter" aria-label="Filtrar execuções por status"><option value="all">Todos os status</option><option value="pending_approval">Aguardando aprovação</option><option value="running">Em execução</option><option value="queued">Na fila</option><option value="succeeded">Concluídas</option><option value="failed">Falharam</option><option value="rejected">Recusadas</option><option value="cancelled">Canceladas</option><option value="expired">Expiradas</option></select><span id="jobs-count" class="muted small"></span></div>
           <div id="jobs-list" class="panel jobs-panel"></div>
           <p class="page-footnote">O painel exibe as 50 solicitações mais recentes. Abra uma execução para ver argumentos, prévia e resultado.</p>
+        </section>
+
+        <section id="view-watchers" class="view" aria-label="Acompanhamentos" hidden>
+          <div class="notice notice-subtle watcher-intro"><svg class="icon"><use href="#i-info"/></svg><span>O acompanhamento continua na Ponte; a retomada do chat depende do cliente.</span></div>
+          <div id="watcher-stats" class="watcher-stats" aria-label="Resumo dos acompanhamentos"></div>
+          <div id="watcher-service-error" class="notice notice-warning" role="status" hidden></div>
+          <div class="section-toolbar"><div class="search-field"><svg class="icon"><use href="#i-search"/></svg><input id="watcher-search" type="search" placeholder="Buscar nome, fonte ou ID…" aria-label="Buscar acompanhamentos"></div><select id="watcher-status-filter" aria-label="Filtrar acompanhamentos por status"><option value="all">Todos os status</option><option value="waiting">Aguardando</option><option value="succeeded">Concluídos</option><option value="failed">Falharam</option><option value="needs_input">Precisam de resposta</option><option value="cancelled">Cancelados</option><option value="expired">Expirados</option><option value="interrupted">Interrompidos</option></select><span id="watchers-count" class="muted small"></span></div>
+          <div id="watchers-list" class="panel jobs-panel watchers-panel"></div>
+          <p class="page-footnote">Os prazos são exibidos no fuso horário deste navegador. Abra um acompanhamento para ver o gatilho e o resultado. Cancelar o acompanhamento não interrompe o trabalho externo.</p>
         </section>
 
         <section id="view-connect" class="view" aria-label="Conectar ChatGPT e Claude" hidden>
@@ -225,6 +235,8 @@
   </dialog>
 
   <dialog id="job-dialog" class="modal modal-wide job-modal" aria-labelledby="job-dialog-title"><div class="modal-heading"><div><span class="section-kicker">DETALHES DA EXECUÇÃO</span><h2 id="job-dialog-title">Execução</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Fechar detalhes da execução"><svg class="icon"><use href="#i-close"/></svg></button></div><div id="job-detail-body" class="modal-body"></div><div id="job-detail-actions" class="modal-footer"></div></dialog>
+
+  <dialog id="watcher-dialog" class="modal modal-wide watcher-modal" aria-labelledby="watcher-dialog-title"><div class="modal-heading"><div><span class="section-kicker">DETALHES DO ACOMPANHAMENTO</span><h2 id="watcher-dialog-title">Acompanhamento</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Fechar detalhes do acompanhamento"><svg class="icon"><use href="#i-close"/></svg></button></div><div id="watcher-detail-body" class="modal-body"></div><div id="watcher-detail-actions" class="modal-footer"></div></dialog>
 
   <dialog id="oauth-dialog" class="modal modal-wide oauth-modal" aria-labelledby="oauth-dialog-title" aria-describedby="oauth-dialog-description">
     <div class="modal-heading"><div><span class="section-kicker">AUTORIZAÇÃO OAUTH</span><h2 id="oauth-dialog-title">Revisar conexão</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Fechar revisão da conexão"><svg class="icon"><use href="#i-close"/></svg></button></div>

@@ -356,3 +356,24 @@ input:focus,select:focus,textarea:focus{box-shadow:0 0 0 3px #3863f41a}
 @media(max-width:380px){.topbar-actions>.icon-button{display:none}.topbar-actions .button{font-size:10px;padding-left:7px;padding-right:7px}.overview-hero{padding:23px 20px}.hero-copy h2{font-size:26px}.hero-kicker{font-size:9px;letter-spacing:.8px}.stat-card{padding:15px 13px}.stat-label{font-size:11px}.panel-heading>.text-link{white-space:normal}.connect-intro>.soft-icon{display:none}.tool-submit-row{flex-direction:column;align-items:stretch}.tool-submit-row>.small{max-width:none}.tool-submit-row>.button{align-self:stretch}}
 
 .event-diagnostics>.event-diagnostic-error{color:var(--danger);padding-top:10px;margin-top:12px;border-top:1px solid #e6dfea}
+
+/* Durable task watchers use the same cobalt surfaces as executions. */
+.watcher-intro{margin-bottom:20px}
+.watcher-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:24px}
+.watcher-stat{min-width:0;padding:16px 18px;border:1px solid var(--line);border-radius:12px;background:#fff;display:flex;flex-direction:column;gap:9px}
+.watcher-stat>span{display:flex;align-items:center;gap:7px;font-size:12px;line-height:1.6;color:var(--body)}
+.watcher-stat .icon{width:15px;height:15px;flex-basis:15px;color:#7385ad}
+.watcher-stat>strong{font-size:27px;line-height:1.3;font-weight:650;color:#344e87}
+.watcher-stat>small{font-size:11px;line-height:1.7;color:var(--muted)}
+.watcher-stat-waiters{background:#f1f4ff;border-color:var(--accent-border)}
+#watcher-service-error:not([hidden]){margin-bottom:20px}
+.watchers-table .tool-cell{max-width:280px;min-width:170px}
+.watchers-table .job-link{white-space:normal;overflow-wrap:anywhere;text-align:left}
+.watchers-table .job-id,.watcher-source{display:block;max-width:280px;overflow-wrap:anywhere;white-space:normal}
+.watcher-trigger-label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
+.watcher-source{font-size:12px;line-height:1.7;color:var(--body)}
+.watcher-detail-note{font-size:12px;line-height:1.8;color:var(--muted);margin-top:18px}
+.watcher-modal .job-section pre{white-space:pre-wrap;overflow-wrap:anywhere}
+.watcher-modal .form-error{white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:1000px){.watcher-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){.watcher-stat{padding:14px}.watcher-stat>span{font-size:11px}.watcher-stat>strong{font-size:24px}.watcher-stats{gap:10px}.watcher-modal .job-meta-grid{grid-template-columns:1fr}.watcher-modal .modal-footer .button-danger{flex:1}}

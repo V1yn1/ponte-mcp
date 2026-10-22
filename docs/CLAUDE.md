@@ -131,6 +131,16 @@ Consulte até obter o estado final, sem repetir a operação original. Uma autor
 
 Esta integração com Claude usa chamadas MCP e consultas a `bridge_job`. O catálogo de MCP Events da Ponte não demonstra que o Claude cadastrou uma assinatura nem que retomará uma conversa. A retomada por evento depende de suporte e assinatura feitos pelo cliente; as instruções de Events do ChatGPT estão em [MCP-EVENTS.md](MCP-EVENTS.md).
 
+## 5. Acompanhar uma demanda executada pelo Claude
+
+Para uma tarefa longa delegada a outra sessão, use os [watchers nativos da Ponte](WATCHERS.md). **Crie `bridge_watch_create` antes de enviar a demanda**, com `trigger: {"type":"signal","source":"claude-code","runId":"neurolaudos-demanda-..."}`. Resolva uma eventual aprovação e entregue ao executor a URL e o token exclusivos retornados em `callback`, mantendo o segredo em ambiente ou arquivo privado. O script `scripts/ponte-watch-notify.mjs` envia o recibo explícito de `succeeded`, `failed` ou `needs_input` para esse `runId`.
+
+Uma chamada SSH ou `tmux send-keys` concluída comprova o envio, e não o término da demanda neurolaudos. Um hook `Stop` genérico também não comprova a tarefa inteira: a [referência oficial de hooks](https://code.claude.com/docs/en/hooks#stop) o define como o momento em que o agente principal terminou de responder. O produtor deve sinalizar apenas depois de conferir os critérios de aceite, ou sinalizar a falha/pendência que efetivamente encontrou. Nenhum hook global é instalado por esse fluxo.
+
+Use `bridge_watch_wait` no mesmo `watcherId`, com espera padrão de **25 segundos**, ou `waitMs` de 0 a **300000**. O cliente pode encerrar a chamada antes desse limite. O watcher `signal` persiste no serviço, inclusive após reinício da Ponte; uma desconexão remove só aquela espera. Não é necessário criar automations ou cron no Claude/ChatGPT, nem repetir a operação original. Volte a consultar ou aguardar o mesmo acompanhamento.
+
+O [guia oficial MCP do Claude Code](https://code.claude.com/docs/en/mcp#automatic-backgrounding-of-long-tool-calls) informa que, por padrão, uma chamada da conversa principal ainda em execução após **dois minutos** passa a uma tarefa em segundo plano, com exceções e configuração própria. Essa tarefa do cliente não sobrevive à saída da sessão. O watcher da Ponte e seu prazo são independentes dela; manter o resultado no servidor não garante acordar um chat encerrado. [WATCHERS.md](WATCHERS.md) apresenta o fluxo completo, o wrapper de processo e seus limites, sem alterar a instalação ou as conexões MCP existentes.
+
 ## Diagnóstico
 
 | Sintoma | O que conferir |

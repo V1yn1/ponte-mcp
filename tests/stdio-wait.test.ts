@@ -63,3 +63,30 @@ test('stdio catalog requests retain the shorter connection deadline', async t =>
   const client = await proxy(t);
   await assert.rejects(client.listTools(), /ponte local|tempo limite/i);
 });
+
+test('stdio native watcher supports the full 300-second wait without extending ordinary tool deadlines', async t => {
+  const client = await proxy(t);
+  const watcherId = '66267440-c208-4214-99cb-72ae188b7c5c';
+  for (const request of [
+    { name: 'bridge_watch_wait', arguments: { watcherId, waitMs: 300000 } },
+    { name: 'bridge_call', arguments: { tool: 'bridge_watch_wait', arguments: { watcherId, waitMs: 300000 } } },
+    { name: 'bridge_watch_wait', arguments: { watcherId } },
+  ]) {
+    const result = state(await client.callTool(request));
+    assert.equal(result.watcherId, watcherId); assert.equal(result.status, 'waiting');
+    assert.equal(result.monitorDurable, true); assert.equal(result.canWakeClosedConversation, false);
+  }
+  await assert.rejects(client.callTool({ name: 'fixture_timeout', arguments: {} }), /tempo limite/i);
+});
+
+test('stdio watcher timeout remains finite and advises recovering the watcher rather than resending', async t => {
+  const client = await proxy(t);
+  await assert.rejects(client.callTool({ name: 'bridge_watch_wait', arguments: { watcherId: 'simulate-timeout', waitMs: 300000 } }), error => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /bridge_watch_get/);
+    assert.match(error.message, /acompanhamento.*continua|preservado/i);
+    assert.match(error.message, /não reenvie/i);
+    return true;
+  });
+  assert.equal(state(await client.callTool({ name: 'fixture_stats', arguments: {} })).bridge_watch_wait, 1);
+});

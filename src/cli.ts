@@ -8,8 +8,9 @@ import { ConfigStore, projectSchema, robloxPreset, publicUrlSchema } from './cor
 import { startApplication, projectRoot } from './app.js';
 import { makeMcpServer } from './mcp/server.js';
 import { makeOpenApi } from './openapi.js';
+import { WATCH_DEFAULT_WAIT_MS, WATCH_MAX_WAIT_MS } from './watchers/tools.js';
 
-const HELP = `Ponte MCP 0.5.0 — ferramentas locais para chats\n\nComandos:\n  init [--workspace PASTA]  Criar configuração e credenciais locais\n  start                    Iniciar painel e API em loopback\n  stdio                    Expor MCP por stdio usando o serviço já iniciado\n  token admin|api          Mostrar a credencial escolhida neste terminal\n  doctor                   Verificar configuração e serviço\n  add-project ID PASTA     Autorizar pasta (reinicie o serviço após configurar)\n  add-roblox               Adicionar o MCP oficial do Roblox Studio\n  export-openapi [--url HTTPS] [--output ARQUIVO]\n\nOpções gerais:\n  --state-dir PASTA        Diretório local de configuração (padrão .ponte)\n  --port NUMERO            Porta do painel ao criar a configuração\n  --api-port NUMERO        Porta da API ao criar a configuração\n\nO serviço não remove cotas do modelo. Tokens admin e api são diferentes.\n`;
+const HELP = `Ponte MCP 0.6.0 — ferramentas locais para chats\n\nComandos:\n  init [--workspace PASTA]  Criar configuração e credenciais locais\n  start                    Iniciar painel e API em loopback\n  stdio                    Expor MCP por stdio usando o serviço já iniciado\n  token admin|api          Mostrar a credencial escolhida neste terminal\n  doctor                   Verificar configuração e serviço\n  add-project ID PASTA     Autorizar pasta (reinicie o serviço após configurar)\n  add-roblox               Adicionar o MCP oficial do Roblox Studio\n  export-openapi [--url HTTPS] [--output ARQUIVO]\n\nOpções gerais:\n  --state-dir PASTA        Diretório local de configuração (padrão .ponte)\n  --port NUMERO            Porta do painel ao criar a configuração\n  --api-port NUMERO        Porta da API ao criar a configuração\n\nO serviço não remove cotas do modelo. Tokens admin e api são diferentes.\n`;
 
 async function main() {
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
@@ -74,7 +75,7 @@ async function main() {
     await requestJson(apiUrl + '/v1/status', store.secrets.apiToken);
     const server = makeMcpServer(
       async () => ListToolsResultSchema.parse(await requestJson(apiUrl + '/v1/mcp/tools', store.secrets.apiToken)).tools,
-      async (name, arguments_) => CallToolResultSchema.parse(await requestJson(apiUrl + '/v1/mcp/call', store.secrets.apiToken, { name, arguments: arguments_ })),
+      async (name, arguments_, signal) => CallToolResultSchema.parse(await requestJson(apiUrl + '/v1/mcp/call', store.secrets.apiToken, { name, arguments: arguments_ }, signal)),
     );
     await server.connect(new StdioServerTransport());
     const shutdown = () => { void server.close(); };
@@ -84,16 +85,23 @@ async function main() {
   throw new Error('Comando desconhecido. Use --help.');
 }
 
-async function requestJson(url: string, token: string, body?: unknown): Promise<unknown> {
+async function requestJson(url: string, token: string, body?: unknown, callerSignal?: AbortSignal): Promise<unknown> {
   const toolCall = new URL(url).pathname === '/v1/mcp/call';
-  // Tool calls can wait 25 seconds inside the gateway, including bridge_job.
-  const signal = AbortSignal.timeout(toolCall ? 35_000 : 15_000);
+  const request = body as { name?: string; arguments?: { tool?: string; arguments?: Record<string, unknown>; waitMs?: unknown } } | undefined;
+  const watchArgs = toolCall && request?.name === 'bridge_watch_wait' ? request.arguments : toolCall && request?.name === 'bridge_call' && request.arguments?.tool === 'bridge_watch_wait' ? request.arguments.arguments : undefined;
+  const watchWait = Boolean(watchArgs);
+  const waitMs = watchArgs?.waitMs ?? WATCH_DEFAULT_WAIT_MS;
+  // Extend only native watcher waits; keep existing catalog and ordinary tool deadlines.
+  const deadlineMs = watchWait && typeof waitMs === 'number' && Number.isInteger(waitMs) && waitMs >= 0 && waitMs <= WATCH_MAX_WAIT_MS ? waitMs + 10000 : toolCall ? 35000 : 15000;
+  const deadline = AbortSignal.timeout(deadlineMs);
+  const signal = callerSignal ? AbortSignal.any([deadline, callerSignal]) : deadline;
   let response: globalThis.Response | undefined;
   let result: { error?: string };
   try {
     response = await fetch(url, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), signal });
     result = await response.json() as { error?: string };
   } catch (error) {
+    if (watchWait && (signal.aborted || !response)) throw new Error('Espera interrompida ou conexão indisponível. O acompanhamento continua preservado na Ponte. Consulte bridge_watch_get com o mesmo watcherId ou retome bridge_watch_wait. Não reenvie a tarefa.');
     if (toolCall && signal.aborted) throw new Error('Tempo limite ao aguardar a ferramenta. A ação pode ter sido concluída ou continuar em execução. Consulte o painel local ou bridge_job, se já tiver o jobId. Não reenvie a operação antes de conferir seu estado.');
     if (response) throw error;
     throw new Error('Não foi possível conectar à ponte local. Inicie npm start antes de conectar o cliente MCP.');

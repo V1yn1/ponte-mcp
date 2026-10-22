@@ -4,7 +4,7 @@
 
 Ponte MCP é um servidor local com painel em português. Ele reúne ferramentas de arquivos, execução de comandos e servidores MCP externos. O chat escolhe uma ferramenta; a ponte valida a solicitação, apresenta alterações para revisão quando necessário e devolve o resultado.
 
-A versão **0.5.0** acrescenta configuração para **Claude, Claude Desktop e Claude Code**, corrige a autenticação com portas locais temporárias e renova o painel com logotipo próprio e paleta azul cobalto/grafite. O diagnóstico de MCP Events mostra se uma solicitação de assinatura chegou, foi aceita ou falhou na verificação do callback. A Ponte mantém OAuth com autorização local, aprovação automática opcional e espera de até 25 segundos por resultados. O projeto é destinado a uso pessoal em um computador e inclui código TypeScript, painel, testes e exemplos de integração. Não contém modelo de IA, assinatura comercial, chave de fornecedor ou instalador proprietário.
+A versão **0.6.0** acrescenta **acompanhamentos duráveis** de tarefas externas e execuções da Ponte, com sinal explícito do executor, consulta, espera e cancelamento. O painel inclui a seção **Acompanhamentos** e distingue monitores ativos de chamadas MCP em espera. O acompanhamento continua após a chamada e após reiniciar a Ponte; a retomada do chat depende do cliente. Permanecem as conexões com **ChatGPT, Claude, Claude Desktop e Claude Code**, OAuth com autorização local, aprovação automática opcional e painel azul cobalto/grafite. O projeto é destinado a uso pessoal em um computador e inclui código TypeScript, painel, testes e exemplos de integração. Não contém modelo de IA, assinatura comercial, chave de fornecedor ou instalador proprietário.
 
 ## O que está implementado
 
@@ -18,9 +18,10 @@ A versão **0.5.0** acrescenta configuração para **Claude, Claude Desktop e Cl
 | Roblox | Preset do servidor MCP integrado oficialmente ao Studio |
 | Conexão com chats | ChatGPT e Claude por MCP Streamable HTTP com OAuth; Claude Desktop/Code por stdio; API REST com OpenAPI para Actions |
 | Resultados MCP | Espera de até 25 segundos na chamada e consulta do mesmo trabalho com `bridge_job` e `waitMs` |
+| Acompanhamentos | `bridge_watch_create`, `bridge_watch_get`, `bridge_watch_list`, `bridge_watch_wait` e `bridge_watch_cancel`; gatilhos `signal` e `job`, persistência e resultado explícito |
 | MCP Events | Evento `ponte.job.completed` por `jobId`, assinatura pelo cliente, callback HTTPS verificado e assinado, entrega persistente e diagnóstico no painel |
 | OAuth | Authorization code com PKCE S256, descoberta, cadastro dinâmico de clientes, renovação e revogação |
-| Painel | Visão geral, projetos, conexões, ferramentas, execuções, abas ChatGPT/Claude, aprovação OAuth e diagnóstico de avisos de conclusão |
+| Painel | Visão geral, projetos, conexões, ferramentas, execuções, acompanhamentos, abas ChatGPT/Claude, aprovação OAuth e diagnóstico de avisos de conclusão |
 | Operação | Tokens distintos de administração e API, autorizações OAuth persistentes, pausa de novas execuções, idempotência, auditoria de metadados |
 
 ## O que a ponte resolve — e seus limites
@@ -73,9 +74,9 @@ npm.cmd run build
 npm.cmd start
 ```
 
-Confira **0.5.0** no painel. Preserve a pasta `.ponte`: a política de aprovação, os projetos e as autorizações OAuth já concluídas continuam disponíveis após reiniciar. Uma conexão que já funciona não precisa ser recriada. Somente pedidos OAuth ainda em andamento precisam ser iniciados novamente após o reinício.
+Confira **0.6.0** no painel. Preserve a pasta `.ponte`: a política de aprovação, os projetos, as autorizações OAuth já concluídas e os acompanhamentos persistidos continuam disponíveis após reiniciar. Uma conexão que já funciona não precisa ser recriada. Somente pedidos OAuth ainda em andamento precisam ser iniciados novamente após o reinício.
 
-No ChatGPT, abra **Plugins → Ponte → Atualizar ferramentas** e atualize também a descoberta de eventos oferecida pela interface. Confira se `ponte.job.completed` aparece na página do plugin. Mantenha o ngrok encaminhando a API na porta **4318** e confira se a URL pública salva corresponde à origem atual do túnel. O roteiro específico está em [Conectar ao ChatGPT](docs/CHATGPT.md); o uso dos avisos está em [MCP Events](docs/MCP-EVENTS.md).
+No ChatGPT, abra **Plugins → Ponte → Atualizar ferramentas** e confirme as cinco ferramentas `bridge_watch_*`. Para o acompanhamento nativo, use `bridge_watch_create` e `bridge_watch_wait`; não crie uma automação no ChatGPT. Mantenha o ngrok encaminhando toda a API da porta **4318**, inclusive `/hooks/watchers/.../signal`, e confira se a URL pública salva corresponde à origem atual do túnel. O roteiro está em [Conectar ao ChatGPT](docs/CHATGPT.md) e [Watchers](docs/WATCHERS.md). Quem já usa o fluxo separado de MCP Events pode atualizar também sua descoberta de eventos.
 
 ### Instalações por ZIP e atualização da versão 0.1.0
 
@@ -173,7 +174,7 @@ O adaptador stdio lê a credencial local e encaminha para o serviço já iniciad
 
 ### ChatGPT com MCP
 
-O caminho HTTP da versão 0.5.0 usa **OAuth com cadastro dinâmico de cliente (DCR)**. Você autoriza a conexão no seu computador; o ChatGPT recebe credenciais OAuth próprias e renováveis.
+O caminho HTTP da versão 0.6.0 usa **OAuth com cadastro dinâmico de cliente (DCR)**. Você autoriza a conexão no seu computador; o ChatGPT recebe credenciais OAuth próprias e renováveis.
 
 1. Inicie a ponte e encaminhe **toda a API da porta 4318** por uma origem HTTPS estável. O encaminhamento precisa atender `/mcp` e os endpoints de descoberta e OAuth. Mantenha a porta 4317 exclusivamente local.
 2. Em **Conectar IA**, salve a origem HTTPS em **URL pública da API**, por exemplo `https://sua-ponte.exemplo.com`, sem `/mcp`.
@@ -199,9 +200,21 @@ claude mcp login ponte
 
 O guia [Conectar ao Claude](docs/CLAUDE.md) inclui configuração local, callbacks, aprovação e diagnóstico. Os fluxos OAuth foram exercitados com clientes de teste; a conexão em uma conta real do Claude precisa ser conferida depois da configuração.
 
+### Acompanhar a conclusão real de uma tarefa
+
+Crie o acompanhamento **antes de delegar**: chame `bridge_watch_create` com nome, prazo e um dos dois gatilhos. A criação segue a política de aprovação da Ponte. Com `signal`, informe `source` e um `runId` exclusivo; configure o executor com o callback retornado, incluindo sua URL e token exclusivo. O executor envia `succeeded`, `failed` ou `needs_input`, com um resumo explícito, quando souber o resultado real. O produtor [scripts/ponte-watch-notify.mjs](scripts/ponte-watch-notify.mjs) usa `PONTE_WATCH_URL`, `PONTE_WATCH_TOKEN` e `PONTE_WATCH_RUN_ID` para enviar esse sinal. Não exponha o token no chat ou em registros.
+
+Com `job`, informe o `jobId` de uma execução da Ponte. Esse gatilho observa o estado final daquela execução. O fim de um comando que apenas envia uma demanda ao Claude, por exemplo, não comprova a conclusão do trabalho delegado.
+
+Depois de delegar, use `bridge_watch_wait` com o mesmo `watcherId`. A espera padrão é **25 segundos**, e `waitMs` aceita de **0 a 300000**: esperas de até **300 segundos** dependem do timeout aceito pelo cliente. Uma resposta `waiting` permite continuar a espera pelo mesmo acompanhamento, sem repetir a tarefa. O prazo do acompanhamento é independente da chamada: padrão de uma hora, configurável de um segundo a sete dias.
+
+O monitor e seus resultados sobrevivem ao fim da chamada e a reinícios da Ponte. **Isso não usa agendador do ChatGPT/Claude e não acorda uma conversa encerrada.** O acompanhamento continua na Ponte; a retomada do chat depende do cliente. Consulte o resultado com `bridge_watch_get` ou no painel **Acompanhamentos**. Cancelar o acompanhamento não interrompe nem desfaz o trabalho externo.
+
+Pela API REST, crie com `POST /v1/jobs`, `tool: "bridge_watch_create"` e os argumentos serializados na string `argumentsJson`; acompanhe a aprovação e o resultado pelo job devolvido. Consulte os monitores por `GET /v1/watchers` ou `GET /v1/watchers/{watcherId}`, aguarde por `POST /v1/watchers/{watcherId}/wait` e cancele por `POST /v1/watchers/{watcherId}/cancel`. O callback do executor usa a credencial exclusiva retornada na criação, separada do token API. O guia [Acompanhamentos duráveis](docs/WATCHERS.md) traz exemplos completos, inclusive para uma sessão remota do Claude.
+
 ### Continuar uma tarefa com MCP Events
 
-Use uma conversa **Work no navegador** ou **Work com Cloud selecionado no aplicativo desktop**, conforme a [documentação da OpenAI](https://developers.openai.com/plugins/build/mcp-events). Atualize as ferramentas e os eventos do plugin depois de instalar a 0.5.0. A disponibilidade também depende das permissões da conta e do workspace.
+Use uma conversa **Work no navegador** ou **Work com Cloud selecionado no aplicativo desktop**, conforme a [documentação da OpenAI](https://developers.openai.com/plugins/build/mcp-events). Atualize as ferramentas e os eventos do plugin depois de instalar a 0.6.0. A disponibilidade também depende das permissões da conta e do workspace.
 
 Quando uma chamada retornar um `jobId` ainda pendente, peça:
 
@@ -288,6 +301,7 @@ O diretório `.ponte` é criado somente na instalação local e fica fora do pac
 - `secrets.json`: dois tokens aleatórios distintos.
 - `oauth.json`: clientes registrados e autorizações OAuth, incluindo segredos de clientes e hashes dos tokens.
 - `events.json`: assinaturas, callbacks e chaves de webhook, fila de entrega e resultados dos trabalhos acompanhados; é um arquivo privado e sensível.
+- `watchers.json`: acompanhamentos persistidos, resultados e dados privados de autorização; preserve junto com o estado da instalação.
 - `audit.jsonl`: metadados das execuções e tipo de aprovação, sem argumentos, códigos ou resultados.
 - `backups/ID.bak`: conteúdo anterior de arquivos substituídos.
 
@@ -315,6 +329,7 @@ src/
   tools/       filesystem e execução local
   mcp/         clientes upstream e fachada do servidor
   events/      assinaturas, resultados retidos e entrega de webhooks
+  watchers/    acompanhamentos duráveis por sinal ou estado final de um job
   app.ts       composição e ciclo de vida
   http.ts      administração, REST e transporte MCP
   cli.ts       inicialização e adaptador stdio

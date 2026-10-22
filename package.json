@@ -1,6 +1,6 @@
 {
   "name": "ponte-mcp",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Ponte local entre chats, projetos e servidores MCP.",
   "private": true,
   "type": "module",

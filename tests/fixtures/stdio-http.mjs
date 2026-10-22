@@ -60,6 +60,16 @@ globalThis.fetch = async (input, init = {}) => {
       },
     }), { headers: { 'Content-Type': 'application/json' } });
   }
+  const watchArgs = request.name === 'bridge_watch_wait' ? request.arguments : request.name === 'bridge_call' && request.arguments.tool === 'bridge_watch_wait' ? request.arguments.arguments : undefined;
+  if (watchArgs) {
+    advance(watchArgs.waitMs ?? 25_000);
+    init.signal.throwIfAborted();
+    if (watchArgs.watcherId === 'simulate-timeout') {
+      advance(11_000); init.signal.throwIfAborted();
+      throw new Error('Watcher waits must have a finite deadline');
+    }
+    return json(result({ watcherId: watchArgs.watcherId, status: 'waiting', monitorDurable: true, canWakeClosedConversation: false }));
+  }
   // Both a completed automatic tool and a full bridge_job approval wait can
   // legitimately keep the request open for the gateway's entire 25-second wait.
   advance(25_000);

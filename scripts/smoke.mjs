@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash, createHmac } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { writeSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -233,6 +233,26 @@ try {
   await modern('events/unsubscribe', { ...subscriptionParams, delivery: { mode: 'webhook', url: subscriptionParams.delivery.url } });
   assert.equal(runtime.events.snapshot().subscriptionCount, 0);
   log('OK: MCP 2.0, assinatura de evento, desafio, HMAC, entrega única e encerramento com receptor controlado.');
+
+  stage = 'aguardar tarefa externa com watcher nativo, sem agendador do cliente';
+  const creating = jsonText(await callTool('bridge_watch_create', { name: 'Conclusão externa no build', trigger: { type: 'signal', source: 'smoke-executor', runId: 'compiled-watch' }, idempotencyKey: 'compiled-watch' }));
+  assert.equal(creating.status, 'pending_approval');
+  assert.equal((await adminRequest(`/admin/jobs/${creating.jobId}/approve`, 'POST')).status, 200);
+  const nativeWatch = jsonText(await completed(await callTool('bridge_job', { jobId: creating.jobId })), 1);
+  secrets.push(nativeWatch.callback.token);
+  assert.equal(nativeWatch.status, 'waiting');
+  const nativeWait = callTool('bridge_watch_wait', { watcherId: nativeWatch.watcherId, waitMs: 3000 });
+  for (let i = 0; i < 100 && runtime.watchers.snapshot().activeWaiters !== 1; i++) await delay(5, undefined, { signal: controller.signal });
+  assert.equal(runtime.watchers.snapshot().activeWaiters, 1);
+  const receipt = await localFetch(nativeWatch.callback.url, { method: 'POST', headers: { Authorization: 'Bearer ' + nativeWatch.callback.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ eventId: randomUUID(), runId: 'compiled-watch', status: 'succeeded', summary: 'Executor concluiu e validou a demanda.' }) });
+  assert.equal(receipt.status, 200);
+  assert.equal(jsonText(await nativeWait).status, 'succeeded');
+  assert.equal(runtime.watchers.snapshot().activeWaiters, 0);
+  assert.equal(runtime.events.snapshot().subscriptionCount, 0);
+  const nativeDisk = await readFile(path.join(temporaryRoot, 'state', 'watchers.json'), 'utf8');
+  assert.equal(JSON.parse(nativeDisk).watchers[0].status, 'succeeded');
+  assert.ok(!nativeDisk.includes(nativeWatch.callback.token));
+  log('OK: watcher nativo aprovado, sinal autenticado, espera liberada e resultado persistido sem agendador.');
 
   stage = 'renovar e revogar a conexão OAuth';
   const oldRefresh = oauthTokens.refresh_token;

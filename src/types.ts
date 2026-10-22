@@ -33,7 +33,7 @@ export interface AppConfig {
   upstreams: UpstreamConfig[];
 }
 export interface Secrets { adminToken: string; apiToken: string }
-export interface ToolContext { signal: AbortSignal }
+export interface ToolContext { signal: AbortSignal; principal?: string }
 export interface ToolDefinition {
   tool: Tool;
   risk: Risk;

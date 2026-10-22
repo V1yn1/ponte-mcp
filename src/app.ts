@@ -14,6 +14,8 @@ import { PonteOAuthProvider } from './auth/provider.js';
 import { oauthConnectionState } from './auth/http.js';
 import { EventService } from './events/service.js';
 import type { WebhookPost } from './events/webhook.js';
+import { WatchService } from './watchers/service.js';
+import { createWatcherTool, jobForObservation } from './watchers/tools.js';
 
 export const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -24,11 +26,13 @@ export class Application {
   readonly jobs: JobManager;
   readonly apiPrincipal: string;
   events!: EventService;
+  watchers!: WatchService;
   adminUrl = '';
   apiUrl = '';
   private servers: HttpServer[] = [];
   private closed = false;
   private stopJobEvents?: () => void;
+  private stopJobWatchers?: () => void;
   constructor(readonly store: ConfigStore, readonly oauth: PonteOAuthProvider) {
     this.audit = new AuditLog(store.stateDir);
     this.hub = new McpHub(store.config.upstreams);
@@ -40,12 +44,21 @@ export class Application {
       stateDir: this.store.stateDir,
       getJob: (principal, id) => {
         if (this.jobs.ownerOf(id) !== principal) throw new Error('Trabalho indisponível para esta conexão.');
-        return this.jobs.get(id);
+        return jobForObservation(this.jobs.get(id));
       },
       isAuthorized: principal => principal === this.apiPrincipal || (principal.startsWith('oauth:') && this.oauth.isGrantActive(principal.slice(6))),
       ...(post ? { post } : {}),
     });
-    this.stopJobEvents = this.jobs.onTerminal(job => { void this.events.record(job).catch(() => { /* Retained in Events diagnostics. */ }); });
+    this.stopJobEvents = this.jobs.onTerminal(job => { void this.events.record(jobForObservation(job)).catch(() => { /* Retained in Events diagnostics. */ }); });
+  }
+  async initializeWatchers(): Promise<void> {
+    this.watchers = await WatchService.open({
+      stateDir: this.store.stateDir, secretKey: this.store.secrets.apiToken,
+      getJob: (principal, id) => jobForObservation(this.getJobForClient(id, principal)),
+      isAuthorized: principal => principal === this.apiPrincipal || (principal.startsWith('oauth:') && this.oauth.isGrantActive(principal.slice(6))),
+      isPaused: () => this.jobs.paused,
+    });
+    this.stopJobWatchers = this.jobs.onTerminal(job => { void this.watchers.recordJob(jobForObservation(job)).catch(() => { /* Durable refresh retries and exposes a safe diagnostic. */ }); });
   }
   getJobForClient(id: string, principal?: string): Job {
     try {
@@ -59,13 +72,14 @@ export class Application {
       throw error;
     }
   }
-  getTools(): ToolDefinition[] { return [...createLocalTools(() => this.store.config, this.store.stateDir), ...this.hub.tools()]; }
+  getTools(): ToolDefinition[] { return [...createLocalTools(() => this.store.config, this.store.stateDir), ...(this.watchers ? [createWatcherTool(this.watchers, () => this.store.config.publicUrl ?? this.apiUrl)] : []), ...this.hub.tools()]; }
   publicStatus() {
     return {
-      name: 'Ponte MCP', version: '0.5.0', paused: this.jobs.paused, approvalMode: this.store.config.approvalMode,
+      name: 'Ponte MCP', version: '0.6.0', paused: this.jobs.paused, approvalMode: this.store.config.approvalMode,
       projects: this.store.config.projects.map(({ id, name, allowWrite, allowExec }) => ({ id, name, allowWrite, allowExec })),
       servers: this.hub.statuses(), toolCount: this.getTools().length,
       events: { supported: Boolean(this.events), protocolVersion: '2026-07-28', event: 'ponte.job.completed', subscriptionRequired: true },
+      watchers: { supported: Boolean(this.watchers), triggers: ['signal', 'job'], monitorDurable: true, nativeSchedulerRequired: false, canWakeClosedConversation: false, defaultWaitMs: 25000, maxWaitMs: 300000 },
       note: 'O chat precisa suportar ferramentas. Cotas e custos dos provedores permanecem válidos.',
     };
   }
@@ -75,12 +89,13 @@ export class Application {
     const tools = this.getTools();
     const counts = (status: string) => jobs.filter(job => job.status === status).length;
     return {
-      name: 'Ponte MCP', version: '0.5.0', paused: this.jobs.paused, startedAt: this.startedAt,
+      name: 'Ponte MCP', version: '0.6.0', paused: this.jobs.paused, startedAt: this.startedAt,
       config, servers: this.hub.statuses(),
       jobs: jobs.slice(0, 50).map(({ result: _result, preview: _preview, arguments: _arguments, ...job }) => ({ ...job, arguments: {} })),
       stats: { tools: tools.length, projects: config.projects.length, pending: counts('pending_approval'), running: counts('running') + counts('queued'), succeeded: counts('succeeded'), failed: counts('failed') },
       ...(this.audit.error ? { auditError: this.audit.error } : {}),
       events: this.events?.snapshot(),
+      watchers: this.watchers?.snapshot(),
       connection: {
         platform: process.platform,
         mcpUrl: (config.publicUrl ?? this.apiUrl).replace(/\/$/, '') + '/mcp', apiUrl: config.publicUrl ?? this.apiUrl,
@@ -94,7 +109,10 @@ export class Application {
   attach(servers: HttpServer[]): void { this.servers = servers; }
   async close(): Promise<void> {
     if (this.closed) return;
-    this.closed = true; this.jobs.close();
+    this.closed = true;
+    this.stopJobWatchers?.();
+    await this.watchers?.close();
+    this.jobs.close();
     this.stopJobEvents?.();
     await this.events?.close();
     await this.hub.close();
@@ -118,6 +136,7 @@ export async function startApplication(options: { stateDir: string; workspace?: 
   const application = new Application(store, oauth);
   try {
     await application.initializeEvents(options.eventPost);
+    await application.initializeWatchers();
     const apps = createHttpApps(application);
     const admin = createServer(apps.admin); const api = createServer(apps.api);
     for (const server of [admin, api]) { server.requestTimeout = 150000; server.headersTimeout = 10000; server.maxHeadersCount = 64; }

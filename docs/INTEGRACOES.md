@@ -1,6 +1,6 @@
 # Conexão com chats e outros servidores
 
-Ponte MCP **0.5.0**. Documentação do ChatGPT e do Claude consultada em **22 de outubro de 2026**. As telas e permissões dos fornecedores podem mudar. Os roteiros de conexão estão em [CHATGPT.md](CHATGPT.md) e [CLAUDE.md](CLAUDE.md); os resultados efetivamente observados na entrega estão em [VALIDACAO.md](VALIDACAO.md).
+Ponte MCP **0.6.0**. Documentação do ChatGPT e do Claude consultada em **22 de outubro de 2026**. As telas e permissões dos fornecedores podem mudar. Os roteiros de conexão estão em [CHATGPT.md](CHATGPT.md) e [CLAUDE.md](CLAUDE.md); os resultados efetivamente observados na entrega estão em [VALIDACAO.md](VALIDACAO.md).
 
 ## Escolha a entrada compatível com seu cliente
 
@@ -15,6 +15,12 @@ Ponte MCP **0.5.0**. Documentação do ChatGPT e do Claude consultada em **22 de
 | ChatGPT com Secure MCP Tunnel disponível | Túnel oficial para uma entrada MCP compatível | Permissões, associação ao workspace e configuração própria do cliente de túnel |
 | GPT personalizado com Actions | REST em origem HTTPS | OpenAPI e autenticação API Key/Bearer |
 | Chat sem ferramentas | Não consegue executar diretamente | Mudar para uma superfície com integração explícita |
+
+## Watchers nativos para tarefas delegadas
+
+As cinco ferramentas `bridge_watch_*` acompanham tarefas na própria Ponte, sem agendador do cliente. O gatilho `signal` recebe um recibo autenticado do executor; `job` acompanha o estado final de um job da Ponte. Crie o acompanhamento antes de delegar e use `bridge_watch_wait` com o mesmo ID. Consulta e resultado persistem mesmo após reconectar. Uma chamada ativa pode aguardar o gatilho; um watcher não reabre uma conversa encerrada. O roteiro de integração com uma sessão Claude existente está em [WATCHERS.md](WATCHERS.md).
+
+O produtor remoto envia POST para `/hooks/watchers/:watcherId/signal` com o token exclusivo retornado na criação. Encaminhe esse caminho pelo mesmo túnel da API. Não use tokens de API/admin no callback e não confunda esse recibo de entrada da Ponte com o callback de saída do protocolo MCP Events.
 
 ## ChatGPT nativo com OAuth
 
@@ -59,7 +65,7 @@ Pedidos de autorização aguardam revisão por até 10 minutos, códigos OAuth v
 
 Use uma origem estável. Alterar `publicUrl` muda os identificadores de emissor e recurso; configure novamente a conexão no ChatGPT para o novo endereço. Copiar apenas os arquivos do programa para outra pasta não transfere o estado OAuth: preserve o diretório `.ponte` ou passe seu caminho absoluto em `--state-dir`.
 
-Ao atualizar para 0.5.0, preserve `.ponte` e mantenha uma conexão OAuth já concluída. No plugin da Ponte, atualize as ferramentas e a descoberta de eventos; confirme `ponte.job.completed` na página do plugin. Atualizar o catálogo não exige recriar uma conexão que funciona. O procedimento completo de atualização está em [CHATGPT.md](CHATGPT.md).
+Ao atualizar para 0.6.0, preserve `.ponte` e mantenha uma conexão OAuth já concluída. No plugin da Ponte, atualize as ferramentas e a descoberta de eventos; confirme `ponte.job.completed` na página do plugin. Atualizar o catálogo não exige recriar uma conexão que funciona. O procedimento completo de atualização está em [CHATGPT.md](CHATGPT.md).
 
 Fontes oficiais:
 
@@ -90,7 +96,7 @@ Para aguardar o mesmo trabalho durante o turno ativo, chame `bridge_job`:
 
 ### MCP Events
 
-A Ponte 0.5.0 implementa o perfil de webhooks e verificação de [MCP Events da OpenAI](https://developers.openai.com/plugins/build/mcp-events), usando o protocolo `2026-07-28`. A disponibilidade documentada é **Work no navegador** ou **Work com Cloud selecionado no desktop**, sujeita à conta e ao workspace. Não se aplica automaticamente a toda conversa que tenha ferramentas MCP.
+A Ponte 0.6.0 implementa o perfil de webhooks e verificação de [MCP Events da OpenAI](https://developers.openai.com/plugins/build/mcp-events), usando o protocolo `2026-07-28`. A disponibilidade documentada é **Work no navegador** ou **Work com Cloud selecionado no desktop**, sujeita à conta e ao workspace. Não se aplica automaticamente a toda conversa que tenha ferramentas MCP.
 
 O evento `ponte.job.completed` exige o `jobId` de um trabalho da mesma conexão. O cliente cria a assinatura e fornece callback e segredo; a Ponte verifica o destino e envia um evento assinado quando aquele trabalho atinge estado final. Ao recebê-lo, o chat consulta `bridge_job` e continua conforme as instruções dadas pelo usuário. Uma assinatura criada logo após a conclusão também recebe o estado final atual; não há reprodução de histórico por cursor.
 
