@@ -1,0 +1,36 @@
+{
+  "name": "ponte-mcp",
+  "version": "0.2.0",
+  "description": "Ponte local entre chats, projetos e servidores MCP.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "bin": {
+    "ponte": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts start",
+    "start": "node dist/cli.js start",
+    "setup": "node dist/cli.js init",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx tests/run.ts",
+    "verify": "npm run check && npm test && npm run build",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "ajv": "^8.17.1",
+    "diff": "^8.0.2",
+    "express": "^5.1.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.3"
+  }
+}

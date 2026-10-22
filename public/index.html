@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#172823">
+  <meta name="description" content="Ponte MCP — controle local de projetos, ferramentas e execuções.">
+  <title>Ponte MCP — Painel local</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-bridge" viewBox="0 0 24 24"><path d="M4 18V7m16 11V7M4 11c5 6 11 6 16 0M4 18h16M8 15v3m4-2v2m4-3v3M2 7h4m12 0h4"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24"><path d="M8 3v5m8-5v5M6 8h12v3a6 6 0 0 1-12 0Zm6 9v4"/></symbol>
+    <symbol id="i-tool" viewBox="0 0 24 24"><path d="m14 7 3 3 4-4a7 7 0 0 1-9 9l-6 6-3-3 6-6a7 7 0 0 1 9-9Z"/></symbol>
+    <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 11a8 8 0 0 1-8 8H7l-4 3V11a9 9 0 0 1 18 0Z"/><path d="M8 10h8m-8 4h5"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 6a8 8 0 0 1 13 2l1 4M4 12l1 4a8 8 0 0 0 13 2"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Z"/><path d="m8 12 3 3 5-6"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5m8-10 5 5-5 5m-3-12-2 14"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 9 3 3-3 3m6 0h4"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="m15 4 5 5M4 20l5-1L21 7l-5-5L4 14Z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></symbol>
+    <symbol id="i-exit" viewBox="0 0 24 24"><path d="M10 4H4v16h6m5-13 5 5-5 5M8 12h12"/></symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24"><path d="m12 2 9 5v10l-9 5-9-5V7Zm0 10v10M3 7l9 5 9-5M8 4l9 5"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 3h7v7m0-7L10 14M10 5H3v16h16v-7"/></symbol>
+  </svg>
+
+  <div id="auth-screen" class="auth-screen">
+    <div class="auth-story">
+      <a class="brand auth-brand" href="/" aria-label="Ponte MCP, início"><span class="brand-mark"><svg class="icon"><use href="#i-bridge"/></svg></span><span>Ponte<span class="brand-suffix"> MCP</span></span></a>
+      <div class="auth-story-content">
+        <span class="eyebrow">SEU AMBIENTE. SEU CONTROLE.</span>
+        <h1>Do chat ao código.<br><span>Com você no comando.</span></h1>
+        <p>Conecte seus projetos e ferramentas locais a clientes compatíveis com MCP. Revise cada ação, acompanhe cada execução.</p>
+        <div class="auth-flow" aria-label="Fluxo: cliente de chat, Ponte MCP, ambiente local">
+          <div><svg class="icon"><use href="#i-chat"/></svg><span>Seu chat</span></div>
+          <span class="flow-line" aria-hidden="true"></span>
+          <div class="flow-center"><svg class="icon"><use href="#i-bridge"/></svg><span>Ponte MCP</span></div>
+          <span class="flow-line" aria-hidden="true"></span>
+          <div><svg class="icon"><use href="#i-terminal"/></svg><span>Seu ambiente</span></div>
+        </div>
+      </div>
+      <div class="auth-foot"><svg class="icon"><use href="#i-shield"/></svg><span>Uma camada de controle entre a intenção e a execução.</span></div>
+    </div>
+    <main class="auth-main">
+      <div class="auth-card">
+        <div class="auth-icon"><svg class="icon"><use href="#i-lock"/></svg></div>
+        <span class="eyebrow">PAINEL LOCAL</span>
+        <h2>Acesse sua ponte.</h2>
+        <p>Entre com o token de administração deste ambiente.</p>
+        <form id="login-form">
+          <label for="admin-token">Token de administração</label>
+          <input id="admin-token" name="token" type="password" required autocomplete="off" spellcheck="false" placeholder="Cole seu token aqui" aria-describedby="token-help login-error">
+          <p id="token-help" class="field-help">Use o token fornecido pela CLI da Ponte MCP.</p>
+          <p id="login-error" class="form-error" role="alert" hidden></p>
+          <button class="button button-primary auth-submit" type="submit"><span>Entrar no painel</span><svg class="icon"><use href="#i-arrow"/></svg></button>
+        </form>
+        <div class="auth-note"><svg class="icon"><use href="#i-shield"/></svg><span>O token fica apenas nesta sessão do navegador.</span></div>
+      </div>
+      <p class="auth-caption">Ferramentas locais. Permissões explícitas.</p>
+    </main>
+  </div>
+
+  <div id="workspace" class="app-shell" hidden>
+    <a class="skip-link" href="#main-content">Pular para o conteúdo</a>
+    <button id="nav-backdrop" class="nav-backdrop" aria-label="Fechar navegação" hidden></button>
+    <aside id="sidebar" class="sidebar" aria-label="Barra lateral">
+      <a class="brand sidebar-brand" href="#overview"><span class="brand-mark"><svg class="icon"><use href="#i-bridge"/></svg></span><span>Ponte<span class="brand-suffix"> MCP</span></span></a>
+      <div class="workspace-label"><span class="workspace-avatar">L</span><div><strong>Ambiente local</strong><span>Seu espaço de trabalho</span></div><span class="mini-dot" aria-hidden="true"></span></div>
+      <span class="nav-label">WORKSPACE</span>
+      <nav id="main-nav" class="main-nav" aria-label="Navegação principal">
+        <a href="#overview" data-view="overview" aria-current="page"><svg class="icon"><use href="#i-grid"/></svg><span>Visão geral</span></a>
+        <a href="#projects" data-view="projects"><svg class="icon"><use href="#i-folder"/></svg><span>Projetos</span><span class="nav-count" id="nav-project-count">0</span></a>
+        <a href="#connections" data-view="connections"><svg class="icon"><use href="#i-plug"/></svg><span>Conexões MCP</span></a>
+        <a href="#tools" data-view="tools"><svg class="icon"><use href="#i-tool"/></svg><span>Ferramentas</span></a>
+        <a href="#jobs" data-view="jobs"><svg class="icon"><use href="#i-activity"/></svg><span>Execuções</span><span class="nav-count nav-pending" id="nav-pending-count" hidden>0</span></a>
+        <div class="nav-divider"></div>
+        <a href="#connect" data-view="connect"><svg class="icon"><use href="#i-chat"/></svg><span>Conectar ChatGPT</span><span class="nav-count nav-pending" id="nav-oauth-count" hidden>0</span><svg class="icon nav-arrow"><use href="#i-arrow"/></svg></a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sidebar-note"><svg class="icon"><use href="#i-shield"/></svg><div><strong>Você decide o próximo passo</strong><p>Revise solicitações antes de permitir alterações.</p></div></div>
+        <div class="sidebar-footer"><span id="sidebar-version">Ponte MCP</span><button id="logout-button" class="icon-button" title="Encerrar sessão" aria-label="Encerrar sessão"><svg class="icon"><use href="#i-exit"/></svg></button></div>
+      </div>
+    </aside>
+
+    <div class="workspace-main">
+      <header class="topbar">
+        <div class="topbar-left"><button id="menu-button" class="icon-button mobile-menu" aria-label="Abrir navegação" aria-expanded="false" aria-controls="sidebar"><svg class="icon"><use href="#i-menu"/></svg></button><span class="breadcrumb">Workspace <span>/</span> <strong id="breadcrumb-current">Visão geral</strong></span></div>
+        <div class="topbar-actions"><span id="connection-status" class="connection-status"><span class="status-dot"></span><span>Conectando</span></span><span class="topbar-divider"></span><button id="refresh-button" class="icon-button" aria-label="Atualizar dados" title="Atualizar dados"><svg class="icon"><use href="#i-refresh"/></svg></button><button id="pause-button" class="button button-small button-secondary"><svg class="icon"><use href="#i-pause"/></svg><span>Pausar execuções</span></button></div>
+      </header>
+      <div id="offline-banner" class="notice notice-warning global-notice" role="status" hidden></div>
+      <div id="paused-banner" class="notice notice-warning global-notice" hidden><svg class="icon"><use href="#i-pause"/></svg><span><strong>Execuções pausadas.</strong> Retome a ponte para liberar novas ações.</span></div>
+      <div id="oauth-pending-notice" class="notice notice-warning global-notice oauth-pending-notice" role="status" hidden><svg class="icon"><use href="#i-lock"/></svg><span id="oauth-pending-message"></span><a class="text-link" href="#connect">Revisar conexão<svg class="icon"><use href="#i-arrow"/></svg></a></div>
+      <main id="main-content" class="main-content" tabindex="-1">
+        <div class="page-heading"><div><span class="eyebrow" id="page-eyebrow">SEU CENTRO DE CONTROLE</span><h1 id="page-title">Visão geral</h1><p id="page-description">Conecte ferramentas. Revise ações. Acompanhe o que acontece.</p></div><div id="page-heading-action"></div></div>
+
+        <section id="view-overview" class="view" aria-label="Visão geral">
+          <div class="overview-hero">
+            <div class="hero-copy"><span class="hero-kicker"><span class="status-dot"></span> DO CHAT AO SEU AMBIENTE</span><h2>Seu próximo passo,<br>com as ferramentas certas.</h2><p>Uma ponte para seus projetos, servidores MCP e ações locais. Tudo passa pelo seu painel.</p><a class="button button-dark" href="#connect">Conectar um chat<svg class="icon"><use href="#i-arrow"/></svg></a></div>
+            <div class="bridge-visual" aria-hidden="true"><div class="bridge-orbit orbit-one"></div><div class="bridge-orbit orbit-two"></div><div class="visual-node visual-chat"><svg class="icon"><use href="#i-chat"/></svg><span>Chat</span></div><span class="visual-line line-one"></span><div class="visual-center"><svg class="icon"><use href="#i-bridge"/></svg></div><span class="visual-line line-two"></span><div class="visual-node visual-tools"><svg class="icon"><use href="#i-code"/></svg><span>Ferramentas</span></div><div class="visual-caption"><svg class="icon"><use href="#i-shield"/></svg><span>Permissão em cada etapa</span></div></div>
+          </div>
+          <div id="overview-stats" class="stats-grid" aria-label="Resumo do ambiente"></div>
+          <div class="overview-columns">
+            <div class="overview-primary">
+              <section class="panel"><div class="panel-heading"><div><span class="section-kicker">NA SUA FILA</span><h2>Aguardando aprovação <span id="approval-count" class="count-badge">0</span></h2></div><a class="text-link" href="#jobs">Ver execuções<svg class="icon"><use href="#i-arrow"/></svg></a></div><div id="approval-list"></div></section>
+              <section class="panel"><div class="panel-heading"><div><span class="section-kicker">HISTÓRICO</span><h2>Atividade recente</h2></div><a class="text-link" href="#jobs">Ver tudo<svg class="icon"><use href="#i-arrow"/></svg></a></div><div id="recent-activity"></div></section>
+            </div>
+            <div class="overview-secondary">
+              <section class="panel control-panel"><div class="panel-heading"><div><span class="section-kicker">PERMISSÕES</span><h2>Você no controle</h2></div><span class="soft-icon"><svg class="icon"><use href="#i-shield"/></svg></span></div><p>Defina quais solicitações precisam da sua revisão antes de executar.</p><label for="approval-mode">Política de aprovação</label><select id="approval-mode"><option value="mutations">Aprovar alterações e comandos</option><option value="all">Aprovar todas as solicitações</option></select><p id="approval-mode-help" class="field-help">Leituras podem executar diretamente. Alterações e comandos aguardam sua aprovação.</p></section>
+              <section class="panel"><div class="panel-heading"><div><span class="section-kicker">CONEXÕES</span><h2>Servidores MCP</h2></div><a class="icon-button" href="#connections" aria-label="Gerenciar conexões MCP"><svg class="icon"><use href="#i-arrow"/></svg></a></div><div id="overview-servers"></div></section>
+              <section class="lifecycle-panel"><span class="section-kicker">UM FLUXO TRANSPARENTE</span><ol class="lifecycle"><li><span>01</span><div><strong>Solicitar</strong><p>Um chat ou o painel chama uma ferramenta.</p></div></li><li><span>02</span><div><strong>Revisar</strong><p>Você confere os argumentos e a prévia.</p></div></li><li><span>03</span><div><strong>Executar e registrar</strong><p>O resultado fica no histórico da ponte.</p></div></li></ol></section>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-projects" class="view" aria-label="Projetos" hidden>
+          <div class="section-toolbar"><p id="projects-summary" class="toolbar-description">Diretórios e permissões do seu ambiente.</p><button class="button button-primary" data-action="new-project"><svg class="icon"><use href="#i-plus"/></svg>Adicionar projeto</button></div>
+          <div id="projects-list" class="card-grid"></div>
+          <div class="notice notice-subtle"><svg class="icon"><use href="#i-folder"/></svg><span>Use caminhos absolutos. As permissões de escrita e execução são definidas por projeto.</span></div>
+        </section>
+
+        <section id="view-connections" class="view" aria-label="Conexões MCP" hidden>
+          <div class="section-toolbar"><p class="toolbar-description">Expanda sua ponte com servidores MCP.</p><div class="button-group"><button id="roblox-button" class="button button-secondary"><svg class="icon"><use href="#i-cube"/></svg>Preset Roblox</button><button class="button button-primary" data-action="new-server"><svg class="icon"><use href="#i-plus"/></svg>Adicionar conexão</button></div></div>
+          <div id="servers-list" class="card-grid"></div>
+          <div class="notice notice-subtle"><svg class="icon"><use href="#i-shield"/></svg><span>Declare explicitamente as ferramentas de leitura. As demais são tratadas como ações que exigem aprovação.</span></div>
+        </section>
+
+        <section id="view-tools" class="view" aria-label="Ferramentas" hidden>
+          <div class="section-toolbar tool-toolbar"><div class="search-field"><svg class="icon"><use href="#i-search"/></svg><input id="tool-search" type="search" placeholder="Buscar ferramenta ou conexão…" aria-label="Buscar ferramentas"></div><select id="tool-risk-filter" aria-label="Filtrar ferramentas por permissão"><option value="all">Todas as permissões</option><option value="read">Leitura</option><option value="write">Escrita</option><option value="execute">Execução</option></select><span id="tools-count" class="muted small"></span></div>
+          <div class="tools-layout"><div class="panel tool-catalog"><div class="catalog-heading"><span class="section-kicker">CATÁLOGO</span><span class="muted small">Selecione para inspecionar</span></div><div id="tools-list"></div></div><div id="tool-detail" class="panel tool-detail"><div class="empty-state tall"><span class="empty-icon"><svg class="icon"><use href="#i-tool"/></svg></span><h3>Explore suas ferramentas.</h3><p>Selecione uma ferramenta para ver os parâmetros e enviar uma solicitação.</p></div></div></div>
+        </section>
+
+        <section id="view-jobs" class="view" aria-label="Execuções" hidden>
+          <div class="section-toolbar"><div class="search-field"><svg class="icon"><use href="#i-search"/></svg><input id="job-search" type="search" placeholder="Buscar por ferramenta ou ID…" aria-label="Buscar execuções"></div><select id="job-status-filter" aria-label="Filtrar execuções por status"><option value="all">Todos os status</option><option value="pending_approval">Aguardando aprovação</option><option value="running">Em execução</option><option value="queued">Na fila</option><option value="succeeded">Concluídas</option><option value="failed">Falharam</option><option value="rejected">Recusadas</option><option value="cancelled">Canceladas</option><option value="expired">Expiradas</option></select><span id="jobs-count" class="muted small"></span></div>
+          <div id="jobs-list" class="panel jobs-panel"></div>
+          <p class="page-footnote">O painel exibe as 50 solicitações mais recentes. Abra uma execução para ver argumentos, prévia e resultado.</p>
+        </section>
+
+        <section id="view-connect" class="view" aria-label="Conectar ChatGPT" hidden>
+          <div class="connect-intro"><span class="soft-icon large"><svg class="icon"><use href="#i-chat"/></svg></span><div><h2>Seu ambiente, disponível no ChatGPT.</h2><p>Conecte a Ponte como servidor MCP com OAuth. Você confirma a conexão aqui e mantém o controle sobre projetos, ferramentas e execuções.</p></div></div>
+
+          <section id="oauth-requests-panel" class="panel oauth-requests-panel" aria-labelledby="oauth-requests-title" hidden>
+            <div class="panel-heading"><div><span class="section-kicker">CONFIRME NO SEU COMPUTADOR</span><h2 id="oauth-requests-title">Solicitações de conexão <span id="oauth-requests-count" class="count-badge">0</span></h2></div><span class="badge badge-warning">Revisão local</span></div>
+            <p class="oauth-section-description">Abra os detalhes e compare o código com a página que o ChatGPT abriu no navegador.</p>
+            <div id="oauth-requests-list"></div>
+          </section>
+
+          <div class="connect-grid native-connect-grid">
+            <section class="panel connect-card public-url-card"><div class="step-heading"><span class="step-number">01</span><div><span class="section-kicker">PREPARE O ENDPOINT</span><h2>URL pública da API</h2></div></div><p>Crie um túnel HTTPS para a API da Ponte e salve a origem pública abaixo. Essa URL será usada na descoberta e na autorização OAuth.</p><form id="public-url-form"><label for="public-url">Origem pública HTTPS</label><div class="input-action"><input id="public-url" name="publicUrl" type="url" placeholder="https://sua-ponte.exemplo.com" autocomplete="off" aria-describedby="public-url-help"><button class="button button-primary" type="submit">Salvar</button></div><p id="public-url-help" class="field-help">Use apenas a origem, sem /mcp. Salvar a URL não cria um túnel nem publica o serviço.</p></form><div class="notice notice-subtle tunnel-notice"><svg class="icon"><use href="#i-shield"/></svg><span id="tunnel-help">Exponha apenas a API na porta 4318. O painel da porta 4317 permanece local.</span></div><p class="field-help">Mantenha a Ponte e o túnel em execução enquanto usar a conexão. Se a origem mudar, salve a nova URL e reconecte o cliente.</p></section>
+
+            <section class="panel connect-card native-chatgpt-card"><div class="step-heading"><span class="step-number">02</span><div><span class="section-kicker">MCP NATIVO · OAUTH</span><h2>Adicionar ao ChatGPT</h2></div><span id="oauth-status" class="badge badge-neutral">Configure a URL</span></div><div id="oauth-setup-note" class="notice notice-subtle"><svg class="icon"><use href="#i-info"/></svg><span>Salve a URL pública HTTPS para habilitar o OAuth.</span></div><div class="endpoint-list"><div class="endpoint-row"><div><span>URL do servidor MCP</span><code id="chatgpt-mcp-url">Configure a URL pública primeiro</code></div><button id="copy-chatgpt-url" class="icon-button" data-action="copy-chatgpt-url" aria-label="Copiar URL MCP para o ChatGPT" disabled><svg class="icon"><use href="#i-copy"/></svg></button></div></div><ol class="connect-steps"><li>No ChatGPT, abra <strong>Plugins → + → Add custom MCP server</strong>. Dê o nome <strong>Ponte</strong> e cole a URL MCP acima.</li><li>Em autenticação, selecione <strong>OAuth</strong>. O registro do cliente é automático: deixe Client ID e Client Secret sem preencher.</li><li>Na página de autorização, confira o código. Neste painel, em <strong>Conectar ChatGPT</strong>, revise a solicitação com o mesmo código e autorize.</li><li>Volte ao ChatGPT e selecione <strong>@Ponte</strong> na conversa para disponibilizar as ferramentas.</li></ol><p class="field-help oauth-key-note">A conexão nativa usa OAuth e não pede que você copie uma chave de API.</p></section>
+          </div>
+
+          <section class="panel oauth-grants-panel" aria-labelledby="oauth-grants-title"><div class="panel-heading"><div><span class="section-kicker">ACESSO AUTORIZADO</span><h2 id="oauth-grants-title">Clientes conectados <span id="oauth-grants-count" class="count-badge">0</span></h2></div><span class="soft-icon"><svg class="icon"><use href="#i-shield"/></svg></span></div><div id="oauth-grants-list"></div></section>
+
+          <div class="connect-alternatives-heading"><span class="section-kicker">OUTRAS FORMAS DE CONECTAR</span><h2>Clientes locais e GPT Actions</h2><p>Use a integração adequada ao seu cliente.</p></div>
+          <div class="connect-grid">
+            <section class="panel connect-card"><div class="step-heading"><span class="soft-icon"><svg class="icon"><use href="#i-terminal"/></svg></span><div><span class="section-kicker">CLIENTE LOCAL</span><h2>Conectar por stdio</h2></div><span class="badge badge-neutral">MCP</span></div><p>Adicione esta configuração ao arquivo de servidores MCP do seu cliente. O comando usa o diretório de estado desta ponte.</p><div class="code-header"><span>Configuração do cliente</span><button class="icon-button" data-action="copy-stdio" aria-label="Copiar configuração stdio"><svg class="icon"><use href="#i-copy"/></svg></button></div><pre id="stdio-config" class="code-block"></pre><p class="field-help">O cliente precisa conseguir executar o comando localmente. A configuração varia entre aplicativos.</p></section>
+            <section class="panel connect-card token-card"><div class="step-heading"><span class="soft-icon"><svg class="icon"><use href="#i-code"/></svg></span><div><span class="section-kicker">GPT ACTIONS · OPENAPI</span><h2>Conectar com chave de API</h2></div></div><p>No editor de GPT Actions, importe o esquema OpenAPI e configure autenticação <strong>API Key</strong>, tipo <strong>Bearer</strong>, com o token de API desta Ponte.</p><div id="connection-endpoints" class="endpoint-list"></div><button id="download-openapi" class="button button-secondary full-width"><svg class="icon"><use href="#i-download"/></svg>Baixar esquema OpenAPI</button><p class="actions-token-label">Obtenha o token no terminal, na pasta da Ponte MCP:</p><div class="inline-code"><code>node dist/cli.js token api</code><button class="icon-button" data-action="copy-api-command" aria-label="Copiar comando para obter token de API para Actions"><svg class="icon"><use href="#i-copy"/></svg></button></div><p class="field-help">Actions envia <code>Authorization: Bearer SEU_TOKEN_API</code>. O token de administração é exclusivo deste painel.</p></section>
+          </div>
+          <div class="notice notice-subtle"><svg class="icon"><use href="#i-info"/></svg><span>O acesso a servidores MCP personalizados e Actions depende do cliente, plano e permissões do workspace. As cotas e os limites do provedor continuam valendo.</span></div>
+        </section>
+        <footer class="main-footer"><span>Ponte MCP <span class="footer-dot">·</span> Do chat à execução.</span><span id="last-updated">Aguardando sincronização</span></footer>
+      </main>
+    </div>
+  </div>
+
+  <dialog id="project-dialog" class="modal" aria-labelledby="project-dialog-title">
+    <form id="project-form"><div class="modal-heading"><div><span class="section-kicker">AMBIENTE LOCAL</span><h2 id="project-dialog-title">Adicionar projeto</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Fechar formulário de projeto"><svg class="icon"><use href="#i-close"/></svg></button></div><div class="modal-body"><p class="modal-description">Defina onde a ponte pode trabalhar e quais ações são permitidas.</p><div class="form-grid"><div><label for="project-name">Nome</label><input id="project-name" name="name" required maxlength="100" placeholder="Meu projeto"></div><div><label for="project-id">Identificador</label><input id="project-id" name="id" required pattern="[a-z][a-z0-9_\-]{0,31}" maxlength="32" placeholder="meu-projeto" spellcheck="false"><p class="field-help">Até 32 caracteres: letras minúsculas, números, _ e -. Comece com uma letra.</p></div></div><label for="project-root">Diretório raiz absoluto</label><input id="project-root" name="root" required placeholder="/caminho/para/meu-projeto" spellcheck="false"><p class="field-help">O diretório deve existir na máquina que executa a ponte.</p><div class="permission-options"><label class="checkbox-card"><input id="project-write" name="allowWrite" type="checkbox"><span><strong>Permitir escrita</strong><small>Habilita solicitações para criar e alterar arquivos.</small></span><svg class="icon"><use href="#i-edit"/></svg></label><label class="checkbox-card"><input id="project-exec" name="allowExec" type="checkbox"><span><strong>Permitir comandos</strong><small>Habilita solicitações de execução neste projeto.</small></span><svg class="icon"><use href="#i-terminal"/></svg></label></div><div class="notice notice-subtle"><svg class="icon"><use href="#i-shield"/></svg><span>A política de aprovação continua valendo para as ações habilitadas.</span></div><p id="project-error" class="form-error" role="alert" hidden></p></div><div class="modal-footer"><button type="button" class="button button-secondary" data-close-dialog>Cancelar</button><button type="submit" class="button button-primary">Salvar projeto</button></div></form>
+  </dialog>
+
+  <dialog id="server-dialog" class="modal modal-wide" aria-labelledby="server-dialog-title">
+    <form id="server-form"><div class="modal-heading"><div><span class="section-kicker">SERVIDOR MCP</span><h2 id="server-dialog-title">Adicionar conexão</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Fechar formulário de conexão"><svg class="icon"><use href="#i-close"/></svg></button></div><div class="modal-body"><p class="modal-description">Conecte um servidor local por stdio ou um endpoint MCP por HTTP.</p><div class="form-grid"><div><label for="server-name">Nome</label><input id="server-name" name="name" required maxlength="100" placeholder="Minha conexão"></div><div><label for="server-id">Identificador</label><input id="server-id" name="id" required pattern="[a-z][a-z0-9_\-]{0,31}" maxlength="32" placeholder="minha-conexao" spellcheck="false"></div></div><div class="form-grid"><div><label for="server-transport">Transporte</label><select id="server-transport" name="transport"><option value="stdio">stdio — processo local</option><option value="http">HTTP — Streamable HTTP</option><option value="sse">SSE — compatibilidade</option></select></div><div><label for="server-timeout">Timeout por chamada (ms)</label><input id="server-timeout" name="timeoutMs" type="number" min="100" max="120000" value="60000" step="100" required></div></div><div id="server-stdio-fields"><label for="server-command">Comando</label><input id="server-command" name="command" placeholder="node" spellcheck="false"><label for="server-args">Argumentos (array JSON)</label><textarea id="server-args" name="args" class="code-input" rows="2" placeholder='["/caminho/servidor.js"]' spellcheck="false">[]</textarea><label for="server-cwd">Diretório de trabalho <span class="optional">opcional</span></label><input id="server-cwd" name="cwd" placeholder="/caminho/absoluto" spellcheck="false"></div><div id="server-http-fields" hidden><label for="server-url">URL do servidor</label><input id="server-url" name="url" type="url" placeholder="http://127.0.0.1:3000/mcp" spellcheck="false"><p class="field-help">Use HTTPS ou HTTP em localhost. Se houver parâmetros ocultos, mantenha a URL sem alterações ou informe a URL completa.</p></div><div class="form-grid"><div><label for="server-read-tools">Ferramentas de leitura</label><textarea id="server-read-tools" name="readOnlyTools" class="code-input" rows="3" placeholder="get_scene&#10;list_objects" spellcheck="false"></textarea><p class="field-help">Nomes exatos, um por linha. Vazio: todas exigem aprovação.</p></div><div><label class="checkbox-line"><input id="server-restrict-tools" name="restrictTools" type="checkbox" aria-describedby="server-allowed-tools-help"><span>Limitar ferramentas expostas</span></label><label for="server-allowed-tools">Ferramentas permitidas</label><textarea id="server-allowed-tools" name="allowedTools" class="code-input" rows="3" placeholder="Uma ferramenta por linha" spellcheck="false" aria-describedby="server-allowed-tools-help" disabled></textarea><p id="server-allowed-tools-help" class="field-help">Todas as ferramentas do servidor serão expostas. Marque a opção acima para limitar a uma lista de nomes.</p></div></div><details class="advanced-fields"><summary>Variáveis de ambiente e cabeçalhos</summary><p id="server-secret-help" class="field-help">Objetos JSON. Credenciais não aparecem na lista de conexões.</p><div class="form-grid"><div><label for="server-env">Variáveis de ambiente (JSON)</label><textarea id="server-env" name="env" class="code-input" rows="4" placeholder='{"API_KEY": "seu-valor"}' spellcheck="false" autocomplete="off"></textarea></div><div><label for="server-headers">Cabeçalhos HTTP (JSON)</label><textarea id="server-headers" name="headers" class="code-input" rows="4" placeholder='{"Authorization": "Bearer seu-token"}' spellcheck="false" autocomplete="off"></textarea></div></div></details><label class="checkbox-line"><input id="server-enabled" name="enabled" type="checkbox" checked><span>Ativar esta conexão ao salvar</span></label><p id="server-error" class="form-error" role="alert" hidden></p></div><div class="modal-footer"><button type="button" class="button button-secondary" data-close-dialog>Cancelar</button><button type="submit" class="button button-primary">Salvar conexão</button></div></form>
+  </dialog>
+
+  <dialog id="job-dialog" class="modal modal-wide job-modal" aria-labelledby="job-dialog-title"><div class="modal-heading"><div><span class="section-kicker">DETALHES DA EXECUÇÃO</span><h2 id="job-dialog-title">Execução</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Fechar detalhes da execução"><svg class="icon"><use href="#i-close"/></svg></button></div><div id="job-detail-body" class="modal-body"></div><div id="job-detail-actions" class="modal-footer"></div></dialog>
+
+  <dialog id="oauth-dialog" class="modal modal-wide oauth-modal" aria-labelledby="oauth-dialog-title" aria-describedby="oauth-dialog-description">
+    <div class="modal-heading"><div><span class="section-kicker">AUTORIZAÇÃO OAUTH</span><h2 id="oauth-dialog-title">Revisar conexão</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Fechar revisão da conexão"><svg class="icon"><use href="#i-close"/></svg></button></div>
+    <div class="modal-body"><p id="oauth-dialog-description" class="modal-description">Compare este código com a página de autorização que você abriu ao conectar o cliente.</p><div class="oauth-verification"><span>Código de verificação</span><strong id="oauth-verification-code"></strong></div><dl class="oauth-request-details"><div><dt>Nome informado pelo cliente <span class="badge badge-neutral">Não verificado</span></dt><dd id="oauth-client-name"></dd></div><div><dt>URL de retorno da autorização</dt><dd id="oauth-redirect-uri" class="mono"></dd></div><div><dt>Esta solicitação expira em</dt><dd id="oauth-request-expires"></dd></div><div><dt>Escopo solicitado</dt><dd id="oauth-request-scopes" class="mono"></dd></div></dl><div class="oauth-permission-note"><svg class="icon"><use href="#i-shield"/></svg><div><strong>O que esta conexão permite</strong><p>O escopo <code>ponte:tools</code> permite listar e chamar as ferramentas expostas pela Ponte, enviar solicitações e consultar seus resultados. O acesso aos arquivos segue os projetos configurados. Escrita e comandos dependem das permissões do projeto e da aprovação local; leituras seguem a política selecionada no painel.</p><p>Autorizar o cliente não aprova automaticamente as execuções. Você pode revogar a conexão neste painel.</p></div></div><label class="checkbox-card oauth-code-confirm"><input id="oauth-code-match" type="checkbox"><span><strong>O código é igual ao que aparece no meu navegador.</strong><small>Iniciei esta conexão e conferi o nome do cliente e a URL de retorno acima.</small></span></label><p id="oauth-review-error" class="form-error" role="alert" hidden></p></div>
+    <div class="modal-footer"><span class="footer-note">Autorize somente a conexão que você iniciou.</span><button id="oauth-reject" class="button button-secondary" type="button" data-action="reject-oauth">Recusar</button><button id="oauth-approve" class="button button-primary" type="button" data-action="approve-oauth" disabled><svg class="icon"><use href="#i-check"/></svg>Autorizar conexão</button></div>
+  </dialog>
+
+  <dialog id="confirm-dialog" class="modal modal-confirm" aria-labelledby="confirm-title"><div class="modal-heading"><h2 id="confirm-title">Confirmar ação</h2><button type="button" class="icon-button" data-close-dialog aria-label="Fechar confirmação"><svg class="icon"><use href="#i-close"/></svg></button></div><div class="modal-body"><p id="confirm-description"></p></div><div class="modal-footer"><button id="confirm-cancel" class="button button-secondary" type="button">Cancelar</button><button id="confirm-accept" class="button button-danger" type="button">Remover</button></div></dialog>
+
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="false"></div>
+</body>
+</html>

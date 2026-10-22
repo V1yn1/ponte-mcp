@@ -1,0 +1,6 @@
+Esta pasta é o projeto de demonstração da Ponte MCP.
+
+Você pode testar a leitura e a criação de arquivos aqui. Para trabalhar em
+um projeto real, adicione sua pasta em Projetos no painel local.
+
+O Roblox Studio usa uma conexão MCP separada, em Conexões MCP.

@@ -1,0 +1,10 @@
+{
+  "id": "servico",
+  "name": "Meu serviço MCP",
+  "transport": "http",
+  "enabled": true,
+  "url": "https://mcp.example.com/mcp",
+  "headers": { "Authorization": "Bearer ${MEU_SERVICO_TOKEN}" },
+  "readOnlyTools": [],
+  "timeoutMs": 30000
+}

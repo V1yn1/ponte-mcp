@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ponte": {
+      "command": "node",
+      "args": ["C:\\Projetos\\ponte-mcp\\dist\\cli.js", "stdio", "--state-dir", "C:\\Projetos\\ponte-mcp\\.ponte"]
+    }
+  }
+}

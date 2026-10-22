@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#172823">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="Confirme a conexão com a Ponte MCP no seu painel local.">
+  <title>Autorizar conexão · Ponte MCP</title>
+  <link rel="stylesheet" href="/oauth/consent.css">
+  <script src="/oauth/consent.js" defer></script>
+</head>
+<body>
+  <div class="consent-shell">
+    <header class="consent-header">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 18V7m16 11V7M4 11c5 6 11 6 16 0M4 18h16M8 15v3m4-2v2m4-3v3M2 7h4m12 0h4"/></svg></span><span>Ponte <span class="brand-suffix">MCP</span></span></div>
+      <span class="header-label">AUTORIZAÇÃO OAUTH</span>
+    </header>
+
+    <main class="consent-layout">
+      <section class="consent-intro" aria-labelledby="consent-title">
+        <span class="eyebrow">SEU AMBIENTE. SUA DECISÃO.</span>
+        <h1 id="consent-title">Confirme a conexão<br> no seu computador.</h1>
+        <p class="intro-description">A Ponte está aguardando sua autorização no painel local. Mantenha esta página aberta enquanto confere o pedido.</p>
+        <ol class="consent-steps">
+          <li><span class="step-number">01</span><div><h2>Abra o painel da Ponte</h2><p>No computador em que a Ponte está em execução, entre no painel local e abra <strong>Conectar ChatGPT</strong>.</p></div></li>
+          <li><span class="step-number">02</span><div><h2>Compare o código</h2><p>Selecione <strong>Revisar conexão</strong> e confira se o código é igual ao mostrado nesta página. Verifique também o cliente e a URL de retorno.</p></div></li>
+          <li><span class="step-number">03</span><div><h2>Autorize no painel local</h2><p>Marque a confirmação do código e escolha <strong>Autorizar conexão</strong>. Esta página retornará ao cliente automaticamente.</p></div></li>
+        </ol>
+        <a id="open-dashboard" class="button" target="_blank" rel="noopener noreferrer" hidden>Abrir painel local <span aria-hidden="true">↗</span></a>
+        <p id="dashboard-address" class="dashboard-address" hidden></p>
+        <p class="device-note">Está em outro dispositivo? Abra o painel no computador que executa a Ponte.</p>
+      </section>
+
+      <section id="consent-card" class="consent-card" aria-labelledby="request-title">
+        <div class="card-heading"><span class="eyebrow">CONFIRA OS DOIS LADOS</span><h2 id="request-title">Solicitação de conexão</h2></div>
+        <div class="verification-panel"><span>Código de verificação</span><strong id="verification-code" class="verification-code">Carregando…</strong><p>O mesmo código deve aparecer no seu painel local.</p></div>
+        <div id="request-information" hidden>
+          <dl class="request-details">
+            <div><dt>Nome informado pelo cliente <span class="unverified">Não verificado</span></dt><dd id="client-name"></dd></div>
+            <div><dt>Origem da URL de retorno</dt><dd id="callback-origin" class="mono"></dd></div>
+            <div><dt>Escopo solicitado</dt><dd id="requested-scopes" class="mono"></dd></div>
+            <div><dt>Prazo para confirmar</dt><dd id="request-expiry"></dd></div>
+          </dl>
+          <div class="permission-note"><h3>O que você está autorizando</h3><p id="permission-summary">A conexão pode listar e chamar as ferramentas expostas pela Ponte, enviar solicitações e consultar resultados. O acesso aos arquivos respeita os projetos e suas permissões. A política de aprovação local continua valendo para cada execução.</p></div>
+        </div>
+        <div id="consent-status" class="consent-status" data-state="loading" role="status" aria-live="polite"><span class="status-dot" aria-hidden="true"></span><div><strong id="status-title">Buscando solicitação</strong><p id="status-description">Aguarde enquanto a Ponte carrega os dados da conexão.</p></div></div>
+        <p id="terminal-help" class="terminal-help" hidden>Volte ao cliente e inicie a conexão novamente para obter um novo código.</p>
+        <noscript><p class="noscript-note">Ative o JavaScript para carregar o código e acompanhar a autorização.</p></noscript>
+      </section>
+    </main>
+
+    <footer class="consent-footer"><span>Ponte MCP <span aria-hidden="true">·</span> Você no comando.</span><span>A confirmação acontece no painel local.</span></footer>
+  </div>
+</body>
+</html>
