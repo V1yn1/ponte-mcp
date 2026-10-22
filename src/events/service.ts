@@ -4,9 +4,11 @@ import { chmod, lstat, mkdir, open, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import type { Job } from '../types.js';
+import { watchStatusSchema, type Watcher } from '../watchers/types.js';
 import { decodeWebhookSecret, postWebhook, validateCallbackUrl, verifyCallback, webhookHeaders, type WebhookPost } from './webhook.js';
 
 const EVENT_NAME = 'ponte.job.completed';
+const WATCHER_EVENT_NAME = 'ponte.watcher.completed';
 const MAX_SUBSCRIPTIONS = 100;
 const MAX_STATE_BYTES = 64 * 1024 * 1024;
 const MAX_RESULT_BYTES = 4 * 1024 * 1024;
@@ -17,45 +19,72 @@ const KEY_OVERLAP_MS = 5 * 60_000;
 const MAX_ATTEMPTS = 6;
 const TERMINAL = new Set<Job['status']>(['succeeded', 'failed', 'rejected', 'cancelled', 'expired']);
 const terminalStatus = z.enum(['succeeded', 'failed', 'rejected', 'cancelled', 'expired']);
+const watcherTerminalStatus = watchStatusSchema.exclude(['waiting']);
 const timestamp = z.string().datetime({ offset: true });
 const integer = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const principalSchema = z.string().min(1).max(4096);
 const argumentsSchema = z.object({ jobId: z.string().uuid() }).strict();
+const watcherArgumentsSchema = z.object({ watcherId: z.string().uuid() }).strict();
 const deliverySchema = z.object({ mode: z.literal('webhook'), url: z.string().min(1).max(4096), secret: z.string().min(1).max(128) }).strict();
-const subscribeSchema = z.object({
-  name: z.literal(EVENT_NAME), arguments: argumentsSchema, delivery: deliverySchema,
+const subscribeBase = z.object({
+  delivery: deliverySchema,
   cursor: z.union([z.string().max(4096), z.null()]).optional(), ttlMs: integer.nullable().optional(), maxAgeMs: integer.optional(),
 }).strict();
-const unsubscribeSchema = z.object({ name: z.literal(EVENT_NAME), arguments: argumentsSchema, delivery: deliverySchema.omit({ secret: true }) }).strict();
+const subscribeSchema = z.discriminatedUnion('name', [
+  subscribeBase.extend({ name: z.literal(EVENT_NAME), arguments: argumentsSchema }),
+  subscribeBase.extend({ name: z.literal(WATCHER_EVENT_NAME), arguments: watcherArgumentsSchema }),
+]);
+const unsubscribeBase = z.object({ delivery: deliverySchema.omit({ secret: true }) }).strict();
+const unsubscribeSchema = z.discriminatedUnion('name', [
+  unsubscribeBase.extend({ name: z.literal(EVENT_NAME), arguments: argumentsSchema }),
+  unsubscribeBase.extend({ name: z.literal(WATCHER_EVENT_NAME), arguments: watcherArgumentsSchema }),
+]);
 const jobSchema = z.object({
   id: z.string().uuid(), tool: z.string().min(1).max(256), source: z.string().min(1).max(4096),
   risk: z.enum(['read', 'write', 'execute']), status: z.enum(['pending_approval', 'queued', 'running', 'succeeded', 'failed', 'rejected', 'cancelled', 'expired']),
   approval: z.enum(['automatic', 'manual']).optional(), createdAt: timestamp, updatedAt: timestamp,
   arguments: z.object({}).strict(), result: z.record(z.unknown()).optional(), error: z.string().max(32768).optional(),
 }).strict();
-const eventSchema = z.object({
+const jobEventSchema = z.object({
   eventId: z.string().uuid(), name: z.literal(EVENT_NAME), timestamp, cursor: z.null(),
   data: z.object({ jobId: z.string().uuid(), tool: z.string().min(1).max(256), status: terminalStatus, createdAt: timestamp, updatedAt: timestamp }).strict(),
 }).strict();
+const watcherMetadataSchema = z.object({ watcherId: z.string().uuid(), status: watchStatusSchema, createdAt: timestamp, updatedAt: timestamp }).strict();
+const watcherEventSchema = z.object({
+  eventId: z.string().uuid(), name: z.literal(WATCHER_EVENT_NAME), timestamp, cursor: z.null(),
+  data: watcherMetadataSchema.extend({ status: watcherTerminalStatus }),
+}).strict();
+const eventSchema = z.discriminatedUnion('name', [jobEventSchema, watcherEventSchema]);
 const attemptSchema = z.object({
   event: eventSchema, status: z.enum(['queued', 'retrying', 'delivered', 'failed']), attempts: integer.max(MAX_ATTEMPTS),
   nextAttemptAt: integer, lastAttemptAt: integer.optional(), deliveredAt: integer.optional(), lastError: z.string().max(256).optional(),
 }).strict();
-const subscriptionSchema = z.object({
-  id: z.string().regex(/^sub_[a-f0-9]{64}$/), principal: principalSchema, name: z.literal(EVENT_NAME), arguments: argumentsSchema,
+const subscriptionBase = z.object({
+  id: z.string().regex(/^sub_[a-f0-9]{64}$/), principal: principalSchema,
   url: z.string().min(1).max(4096), secret: z.string().min(1).max(128),
   previousSecret: z.object({ secret: z.string().min(1).max(128), until: integer }).strict().optional(),
   createdAt: integer, expiresAt: integer, delivery: attemptSchema.optional(),
 }).strict();
+const subscriptionSchema = z.discriminatedUnion('name', [
+  subscriptionBase.extend({ name: z.literal(EVENT_NAME), arguments: argumentsSchema }),
+  subscriptionBase.extend({ name: z.literal(WATCHER_EVENT_NAME), arguments: watcherArgumentsSchema }),
+]);
 const archiveSchema = z.object({ principal: principalSchema, expiresAt: integer, job: jobSchema }).strict();
-const stateSchema = z.object({ version: z.literal(1), subscriptions: z.array(subscriptionSchema).max(MAX_SUBSCRIPTIONS), archives: z.array(archiveSchema).max(1000) }).strict();
+const watcherArchiveSchema = z.object({ principal: principalSchema, expiresAt: integer, watcher: watcherMetadataSchema }).strict();
+const stateSchema = z.object({ version: z.literal(1), subscriptions: z.array(subscriptionSchema).max(MAX_SUBSCRIPTIONS), archives: z.array(archiveSchema).max(1000),
+  watcherArchives: z.array(watcherArchiveSchema).max(1000).default([]),
+}).strict();
 type State = z.infer<typeof stateSchema>;
 type Subscription = State['subscriptions'][number];
 type Archive = State['archives'][number];
+type WatcherArchive = State['watcherArchives'][number];
+type EventFilter = Pick<Extract<Subscription, { name: typeof EVENT_NAME }>, 'name' | 'arguments'>
+  | Pick<Extract<Subscription, { name: typeof WATCHER_EVENT_NAME }>, 'name' | 'arguments'>;
 
 export interface EventServiceOptions {
   stateDir: string;
   getJob: (principal: string, jobId: string) => Job;
+  getWatcher?: (principal: string, watcherId: string) => Watcher | Promise<Watcher>;
   isAuthorized: (principal: string) => boolean | Promise<boolean>;
   post?: WebhookPost;
   now?: () => number;
@@ -86,7 +115,7 @@ export interface EventRequestObservation { accepted(): void; rejected(error: unk
 export interface EventSnapshot {
   enabled: true; subscriptionCount: number; pendingDeliveries: number; delivered: number; failed: number;
   diagnostics: EventDiagnostics;
-  subscriptions: Array<{ id: string; event: string; jobId: string; createdAt: string; refreshBefore: string;
+  subscriptions: Array<{ id: string; event: string; jobId?: string; watcherId?: string; createdAt: string; refreshBefore: string;
     status: 'waiting' | 'queued' | 'retrying' | 'delivered' | 'failed'; attempts: number;
     lastAttemptAt?: string; deliveredAt?: string; lastError?: string }>;
   error?: string;
@@ -108,7 +137,8 @@ function diagnosticError(error: unknown): EventDiagnosticError {
 }
 const iso = (value: number) => new Date(value).toISOString();
 const archiveKey = (principal: string, jobId: string) => JSON.stringify([principal, jobId]);
-const identity = (principal: string, url: string, jobId: string) => JSON.stringify([principal, url, EVENT_NAME, jobId]);
+const identity = (principal: string, url: string, filter: EventFilter) => JSON.stringify([principal, url, filter.name,
+  filter.name === EVENT_NAME ? filter.arguments.jobId : filter.arguments.watcherId]);
 const subscriptionId = (canonicalIdentity: string) => 'sub_' + createHash('sha256').update(canonicalIdentity).digest('hex');
 
 function checkOwnedFile(info: Stats): void {
@@ -125,16 +155,30 @@ function validateState(input: unknown): State {
   try { state = stateSchema.parse(input); }
   catch { throw new Error('O estado de Events é inválido.'); }
   const ids = new Set<string>(); const identities = new Set<string>(); const archives = new Map<string, Archive>();
+  const watcherArchives = new Map<string, WatcherArchive>();
+  if (state.archives.length + state.watcherArchives.length > 1000) throw new Error('O estado de Events é inconsistente.');
   for (const archive of state.archives) {
     const key = archiveKey(archive.principal, archive.job.id);
     if (archives.has(key) || Buffer.byteLength(JSON.stringify(archive.job.result ?? {})) > MAX_RESULT_BYTES) throw new Error('O estado de Events é inconsistente.');
     archives.set(key, archive);
   }
+  for (const archive of state.watcherArchives) {
+    const key = archiveKey(archive.principal, archive.watcher.watcherId);
+    if (watcherArchives.has(key)) throw new Error('O estado de Events é inconsistente.');
+    watcherArchives.set(key, archive);
+  }
   for (const subscription of state.subscriptions) {
-    const key = identity(subscription.principal, subscription.url, subscription.arguments.jobId);
-    const archive = archives.get(archiveKey(subscription.principal, subscription.arguments.jobId));
+    const key = identity(subscription.principal, subscription.url, subscription);
+    const event = subscription.delivery?.event;
+    const archive = subscription.name === EVENT_NAME ? archives.get(archiveKey(subscription.principal, subscription.arguments.jobId))
+      : watcherArchives.get(archiveKey(subscription.principal, subscription.arguments.watcherId));
+    const matchingEvent = !event || (subscription.name === EVENT_NAME
+      ? event.name === EVENT_NAME && event.data.jobId === subscription.arguments.jobId
+      : event.name === WATCHER_EVENT_NAME && event.data.watcherId === subscription.arguments.watcherId
+        && archive && 'watcher' in archive && archive.watcher.status === event.data.status
+        && archive.watcher.createdAt === event.data.createdAt && archive.watcher.updatedAt === event.data.updatedAt && event.timestamp === event.data.updatedAt);
     if (subscription.id !== subscriptionId(key) || ids.has(subscription.id) || identities.has(key) || !archive || archive.expiresAt < subscription.expiresAt
-      || (subscription.delivery && subscription.delivery.event.data.jobId !== subscription.arguments.jobId)) throw new Error('O estado de Events é inconsistente.');
+      || !matchingEvent) throw new Error('O estado de Events é inconsistente.');
     try {
       validateCallbackUrl(subscription.url); decodeWebhookSecret(subscription.secret);
       if (subscription.previousSecret) decodeWebhookSecret(subscription.previousSecret.secret);
@@ -150,6 +194,9 @@ function storedJob(job: Job): Archive['job'] {
     ...(job.approval ? { approval: job.approval } : {}), createdAt: job.createdAt, updatedAt: job.updatedAt, arguments: {},
     ...(job.result ? { result: structuredClone(job.result) } : {}), ...(job.error ? { error: job.error.slice(0, 32768) } : {}),
   });
+}
+function storedWatcher(watcher: Watcher): WatcherArchive['watcher'] {
+  return watcherMetadataSchema.parse({ watcherId: watcher.watcherId, status: watcher.status, createdAt: watcher.createdAt, updatedAt: watcher.updatedAt });
 }
 
 /** Durable watches and delivery receipts; executable job requests are never replayed. */
@@ -180,7 +227,7 @@ export class EventService {
     await chmod(stateDir, 0o700);
     const filename = path.join(stateDir, 'events.json');
     const info = await existingFile(filename);
-    let state: State = { version: 1, subscriptions: [], archives: [] };
+    let state: State = { version: 1, subscriptions: [], archives: [], watcherArchives: [] };
     if (info) {
       const file = await open(filename, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
       try {
@@ -202,6 +249,15 @@ export class EventService {
         error: 'Execução interrompida pelo reinício da Ponte. Efeitos externos podem ter ocorrido; a operação não será reenviada automaticamente.' };
       service.enqueueTerminal(restored, archive);
     }
+    for (const archive of restored.watcherArchives) {
+      if (archive.watcher.status === 'waiting') {
+        try {
+          const current = await options.getWatcher?.(archive.principal, archive.watcher.watcherId);
+          if (current?.watcherId === archive.watcher.watcherId) archive.watcher = storedWatcher(current);
+        } catch { /* WatchService may open after Events; only its persisted state determines completion. */ }
+      }
+      service.enqueueWatcherTerminal(restored, archive);
+    }
     await service.commit(restored);
     service.schedule();
     return service;
@@ -222,10 +278,20 @@ export class EventService {
     if (archived) return archived;
     throw new EventError('Trabalho indisponível para esta conexão.');
   }
+  private async findWatcher(principal: string, id: string): Promise<WatcherArchive['watcher']> {
+    try {
+      const watcher = await this.options.getWatcher?.(principal, id);
+      if (watcher?.watcherId === id) return storedWatcher(watcher);
+    } catch { /* A terminal watch may have been pruned after its metadata was archived. */ }
+    const archive = this.state.watcherArchives.find(item => item.principal === principal && item.watcher.watcherId === id && item.expiresAt > this.now());
+    if (archive) return structuredClone(archive.watcher);
+    throw new EventError('Acompanhamento indisponível para esta conexão.');
+  }
   private prune(state: State): void {
     const current = this.now();
     state.subscriptions = state.subscriptions.filter(subscription => subscription.expiresAt > current);
     state.archives = state.archives.filter(archive => archive.expiresAt > current);
+    state.watcherArchives = state.watcherArchives.filter(archive => archive.expiresAt > current);
     for (const subscription of state.subscriptions) if (subscription.previousSecret && subscription.previousSecret.until <= current) delete subscription.previousSecret;
   }
   private async commit(next: State): Promise<void> {
@@ -233,7 +299,7 @@ export class EventService {
     // Reserve room for a maximum-size eventual result before accepting a watch.
     const reservation = next.archives.filter(archive => !TERMINAL.has(archive.job.status)).length * JOB_RESERVATION_BYTES
       + next.subscriptions.filter(subscription => !subscription.delivery).length * 4096;
-    if (next.archives.length > 1000 || Buffer.byteLength(body) + reservation > MAX_STATE_BYTES) throw new EventError('O armazenamento de Events está cheio. Encerre assinaturas ou aguarde a expiração dos resultados.', -32000, { reason: 'storage_limit' });
+    if (next.archives.length + next.watcherArchives.length > 1000 || Buffer.byteLength(body) + reservation > MAX_STATE_BYTES) throw new EventError('O armazenamento de Events está cheio. Encerre assinaturas ou aguarde a expiração dos resultados.', -32000, { reason: 'storage_limit' });
     const destination = path.join(this.options.stateDir, 'events.json');
     const temporary = destination + '.' + randomBytes(12).toString('hex') + '.tmp';
     try {
@@ -246,11 +312,22 @@ export class EventService {
   private enqueueTerminal(state: State, archive: Archive): void {
     if (!TERMINAL.has(archive.job.status)) return;
     for (const subscription of state.subscriptions) {
-      if (subscription.principal !== archive.principal || subscription.arguments.jobId !== archive.job.id || subscription.delivery) continue;
+      if (subscription.name !== EVENT_NAME || subscription.principal !== archive.principal || subscription.arguments.jobId !== archive.job.id || subscription.delivery) continue;
       const job = archive.job;
       subscription.delivery = { attempts: 0, status: 'queued', nextAttemptAt: this.now(), event: {
         eventId: randomUUID(), name: EVENT_NAME, timestamp: job.updatedAt, cursor: null,
         data: { jobId: job.id, tool: job.tool, status: terminalStatus.parse(job.status), createdAt: job.createdAt, updatedAt: job.updatedAt },
+      } };
+    }
+  }
+  private enqueueWatcherTerminal(state: State, archive: WatcherArchive): void {
+    if (archive.watcher.status === 'waiting') return;
+    for (const subscription of state.subscriptions) {
+      if (subscription.name !== WATCHER_EVENT_NAME || subscription.principal !== archive.principal || subscription.arguments.watcherId !== archive.watcher.watcherId || subscription.delivery) continue;
+      const watcher = archive.watcher;
+      subscription.delivery = { attempts: 0, status: 'queued', nextAttemptAt: this.now(), event: {
+        eventId: randomUUID(), name: WATCHER_EVENT_NAME, timestamp: watcher.updatedAt, cursor: null,
+        data: { ...watcher, status: watcherTerminalStatus.parse(watcher.status) },
       } };
     }
   }
@@ -289,7 +366,14 @@ export class EventService {
       payloadSchema: { type: 'object', properties: { jobId: { type: 'string', format: 'uuid' }, tool: { type: 'string' },
         status: { type: 'string', enum: [...TERMINAL] }, createdAt: { type: 'string', format: 'date-time' }, updatedAt: { type: 'string', format: 'date-time' } },
         required: ['jobId', 'tool', 'status', 'createdAt', 'updatedAt'], additionalProperties: false },
-    }] };
+    }, ...(this.options.getWatcher ? [{
+      name: WATCHER_EVENT_NAME, description: 'Avisa após a conclusão persistida de um acompanhamento específico: sucesso, falha, solicitação de entrada, cancelamento, expiração ou interrupção. Após receber o evento, consulte bridge_watch_get com o watcherId para recuperar o resultado e continuar o pedido do usuário sem reenviar a operação. A conclusão do job que enviou uma tarefa não implica a conclusão do acompanhamento externo.',
+      delivery: ['webhook'],
+      inputSchema: { type: 'object', properties: { watcherId: { type: 'string', format: 'uuid', description: 'ID do acompanhamento retornado por bridge_watch_create nesta conexão.' } }, required: ['watcherId'], additionalProperties: false },
+      payloadSchema: { type: 'object', properties: { watcherId: { type: 'string', format: 'uuid' }, status: { type: 'string', enum: watcherTerminalStatus.options },
+        createdAt: { type: 'string', format: 'date-time' }, updatedAt: { type: 'string', format: 'date-time' } },
+        required: ['watcherId', 'status', 'createdAt', 'updatedAt'], additionalProperties: false },
+    }] : [])] };
   }
 
   async subscribe(principal: string, params: unknown): Promise<{ id: string; refreshBefore: string; cursor: null; truncated: false }> {
@@ -302,10 +386,11 @@ export class EventService {
     this.subscribing = true;
     return this.serialized(async () => {
       await this.requireAuthorization(principal);
-      this.findJob(principal, input.arguments.jobId);
+      if (input.name === EVENT_NAME) this.findJob(principal, input.arguments.jobId);
+      else await this.findWatcher(principal, input.arguments.watcherId);
       let next = structuredClone(this.state); this.prune(next);
-      const key = identity(principal, input.delivery.url, input.arguments.jobId);
-      const existing = next.subscriptions.find(item => identity(item.principal, item.url, item.arguments.jobId) === key);
+      const key = identity(principal, input.delivery.url, input);
+      const existing = next.subscriptions.find(item => identity(item.principal, item.url, item) === key);
       if (!existing && next.subscriptions.length >= MAX_SUBSCRIPTIONS) throw new EventError('Limite de 100 assinaturas de Events atingido.', -32000, { reason: 'subscription_limit' });
       const id = subscriptionId(key);
       const cacheKey = createHash('sha256').update(JSON.stringify([principal, input.delivery.url, input.delivery.secret])).digest('hex');
@@ -332,23 +417,35 @@ export class EventService {
         while (this.verified.size > 200) this.verified.delete(this.verified.keys().next().value!);
       }
       await this.requireAuthorization(principal);
-      const job = this.findJob(principal, input.arguments.jobId); // Re-read after the challenge to close the completion race.
+      // Re-read persisted state after the challenge to close the completion race.
+      const resource = input.name === EVENT_NAME ? { job: this.findJob(principal, input.arguments.jobId) }
+        : { watcher: await this.findWatcher(principal, input.arguments.watcherId) };
       const current = this.now(); const expiresAt = current + Math.min(MAX_TTL_MS, Math.max(1, input.ttlMs ?? MAX_TTL_MS));
       // No state mutation can interleave with this serialized verification.
       next = structuredClone(this.state); this.prune(next);
       let subscription = next.subscriptions.find(item => item.id === id);
       if (!subscription) {
-        subscription = { id, principal, name: EVENT_NAME, arguments: input.arguments, url: input.delivery.url,
-          secret: input.delivery.secret, createdAt: current, expiresAt };
+        const common = { id, principal, url: input.delivery.url, secret: input.delivery.secret, createdAt: current, expiresAt };
+        subscription = input.name === EVENT_NAME ? { ...common, name: input.name, arguments: input.arguments }
+          : { ...common, name: input.name, arguments: input.arguments };
         next.subscriptions.push(subscription);
       } else {
         if (subscription.secret !== input.delivery.secret) subscription.previousSecret = { secret: subscription.secret, until: current + KEY_OVERLAP_MS };
         subscription.secret = input.delivery.secret; subscription.expiresAt = expiresAt;
       }
-      let archive = next.archives.find(item => item.principal === principal && item.job.id === job.id);
-      if (!archive) { archive = { principal, expiresAt, job: storedJob(job) }; next.archives.push(archive); }
-      else { archive.expiresAt = Math.max(archive.expiresAt, expiresAt); archive.job = storedJob(job); }
-      this.enqueueTerminal(next, archive);
+      if (resource.job) {
+        const job = resource.job;
+        let archive = next.archives.find(item => item.principal === principal && item.job.id === job.id);
+        if (!archive) { archive = { principal, expiresAt, job: storedJob(job) }; next.archives.push(archive); }
+        else { archive.expiresAt = Math.max(archive.expiresAt, expiresAt); archive.job = storedJob(job); }
+        this.enqueueTerminal(next, archive);
+      } else {
+        const watcher = resource.watcher;
+        let archive = next.watcherArchives.find(item => item.principal === principal && item.watcher.watcherId === watcher.watcherId);
+        if (!archive) { archive = { principal, expiresAt, watcher }; next.watcherArchives.push(archive); }
+        else { archive.expiresAt = Math.max(archive.expiresAt, expiresAt); if (archive.watcher.status === 'waiting') archive.watcher = watcher; }
+        this.enqueueWatcherTerminal(next, archive);
+      }
       await this.commit(next);
       return { id: subscription.id, refreshBefore: iso(expiresAt), cursor: null, truncated: false as const };
     }).finally(() => { this.subscribing = false; });
@@ -357,13 +454,13 @@ export class EventService {
   async unsubscribe(principal: string, params: unknown): Promise<Record<string, never>> {
     const input = parameters(unsubscribeSchema, params); validateCallbackUrl(input.delivery.url);
     await this.requireAuthorization(principal);
-    const key = identity(principal, input.delivery.url, input.arguments.jobId);
-    const found = this.state.subscriptions.find(item => identity(item.principal, item.url, item.arguments.jobId) === key);
+    const key = identity(principal, input.delivery.url, input);
+    const found = this.state.subscriptions.find(item => identity(item.principal, item.url, item) === key);
     if (found) for (const controller of this.controllers.get(found.id) ?? []) controller.abort(new Error('Assinatura encerrada.'));
     // Resolve identity inside the queue as well: an initial subscribe may still
     // be verifying its callback and must not activate after unsubscribe returns.
     await this.serialized(async () => {
-      const matching = this.state.subscriptions.find(item => identity(item.principal, item.url, item.arguments.jobId) === key);
+      const matching = this.state.subscriptions.find(item => identity(item.principal, item.url, item) === key);
       if (!matching) return;
       for (const controller of this.controllers.get(matching.id) ?? []) controller.abort(new Error('Assinatura encerrada.'));
       const next = structuredClone(this.state); next.subscriptions = next.subscriptions.filter(item => item.id !== matching.id);
@@ -394,6 +491,23 @@ export class EventService {
       });
     } catch (error) { this.lastError = 'Não foi possível guardar a conclusão para Events. O resultado da execução não foi alterado.'; throw error; }
   }
+  /** Trusted WatchService listener: call only after its terminal state is durably committed. */
+  async recordWatcher(principal: string, watcher: Watcher): Promise<void> {
+    if (this.closed || watcher.status === 'waiting') return;
+    try {
+      const metadata = storedWatcher(watcher);
+      await this.serialized(async () => {
+        const relevant = this.state.watcherArchives.some(archive => archive.principal === principal && archive.watcher.watcherId === metadata.watcherId && archive.expiresAt > this.now());
+        if (!relevant) return;
+        const next = structuredClone(this.state); this.prune(next);
+        const archive = next.watcherArchives.find(item => item.principal === principal && item.watcher.watcherId === metadata.watcherId);
+        if (!archive) return;
+        if (archive.watcher.status === 'waiting') archive.watcher = metadata;
+        this.enqueueWatcherTerminal(next, archive);
+        await this.commit(next);
+      });
+    } catch (error) { this.lastError = 'Não foi possível guardar a conclusão do acompanhamento para Events. O estado do acompanhamento não foi alterado.'; throw error; }
+  }
   getArchivedJob(principal: string, jobId: string): Job | undefined {
     const archive = this.state.archives.find(item => item.principal === principal && item.job.id === jobId && item.expiresAt > this.now());
     return archive ? structuredClone(archive.job) as Job : undefined;
@@ -405,7 +519,9 @@ export class EventService {
       pendingDeliveries: subscriptions.filter(item => item.delivery && ['queued', 'retrying'].includes(item.delivery.status)).length,
       delivered: subscriptions.filter(item => item.delivery?.status === 'delivered').length,
       failed: subscriptions.filter(item => item.delivery?.status === 'failed').length,
-      subscriptions: subscriptions.map(item => ({ id: item.id, event: item.name, jobId: item.arguments.jobId, createdAt: iso(item.createdAt), refreshBefore: iso(item.expiresAt),
+      subscriptions: subscriptions.map(item => ({ id: item.id, event: item.name,
+        ...(item.name === EVENT_NAME ? { jobId: item.arguments.jobId } : { watcherId: item.arguments.watcherId }),
+        createdAt: iso(item.createdAt), refreshBefore: iso(item.expiresAt),
         status: item.delivery?.status ?? 'waiting', attempts: item.delivery?.attempts ?? 0,
         ...(item.delivery?.lastAttemptAt !== undefined ? { lastAttemptAt: iso(item.delivery.lastAttemptAt) } : {}),
         ...(item.delivery?.deliveredAt !== undefined ? { deliveredAt: iso(item.delivery.deliveredAt) } : {}),
@@ -425,7 +541,7 @@ export class EventService {
   private schedule(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
-    if (this.closed || this.pumping || (!this.state.subscriptions.length && !this.state.archives.length)) return;
+    if (this.closed || this.pumping || (!this.state.subscriptions.length && !this.state.archives.length && !this.state.watcherArchives.length)) return;
     const current = this.now(); let delay = 60_000;
     for (const subscription of this.state.subscriptions) {
       delay = Math.min(delay, subscription.expiresAt - current);
@@ -435,6 +551,10 @@ export class EventService {
     for (const archive of this.state.archives) {
       delay = Math.min(delay, archive.expiresAt - current);
       if (!TERMINAL.has(archive.job.status)) delay = Math.min(delay, 1000);
+    }
+    for (const archive of this.state.watcherArchives) {
+      delay = Math.min(delay, archive.expiresAt - current);
+      if (archive.watcher.status === 'waiting') delay = Math.min(delay, 1000);
     }
     this.timer = setTimeout(() => { this.timer = undefined; void this.pump().catch(() => {}); }, Math.max(1, delay));
     this.timer.unref();
@@ -453,7 +573,7 @@ export class EventService {
       const edit = () => next ??= structuredClone(this.state);
       const current = this.now();
       if (this.state.subscriptions.some(item => item.expiresAt <= current || (item.previousSecret && item.previousSecret.until <= current))
-        || this.state.archives.some(item => item.expiresAt <= current)) this.prune(edit());
+        || this.state.archives.some(item => item.expiresAt <= current) || this.state.watcherArchives.some(item => item.expiresAt <= current)) this.prune(edit());
       const invalid = new Set<string>();
       for (const principal of new Set((next ?? this.state).subscriptions.map(item => item.principal))) if (!(await this.authorized(principal))) invalid.add(principal);
       if (invalid.size) {
@@ -461,6 +581,7 @@ export class EventService {
         for (const subscription of changed.subscriptions) if (invalid.has(subscription.principal)) for (const controller of this.controllers.get(subscription.id) ?? []) controller.abort();
         changed.subscriptions = changed.subscriptions.filter(item => !invalid.has(item.principal));
         changed.archives = changed.archives.filter(item => !invalid.has(item.principal));
+        changed.watcherArchives = changed.watcherArchives.filter(item => !invalid.has(item.principal));
       }
       // Calling getJob also advances the existing approval-expiration mechanism.
       for (const archive of (next ?? this.state).archives) {
@@ -470,6 +591,14 @@ export class EventService {
         if (!latest || !TERMINAL.has(latest.status)) continue;
         const changed = edit(); const target = changed.archives.find(item => item.principal === archive.principal && item.job.id === archive.job.id)!;
         target.job = storedJob(latest); this.enqueueTerminal(changed, target);
+      }
+      for (const archive of (next ?? this.state).watcherArchives) {
+        if (archive.watcher.status !== 'waiting') continue;
+        let latest: Watcher | undefined;
+        try { latest = await this.options.getWatcher?.(archive.principal, archive.watcher.watcherId); } catch { /* Retry unavailable persisted watches on the next pump. */ }
+        if (!latest || latest.watcherId !== archive.watcher.watcherId || latest.status === 'waiting') continue;
+        const changed = edit(); const target = changed.watcherArchives.find(item => item.principal === archive.principal && item.watcher.watcherId === archive.watcher.watcherId)!;
+        target.watcher = storedWatcher(latest); this.enqueueWatcherTerminal(changed, target);
       }
       const ready: Array<{ id: string; eventId: string }> = [];
       for (const subscription of (next ?? this.state).subscriptions) {

@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Ponte MCP",
-    "version": "0.7.0",
-    "description": "Ferramentas locais e MCPs conectados. A aprovação segue a política selecionada no painel do computador. Não altera cotas de IA. Descubra o schema usando listTools; envie argumentsJson com JSON válido. Para cadastrar MCPs pelo chat, descubra bridge_mcp_list, bridge_mcp_add e bridge_mcp_reconnect filtrando source=bridge:mcps. O cadastro exige motivo, segue a aprovação existente e nunca substitui uma configuração diferente com o mesmo ID. Confirme server.status e consulte listTools com source=mcp:<id> antes de usar as ferramentas novas. Consulte getJob até estado final; não confunda pending_approval com sucesso. Crie acompanhamentos com bridge_watch_create antes de delegar e aguarde o watcherId. O acompanhamento é durável, mas não reabre uma conversa encerrada nem usa o agendador do cliente."
+    "version": "0.8.0",
+    "description": "Ferramentas locais e MCPs conectados. A aprovação segue a política selecionada no painel do computador. Não altera cotas de IA. Descubra o schema usando listTools; envie argumentsJson com JSON válido. Para cadastrar MCPs pelo chat, descubra bridge_mcp_list, bridge_mcp_add e bridge_mcp_reconnect filtrando source=bridge:mcps. O cadastro exige motivo, segue a aprovação existente e nunca substitui uma configuração diferente com o mesmo ID. Confirme server.status e consulte listTools com source=mcp:<id> antes de usar as ferramentas novas. Consulte getJob até estado final; não confunda pending_approval com sucesso. Crie acompanhamentos com bridge_watch_create antes de delegar e aguarde o watcherId com chamadas de 25 s, no máximo 45 s cada. Se waiting, continue aguardando no turno ativo. Após timeout de comunicação, consulte getWatcher e retome waitWatcher pelo mesmo ID, sem recriar ou reenviar a demanda. O prazo total é timeoutMs/expiresAt e não é renovado pela espera. Apresente sucesso, falha ou necessidade de intervenção ao receber o sinal real do executor. O acompanhamento é nativo e durável; não usa agendamentos do cliente nem comprova retomada após o fim do turno."
   },
   "servers": [
     {
@@ -267,7 +267,7 @@
             "enum": [
               false
             ],
-            "description": "A Ponte não reabre uma conversa encerrada."
+            "description": "A retomada após o fim do turno não foi comprovada. Persistência ou recebimento de um webhook não comprovam uma resposta do cliente."
           },
           "resultIsUntrustedData": {
             "type": "boolean",
@@ -299,7 +299,7 @@
                   "waitMs": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 300000
+                    "maximum": 45000
                   }
                 },
                 "required": [
@@ -314,7 +314,51 @@
               "arguments"
             ],
             "additionalProperties": false,
-            "description": "Próxima espera para o mesmo watcherId, quando waiting. Não reenvie a tarefa externa."
+            "description": "Próxima espera para o mesmo watcherId, quando waiting. Continue o turno; não reenvie a tarefa externa."
+          },
+          "continuation": {
+            "type": "object",
+            "properties": {
+              "event": {
+                "type": "string",
+                "enum": [
+                  "ponte.watcher.completed"
+                ]
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "watcherId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "watcherId"
+                ],
+                "additionalProperties": false
+              },
+              "requiresClientSubscription": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "deliveryDoesNotProveContinuation": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              }
+            },
+            "required": [
+              "event",
+              "arguments",
+              "requiresClientSubscription",
+              "deliveryDoesNotProveContinuation"
+            ],
+            "additionalProperties": false,
+            "description": "MCP Events opcional exige inscrição real pelo cliente. Não substitui a espera ativa nem garante retomada de conversa."
           }
         },
         "required": [
@@ -327,6 +371,110 @@
           "expiresAt",
           "monitorDurable",
           "canWakeClosedConversation"
+        ],
+        "additionalProperties": false
+      },
+      "WatcherRecovery": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "watcherId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "monitorDurable": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "canWakeClosedConversation": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "recovery": {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "wait_limit_exceeded",
+                  "communication_error",
+                  "wait_interrupted"
+                ]
+              },
+              "retryable": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "defaultWaitMs": {
+                "type": "integer",
+                "enum": [
+                  25000
+                ]
+              },
+              "maxWaitMs": {
+                "type": "integer",
+                "enum": [
+                  45000
+                ]
+              }
+            },
+            "required": [
+              "reason",
+              "retryable",
+              "defaultWaitMs",
+              "maxWaitMs"
+            ],
+            "additionalProperties": false
+          },
+          "nextStep": {
+            "type": "string"
+          },
+          "nextCall": {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "enum": [
+                  "bridge_watch_get"
+                ]
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "watcherId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "watcherId"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool",
+              "arguments"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "error",
+          "watcherId",
+          "monitorDurable",
+          "canWakeClosedConversation",
+          "recovery",
+          "nextStep",
+          "nextCall"
         ],
         "additionalProperties": false
       }
@@ -695,18 +843,33 @@
             }
           },
           "400": {
-            "description": "ID ou parâmetros inválidos.",
+            "description": "Parâmetros inválidos. Espera acima do limite retorna recuperação pelo mesmo watcherId, sem declarar o estado da tarefa.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/WatcherRecovery"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
                 }
               }
             }
           },
           "401": {
-            "description": "Token inválido.",
+            "description": "Token inválido. Reestabeleça a mesma identidade; não recrie a tarefa.",
             "content": {
               "application/json": {
                 "schema": {
@@ -728,7 +891,7 @@
             }
           },
           "404": {
-            "description": "Acompanhamento indisponível para esta conexão.",
+            "description": "Acompanhamento indisponível para esta conexão. Verifique identidade e retenção; não reenvie a tarefa.",
             "content": {
               "application/json": {
                 "schema": {
@@ -769,18 +932,33 @@
             }
           },
           "400": {
-            "description": "ID ou parâmetros inválidos.",
+            "description": "Parâmetros inválidos. Espera acima do limite retorna recuperação pelo mesmo watcherId, sem declarar o estado da tarefa.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/WatcherRecovery"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
                 }
               }
             }
           },
           "401": {
-            "description": "Token inválido.",
+            "description": "Token inválido. Reestabeleça a mesma identidade; não recrie a tarefa.",
             "content": {
               "application/json": {
                 "schema": {
@@ -802,7 +980,7 @@
             }
           },
           "404": {
-            "description": "Acompanhamento indisponível para esta conexão.",
+            "description": "Acompanhamento indisponível para esta conexão. Verifique identidade e retenção; não reenvie a tarefa.",
             "content": {
               "application/json": {
                 "schema": {
@@ -819,7 +997,7 @@
       "post": {
         "operationId": "waitWatcher",
         "summary": "Aguardar um acompanhamento existente",
-        "description": "Espera por um estado terminal sem ocupar a fila de execuções. O padrão é 25 segundos; até 300 segundos dependem do timeout aceito pelo cliente. O prazo da chamada é independente do prazo do acompanhamento. Se retornar waiting, use nextStep ou nextCall para o mesmo watcherId, sem reenviar a tarefa. Não usa agendador e não reabre uma conversa encerrada.",
+        "description": "Cada chamada espera por até 25 segundos por padrão, com teto de 45 segundos. O cliente pode impor um prazo menor. waitMs não altera timeoutMs/expiresAt, que são o prazo total do watcher. Se waiting, continue no turno ativo com o mesmo watcherId. Após timeout ou desconexão, consulte getWatcher pelo mesmo ID e retome a espera somente se waiting; nunca recrie o watcher nem reenvie a tarefa por falha de comunicação. Apresente o estado terminal e o resultado ao usuário. O fim de uma chamada não significa fim da tarefa. Não usa agendamentos do cliente. Se um limite concreto impedir a continuação, informe o ID recuperável e a limitação, sem prometer despertar automático.",
         "x-openai-isConsequential": false,
         "parameters": [
           {
@@ -843,7 +1021,7 @@
                   "waitMs": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 300000,
+                    "maximum": 45000,
                     "default": 25000
                   }
                 },
@@ -864,18 +1042,33 @@
             }
           },
           "400": {
-            "description": "ID ou parâmetros inválidos.",
+            "description": "Parâmetros inválidos. Espera acima do limite retorna recuperação pelo mesmo watcherId, sem declarar o estado da tarefa.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/WatcherRecovery"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
                 }
               }
             }
           },
           "401": {
-            "description": "Token inválido.",
+            "description": "Token inválido. Reestabeleça a mesma identidade; não recrie a tarefa.",
             "content": {
               "application/json": {
                 "schema": {
@@ -897,7 +1090,7 @@
             }
           },
           "404": {
-            "description": "Acompanhamento indisponível para esta conexão.",
+            "description": "Acompanhamento indisponível para esta conexão. Verifique identidade e retenção; não reenvie a tarefa.",
             "content": {
               "application/json": {
                 "schema": {
@@ -940,18 +1133,33 @@
             }
           },
           "400": {
-            "description": "ID ou parâmetros inválidos.",
+            "description": "Parâmetros inválidos. Espera acima do limite retorna recuperação pelo mesmo watcherId, sem declarar o estado da tarefa.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/WatcherRecovery"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
                 }
               }
             }
           },
           "401": {
-            "description": "Token inválido.",
+            "description": "Token inválido. Reestabeleça a mesma identidade; não recrie a tarefa.",
             "content": {
               "application/json": {
                 "schema": {
@@ -973,7 +1181,7 @@
             }
           },
           "404": {
-            "description": "Acompanhamento indisponível para esta conexão.",
+            "description": "Acompanhamento indisponível para esta conexão. Verifique identidade e retenção; não reenvie a tarefa.",
             "content": {
               "application/json": {
                 "schema": {

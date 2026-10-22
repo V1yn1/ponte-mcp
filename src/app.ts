@@ -17,6 +17,7 @@ import { EventService } from './events/service.js';
 import type { WebhookPost } from './events/webhook.js';
 import { WatchService } from './watchers/service.js';
 import { createWatcherTool, jobForObservation } from './watchers/tools.js';
+import { WATCH_DEFAULT_WAIT_MS, WATCH_MAX_WAIT_MS } from './watchers/types.js';
 
 export const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -35,6 +36,7 @@ export class Application {
   private closed = false;
   private stopJobEvents?: () => void;
   private stopJobWatchers?: () => void;
+  private stopWatcherEvents?: () => void;
   constructor(readonly store: ConfigStore, readonly oauth: PonteOAuthProvider) {
     this.audit = new AuditLog(store.stateDir);
     this.hub = new McpHub(store.config.upstreams);
@@ -50,6 +52,10 @@ export class Application {
         if (this.jobs.ownerOf(id) !== principal) throw new Error('Trabalho indisponível para esta conexão.');
         return jobForObservation(this.jobs.get(id));
       },
+      getWatcher: (principal, id) => {
+        if (!this.watchers) throw new Error('Acompanhamentos ainda em inicialização.');
+        return this.watchers.get(principal, id);
+      },
       isAuthorized: principal => principal === this.apiPrincipal || (principal.startsWith('oauth:') && this.oauth.isGrantActive(principal.slice(6))),
       ...(post ? { post } : {}),
     });
@@ -61,6 +67,9 @@ export class Application {
       getJob: (principal, id) => jobForObservation(this.getJobForClient(id, principal)),
       isAuthorized: principal => principal === this.apiPrincipal || (principal.startsWith('oauth:') && this.oauth.isGrantActive(principal.slice(6))),
       isPaused: () => this.jobs.paused,
+    });
+    this.stopWatcherEvents = this.watchers.onTerminal((principal, watcher) => {
+      void this.events.recordWatcher(principal, watcher).catch(() => { /* Events reconciles durable terminal states and exposes delivery diagnostics. */ });
     });
     this.stopJobWatchers = this.jobs.onTerminal(job => { void this.watchers.recordJob(jobForObservation(job)).catch(() => { /* Durable refresh retries and exposes a safe diagnostic. */ }); });
   }
@@ -79,12 +88,12 @@ export class Application {
   getTools(): ToolDefinition[] { return [...createLocalTools(() => this.store.config, this.store.stateDir), ...(this.watchers ? [createWatcherTool(this.watchers, () => this.store.config.publicUrl ?? this.apiUrl)] : []), ...this.mcpManagement.definitions(), ...this.hub.tools()]; }
   publicStatus() {
     return {
-      name: 'Ponte MCP', version: '0.7.0', paused: this.jobs.paused, approvalMode: this.store.config.approvalMode,
+      name: 'Ponte MCP', version: '0.8.0', paused: this.jobs.paused, approvalMode: this.store.config.approvalMode,
       projects: this.store.config.projects.map(({ id, name, allowWrite, allowExec }) => ({ id, name, allowWrite, allowExec })),
       servers: this.hub.statuses(), toolCount: this.getTools().length,
       mcpManagement: { supported: true, tools: ['bridge_mcp_list', 'bridge_mcp_add', 'bridge_mcp_reconnect'], approvalPolicy: this.store.config.approvalMode, canReplaceExisting: false, credentials: 'environment_references' },
-      events: { supported: Boolean(this.events), protocolVersion: '2026-07-28', event: 'ponte.job.completed', subscriptionRequired: true },
-      watchers: { supported: Boolean(this.watchers), triggers: ['signal', 'job'], monitorDurable: true, nativeSchedulerRequired: false, canWakeClosedConversation: false, defaultWaitMs: 25000, maxWaitMs: 300000 },
+      events: { supported: Boolean(this.events), protocolVersion: '2026-07-28', event: 'ponte.job.completed', events: ['ponte.job.completed', 'ponte.watcher.completed'], subscriptionRequired: true, deliveryDoesNotProveContinuation: true },
+      watchers: { supported: Boolean(this.watchers), triggers: ['signal', 'job'], monitorDurable: true, nativeSchedulerRequired: false, canWakeClosedConversation: false, defaultWaitMs: WATCH_DEFAULT_WAIT_MS, maxWaitMs: WATCH_MAX_WAIT_MS },
       note: 'O chat precisa suportar ferramentas. Cotas e custos dos provedores permanecem válidos.',
     };
   }
@@ -94,7 +103,7 @@ export class Application {
     const tools = this.getTools();
     const counts = (status: string) => jobs.filter(job => job.status === status).length;
     return {
-      name: 'Ponte MCP', version: '0.7.0', paused: this.jobs.paused, startedAt: this.startedAt,
+      name: 'Ponte MCP', version: '0.8.0', paused: this.jobs.paused, startedAt: this.startedAt,
       config, servers: this.hub.statuses(),
       jobs: jobs.slice(0, 50).map(({ result: _result, preview: _preview, arguments: _arguments, ...job }) => ({ ...job, arguments: {} })),
       stats: { tools: tools.length, projects: config.projects.length, pending: counts('pending_approval'), running: counts('running') + counts('queued'), succeeded: counts('succeeded'), failed: counts('failed') },
@@ -118,6 +127,7 @@ export class Application {
     const managementClosed = this.mcpManagement.close();
     this.stopJobWatchers?.();
     await this.watchers?.close();
+    this.stopWatcherEvents?.();
     this.jobs.close();
     this.stopJobEvents?.();
     await this.events?.close();

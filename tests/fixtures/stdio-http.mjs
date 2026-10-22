@@ -61,10 +61,23 @@ globalThis.fetch = async (input, init = {}) => {
     }), { headers: { 'Content-Type': 'application/json' } });
   }
   const watchArgs = request.name === 'bridge_watch_wait' ? request.arguments : request.name === 'bridge_call' && request.arguments.tool === 'bridge_watch_wait' ? request.arguments.arguments : undefined;
+  if (request.name === 'bridge_watch_get') return json(result({ watcherId: request.arguments.watcherId, status: 'succeeded', result: { summary: 'Resultado persistido recuperado.' } }));
   if (watchArgs) {
+    const scenario = watchArgs.watcherId.startsWith('00000000-0000-4000-8000-') ? Number(watchArgs.watcherId.slice(-3)) : 0;
+    if (scenario === 2) throw new TypeError('fixture-sensitive: connection unavailable');
+    if (scenario === 3 || scenario === 12) return new Response(new ReadableStream({
+      pull(controller) {
+        if (scenario === 12) advance(60_000);
+        controller.error(scenario === 12 ? init.signal.reason : new TypeError('fixture-sensitive: body interrupted'));
+      },
+    }), { headers: { 'Content-Type': 'application/json' } });
+    if (scenario === 4) return new Response('fixture-sensitive: invalid JSON');
+    if (scenario === 5) return json({ fixture: 'fixture-sensitive: wrong result shape' });
+    if (scenario >= 6 && scenario <= 8) return new Response(JSON.stringify({ error: 'fixture-sensitive: temporary upstream failure' }), { status: scenario + 496, headers: { 'Content-Type': 'application/json' } });
+    if (scenario >= 9 && scenario <= 11) return new Response(JSON.stringify({ error: 'Acompanhamento indisponível ou sem autorização.' }), { status: scenario === 9 ? 401 : scenario === 10 ? 403 : 404, headers: { 'Content-Type': 'application/json' } });
     advance(watchArgs.waitMs ?? 25_000);
     init.signal.throwIfAborted();
-    if (watchArgs.watcherId === 'simulate-timeout') {
+    if (scenario === 1) {
       advance(11_000); init.signal.throwIfAborted();
       throw new Error('Watcher waits must have a finite deadline');
     }

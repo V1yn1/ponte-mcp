@@ -1,4 +1,4 @@
-# Operação e configuração — Ponte MCP 0.7.0
+# Operação e configuração — Ponte MCP 0.8.0
 
 [Índice da documentação](README.md) · [Integrações](INTEGRACOES.md) · [Segurança](SEGURANCA.md)
 
@@ -68,7 +68,7 @@ Não inicie duas instâncias com o mesmo estado. O diretório contém credenciai
 | `config.json` | Portas, URL pública, política, projetos e upstreams |
 | `secrets.json` | Tokens distintos de administração e API; a chave API também participa da derivação dos tokens de watchers |
 | `oauth.json` | Clientes OAuth, autorizações e informações de renovação/revogação |
-| `events.json` | Inscrições, destinos e segredos de webhook, fila e resultados retidos por Events |
+| `events.json` | Inscrições, destinos e segredos de webhook, fila, resultados de jobs e metadados de watchers retidos por Events |
 | `watchers.json` | Acompanhamentos, resultados, vínculo de proprietário e hashes de credenciais de sinal |
 | `audit.jsonl` | Metadados de execuções, sem conteúdo de argumentos ou resultados |
 | `backups/` | Cópias anteriores dos arquivos substituídos pelas ferramentas de escrita |
@@ -115,11 +115,19 @@ node dist/cli.js start --state-dir "C:\Projetos\ponte-mcp-antiga\.ponte"
 
 Atualize também o caminho do executável `dist/cli.js` na configuração de clientes stdio. Uma conexão OAuth já concluída pode continuar válida com a mesma origem e o mesmo estado; pedidos de conexão em andamento devem ser refeitos.
 
-Confira `version: "0.7.0"` em `bridge_status` ou no resultado de `doctor`. Atualize a descoberta de ferramentas no chat para obter `bridge_mcp_list`, `bridge_mcp_add` e `bridge_mcp_reconnect`, além das cinco ferramentas `bridge_watch_*`. Com `bridge_list_tools` e `bridge_call` disponíveis, também é possível descobrir e chamar os nomes atuais pelo broker sem depender do catálogo inicial em cache. Os guias de [ChatGPT](CHATGPT.md) e [Claude](CLAUDE.md) explicam a atualização do cliente.
+Confira `version: "0.8.0"` em `bridge_status` ou no resultado de `doctor` da instância realmente conectada. Atualize a descoberta no chat: `bridge_watch_wait` deve anunciar máximo de **45000 ms**, e o catálogo Events deve incluir **`ponte.watcher.completed`** junto de `ponte.job.completed`. As três ferramentas `bridge_mcp_*` e as cinco `bridge_watch_*` continuam disponíveis. `bridge_list_tools` e `bridge_call` permitem usar ferramentas do catálogo atual, mas não atualizam a descoberta de Events do cliente. Os guias de [ChatGPT](CHATGPT.md) e [Claude](CLAUDE.md) explicam a atualização.
+
+Uma espera antiga com `waitMs: 300000` será rejeitada pela 0.8.0, preservando o ID e orientando `bridge_watch_get`; use 25000 ms na próxima espera se o acompanhamento continuar em `waiting`. Isso não recria o watcher nem renova seu `expiresAt`. A versão do repositório ou um build local não confirmam, sozinhos, atualização do serviço instalado.
+
+### Estado de Events e retorno a uma versão anterior
+
+A 0.8.0 lê os arquivos `events.json` anteriores com `version: 1` e acrescenta `watcherArchives` ao persistir os metadados do novo evento. Essa compatibilidade permite atualizar a instalação; ela não garante a leitura do estado novo por uma versão antiga, cujo schema estrito pode recusar esse campo.
+
+Para voltar a uma versão anterior, pare o serviço e restaure um **backup completo e compatível feito antes da atualização**, junto do código correspondente. Trocar somente o programa deixa o estado novo no disco. Preserve também uma cópia privada do estado atual para investigar diferenças e resultados produzidos depois do backup. Restaurar estado não desfaz efeitos externos nem autoriza reenviar tarefas.
 
 ### Credenciais e restauração
 
-**Não apague ou recrie `secrets.json` isoladamente para “renovar o token”.** Na v0.7.0, a chave API é usada para validar as credenciais de watchers persistidos. Trocar essa chave sem migrar o estado pode fazer a inicialização recusar `watchers.json`. Esta versão não oferece um comando de rotação coordenada dessas chaves.
+**Não apague ou recrie `secrets.json` isoladamente para “renovar o token”.** Na v0.8.0, a chave API é usada para validar as credenciais de watchers persistidos. Trocar essa chave sem migrar o estado pode fazer a inicialização recusar `watchers.json`. Esta versão não oferece um comando de rotação coordenada dessas chaves.
 
 Para restaurar uma instalação, pare o serviço e restaure o conjunto completo e coerente de estado a partir da cópia privada. Isso volta os dados ao momento do backup; efeitos já produzidos em arquivos ou sistemas externos não são revertidos por essa restauração. Confira os destinos antes de repetir uma tarefa cujo resultado ficou incerto.
 
@@ -197,6 +205,8 @@ Se o domínio do túnel mudar, atualize **Conectar IA → URL pública da API** 
 | Ferramenta antiga ou watcher ausente | Recompile/reinicie, confirme a versão do servidor e atualize a descoberta no cliente |
 | Erro ao carregar watchers após trocar credenciais | Restaure o conjunto coerente de estado; não descarte o arquivo como solução automática |
 | Execução terminou, tarefa externa não | Confira se o job apenas delegou a demanda; use watcher `signal` para a conclusão real |
+| Espera de watcher interrompida ou acima de 45000 ms recusada | Consulte `bridge_watch_get` pelo mesmo ID; retome esperas de 25000 ms somente se continuar `waiting` |
+| Cliente só descobre `ponte.job.completed` | Confira a versão da instância, reinicie após atualizar e recarregue Events no plugin; a 0.8.0 também publica `ponte.watcher.completed` |
 
 ## Verificação em desenvolvimento
 

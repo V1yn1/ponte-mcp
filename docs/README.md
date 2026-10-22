@@ -2,7 +2,7 @@
 
 [Voltar ao projeto](../README.md)
 
-Esta é a documentação operacional da **v0.7.0**, revisada em **22 de outubro de 2026**. Os exemplos devem ser adaptados aos caminhos, IDs e à URL pública da sua instalação. O histórico de versões e os testes executados ficam separados das instruções de uso atual.
+Esta é a documentação operacional da **v0.8.0**, revisada em **22 de outubro de 2026**. Os exemplos devem ser adaptados aos caminhos, IDs e à URL pública da sua instalação. O histórico de versões e os testes executados ficam separados das instruções de uso atual.
 
 ## Comece pela sua tarefa
 
@@ -29,11 +29,13 @@ Esta é a documentação operacional da **v0.7.0**, revisada em **22 de outubro 
 |---|---|
 | **Trabalho (`job`)** | Executar uma ferramenta, aplicando aprovação, validação e limite de execução |
 | **Acompanhamento (`watcher`)** | Guardar o resultado de um gatilho e permitir consulta ou espera pela própria Ponte |
-| **Inscrição de MCP Events** | Entregar o evento de um trabalho ao callback fornecido por um cliente compatível |
+| **Inscrição de MCP Events** | Entregar `ponte.job.completed` ou `ponte.watcher.completed` ao callback fornecido por um cliente compatível |
 
 O watcher `signal` é indicado quando o trabalho acontece fora da chamada que o delegou. O watcher `job` acompanha apenas o estado da execução identificada. A Ponte não interpreta uma janela ociosa ou o término de um envio de texto como sucesso de uma tarefa.
 
-Os watchers **não usam agendador do ChatGPT/Claude**. Permanecem no serviço quando a conexão cai, mas não abrem por conta própria um novo turno no chat. O guia de [Watchers](WATCHERS.md) descreve esse contrato e o fluxo de retomada pelo mesmo ID.
+Os watchers **não usam agendador do ChatGPT/Claude**. Cada espera usa 25 segundos por padrão e no máximo 45 segundos; ela não renova o prazo total do acompanhamento. Enquanto `waiting`, o chat mantém o turno ativo com novas esperas pelo mesmo ID até terminal ou limite concreto. Após falha de comunicação, consulta esse ID antes de continuar. `needs_input` é terminal e pede intervenção.
+
+O acompanhamento permanece no serviço quando a conexão cai. A 0.8.0 mantém `monitorDurable: true` e `canWakeClosedConversation: false`, inclusive após recebimento HTTP de um evento. O guia de [Watchers](WATCHERS.md) descreve a recuperação, e [Validação](VALIDACAO.md#recuperação-de-esperas-e-eventos-de-watchers--080) distingue o caso externo relatado da retomada de conversa ainda não comprovada.
 
 ## Exemplos prontos para adaptar
 

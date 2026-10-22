@@ -25,11 +25,22 @@ async function proxy(t: TestContext): Promise<Client> {
   return client;
 }
 
-function state(result: CallToolResult) {
-  assert.equal(result.isError, false);
+function data(result: CallToolResult) {
   const first = result.content[0];
   assert.equal(first?.type, 'text');
   return JSON.parse(first!.type === 'text' ? first!.text : '{}');
+}
+function state(result: CallToolResult) { assert.equal(result.isError, false); return data(result); }
+function recovery(result: CallToolResult, watcherId: string, reason: string) {
+  assert.equal(result.isError, true);
+  const value = data(result);
+  assert.equal(value.watcherId, watcherId); assert.equal(value.status, undefined);
+  assert.equal(value.recovery.reason, reason); assert.equal(value.recovery.defaultWaitMs, 25000); assert.equal(value.recovery.maxWaitMs, 45000);
+  assert.equal(value.canWakeClosedConversation, false);
+  assert.deepEqual(value.nextCall, { tool: 'bridge_watch_get', arguments: { watcherId } });
+  assert.match(value.nextStep, /não (?:reenvie|crie)/i);
+  assert.ok(!JSON.stringify(value).includes('fixture-sensitive'));
+  return value;
 }
 
 test('stdio proxy preserves automatic results and job IDs through the full gateway wait', async t => {
@@ -64,12 +75,12 @@ test('stdio catalog requests retain the shorter connection deadline', async t =>
   await assert.rejects(client.listTools(), /ponte local|tempo limite/i);
 });
 
-test('stdio native watcher supports the full 300-second wait without extending ordinary tool deadlines', async t => {
+test('stdio proxy budgets the 45-second server wait plus transport margin under a deterministic clock', async t => {
   const client = await proxy(t);
   const watcherId = '66267440-c208-4214-99cb-72ae188b7c5c';
   for (const request of [
-    { name: 'bridge_watch_wait', arguments: { watcherId, waitMs: 300000 } },
-    { name: 'bridge_call', arguments: { tool: 'bridge_watch_wait', arguments: { watcherId, waitMs: 300000 } } },
+    { name: 'bridge_watch_wait', arguments: { watcherId, waitMs: 45000 } },
+    { name: 'bridge_call', arguments: { tool: 'bridge_watch_wait', arguments: { watcherId, waitMs: 45000 } } },
     { name: 'bridge_watch_wait', arguments: { watcherId } },
   ]) {
     const result = state(await client.callTool(request));
@@ -79,14 +90,45 @@ test('stdio native watcher supports the full 300-second wait without extending o
   await assert.rejects(client.callTool({ name: 'fixture_timeout', arguments: {} }), /tempo limite/i);
 });
 
-test('stdio watcher timeout remains finite and advises recovering the watcher rather than resending', async t => {
+test('stdio rejects stale 300-second requests before sending HTTP and recovers the same watcher', async t => {
   const client = await proxy(t);
-  await assert.rejects(client.callTool({ name: 'bridge_watch_wait', arguments: { watcherId: 'simulate-timeout', waitMs: 300000 } }), error => {
-    assert.ok(error instanceof Error);
-    assert.match(error.message, /bridge_watch_get/);
-    assert.match(error.message, /acompanhamento.*continua|preservado/i);
-    assert.match(error.message, /não reenvie/i);
-    return true;
-  });
-  assert.equal(state(await client.callTool({ name: 'fixture_stats', arguments: {} })).bridge_watch_wait, 1);
+  const watcherId = '66267440-c208-4214-99cb-72ae188b7c5c';
+  for (const name of ['bridge_watch_wait', 'bridge_call']) {
+    const args = { watcherId, waitMs: 300000 };
+    recovery(await client.callTool({ name, arguments: name === 'bridge_call' ? { tool: 'bridge_watch_wait', arguments: args } : args }), watcherId, 'wait_limit_exceeded');
+  }
+  const counts = state(await client.callTool({ name: 'fixture_stats', arguments: {} }));
+  assert.equal(counts.bridge_watch_wait ?? 0, 0); assert.equal(counts.bridge_call ?? 0, 0); assert.equal(counts.bridge_watch_create ?? 0, 0);
 });
+
+for (const [scenario, suffix, reason] of [
+  ['deadline', '001', 'wait_interrupted'], ['before headers', '002', 'communication_error'],
+  ['broken body', '003', 'communication_error'], ['invalid JSON', '004', 'communication_error'],
+  ['invalid result shape', '005', 'communication_error'], ['HTTP 502', '006', 'communication_error'],
+  ['HTTP 503', '007', 'communication_error'], ['HTTP 504', '008', 'communication_error'],
+  ['body deadline', '012', 'wait_interrupted'],
+]) {
+  test(`stdio watcher recovery survives ${scenario} without resubmission`, async t => {
+    const client = await proxy(t);
+    const watcherId = '00000000-0000-4000-8000-000000000' + suffix;
+    for (const name of ['bridge_watch_wait', 'bridge_call']) {
+      const args = { watcherId, waitMs: 45000 };
+      const response = recovery(await client.callTool({ name, arguments: name === 'bridge_call' ? { tool: 'bridge_watch_wait', arguments: args } : args }), watcherId, reason!);
+      const recovered = state(await client.callTool({ name: response.nextCall.tool, arguments: response.nextCall.arguments }));
+      assert.equal(recovered.watcherId, watcherId); assert.equal(recovered.status, 'succeeded');
+    }
+    const counts = state(await client.callTool({ name: 'fixture_stats', arguments: {} }));
+    assert.equal(counts.bridge_watch_wait, 1); assert.equal(counts.bridge_call, 1); assert.equal(counts.bridge_watch_get, 2);
+    assert.equal(counts.bridge_watch_create ?? 0, 0);
+  });
+}
+
+for (const [status, suffix] of [[401, '009'], [403, '010'], [404, '011']] as const) {
+  test(`stdio watcher HTTP ${status} remains an access error without an automatic recovery hint`, async t => {
+    const client = await proxy(t);
+    const watcherId = '00000000-0000-4000-8000-000000000' + suffix;
+    await assert.rejects(client.callTool({ name: 'bridge_watch_wait', arguments: { watcherId, waitMs: 25000 } }), /indisponível|autoriz/i);
+    const counts = state(await client.callTool({ name: 'fixture_stats', arguments: {} }));
+    assert.equal(counts.bridge_watch_wait, 1); assert.equal(counts.bridge_watch_get ?? 0, 0); assert.equal(counts.bridge_watch_create ?? 0, 0);
+  });
+}

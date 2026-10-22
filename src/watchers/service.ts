@@ -5,7 +5,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { Job } from '../types.js';
 import { WATCH_MAX_ACTIVE, WATCH_MAX_RECORDS, WATCH_MAX_PAYLOAD_BYTES, WATCH_MAX_WAITERS, WATCH_MAX_WAITERS_PER_WATCHER,
-  watchCreateSchema, watchSignalSchema, watcherSchema, type Watcher, type WatchCreateResult, type WatchList, type WatchSnapshot, type WatchStatus } from './types.js';
+  WATCH_DEFAULT_WAIT_MS, watchWaitOptionsSchema, watchCreateSchema, watchSignalSchema, watcherSchema, type Watcher, type WatchCreateResult, type WatchList, type WatchSnapshot, type WatchStatus } from './types.js';
 export * from './types.js';
 
 const MAX_STATE_BYTES = 24 * 1024 * 1024;
@@ -19,6 +19,7 @@ const recordSchema = watcherSchema.extend({
 const stateSchema = z.object({ version: z.literal(1), watchers: z.array(recordSchema).max(WATCH_MAX_RECORDS) }).strict();
 type State = z.infer<typeof stateSchema>; type Record = State['watchers'][number];
 interface Waiter { wake(): void; stop(error: Error): void }
+type TerminalListener = (principal: string, watcher: Watcher) => void | Promise<void>;
 export interface WatchServiceOptions {
   stateDir: string; secretKey: string;
   getJob(principal: string, id: string): Job | undefined;
@@ -80,6 +81,7 @@ export class WatchService {
   private closed = false;
   private lastError?: string;
   private readonly waiters = new Map<string, Set<Waiter>>();
+  private readonly terminalListeners = new Set<TerminalListener>();
   private constructor(private readonly options: WatchServiceOptions, private state: State) {}
 
   static async open(options: WatchServiceOptions): Promise<WatchService> {
@@ -139,9 +141,21 @@ export class WatchService {
       try { await file.writeFile(body, 'utf8'); await file.sync(); } finally { await file.close(); }
       await existingFile(destination); await rename(temporary, destination);
       // File fsync + atomic rename matches EventService and works on Windows, where directories cannot be opened for fsync.
+      const terminal = next.watchers.filter(record => record.status !== 'waiting'
+        && this.state.watchers.find(previous => previous.watcherId === record.watcherId)?.status !== record.status);
       this.state = next; this.lastError = undefined;
       for (const record of next.watchers) if (record.status !== 'waiting') for (const waiter of this.waiters.get(record.watcherId) ?? []) waiter.wake();
+      // Observers run only after persistence. Never await a listener: Events may call get() to reconcile a subscription.
+      for (const record of terminal) for (const listener of this.terminalListeners) {
+        try {
+          void Promise.resolve(listener(record.principal, publicWatcher(record))).catch(() => { this.lastError = 'Falha ao notificar um observador de acompanhamento.'; });
+        } catch { this.lastError = 'Falha ao notificar um observador de acompanhamento.'; }
+      }
     } finally { await rm(temporary, { force: true }); }
+  }
+  onTerminal(listener: TerminalListener): () => void {
+    this.terminalListeners.add(listener);
+    return () => { this.terminalListeners.delete(listener); };
   }
   private async refresh(restarting = false): Promise<void> {
     const changes = new Map<string, Record>(); const grants = new Map<string, boolean>(); const now = Date.now();
@@ -241,8 +255,8 @@ export class WatchService {
       if (changed) await this.commit(next);
     });
   }
-  async wait(principal: string, id: string, waitMs = 25000, signal?: AbortSignal): Promise<Watcher> {
-    parse(z.number().int().min(0).max(300000), waitMs);
+  async wait(principal: string, id: string, waitMs = WATCH_DEFAULT_WAIT_MS, signal?: AbortSignal): Promise<Watcher> {
+    parse(watchWaitOptionsSchema, { waitMs });
     let resolve!: (value: Watcher) => void; let reject!: (error: Error) => void;
     const waiting = new Promise<Watcher>((yes, no) => { resolve = yes; reject = no; });
     // Attach a rejection handler before queued registration; an early abort must not be unhandled.
@@ -279,5 +293,6 @@ export class WatchService {
     this.closed = true; clearTimeout(this.timer);
     for (const group of this.waiters.values()) for (const waiter of [...group]) waiter.stop(new WatchError('Serviço de acompanhamentos encerrado.', -32000));
     this.closing = this.chain; await this.closing;
+    this.terminalListeners.clear();
   }
 }

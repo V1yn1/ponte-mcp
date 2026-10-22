@@ -1,6 +1,6 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
@@ -10,13 +10,14 @@ import type { Response } from 'express';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { startApplication, type Application } from '../src/app.js';
+import type { WebhookPost } from '../src/events/webhook.js';
 
 const meta = { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {} };
 const plain = (result: any) => result.content.filter((part: any) => part.type === 'text').map((part: any) => JSON.parse(part.text));
 
-async function fixture(t: TestContext, automatic = true) {
+async function fixture(t: TestContext, automatic = true, eventPost?: WebhookPost) {
   const root = await mkdtemp(path.join(tmpdir(), 'ponte-watch-http-'));
-  const options = { stateDir: path.join(root, 'state'), workspace: path.join(root, 'project'), adminPort: 0, apiPort: 0 };
+  const options = { stateDir: path.join(root, 'state'), workspace: path.join(root, 'project'), adminPort: 0, apiPort: 0, ...(eventPost ? { eventPost } : {}) };
   const runtime = await startApplication(options); const runtimes = [runtime];
   t.after(async () => { await Promise.all(runtimes.map(item => item.close())); await rm(root, { recursive: true, force: true }); });
   if (automatic) await runtime.store.update(config => ({ ...config, approvalMode: 'automatic' }));
@@ -116,6 +117,131 @@ test('disconnect removes only waiter and native signal watcher survives restart 
   const result = await fetch(reopened.apiUrl + '/v1/watchers/' + watcher.watcherId, { headers: f.apiHeaders }).then(res => res.json());
   assert.equal(result.status, 'failed'); assert.equal(result.result.summary, body.summary);
   assert.equal(result.callback, undefined);
+});
+
+test('wait contracts cap each call at 45 seconds and reject legacy waits with recovery for the same ID', async t => {
+  const f = await fixture(t);
+  const status = await fetch(f.runtime.apiUrl + '/v1/status', { headers: f.apiHeaders }).then(res => res.json());
+  assert.equal(status.watchers.defaultWaitMs, 25000);
+  assert.equal(status.watchers.maxWaitMs, 45000);
+  const spec = await fetch(f.runtime.apiUrl + '/openapi.json').then(res => res.json());
+  const waitSchema = spec.paths['/v1/watchers/{watcherId}/wait'].post.requestBody.content['application/json'].schema;
+  assert.equal(waitSchema.properties.waitMs.default, 25000);
+  assert.equal(waitSchema.properties.waitMs.maximum, 45000);
+  const tools = await fetch(f.runtime.apiUrl + '/v1/mcp/tools', { headers: f.apiHeaders }).then(res => res.json());
+  const advertised = tools.tools.find((tool: any) => tool.name === 'bridge_watch_wait');
+  assert.equal(advertised.inputSchema.properties.waitMs.maximum, 45000);
+  const watcher = await f.create('bounded');
+  // A terminal watcher keeps the old implementation from blocking this regression for five minutes.
+  await f.signal(watcher);
+  for (const waitMs of [45001, 300000]) {
+    await assert.rejects(f.runtime.watchers.wait(f.runtime.apiPrincipal, watcher.watcherId, waitMs));
+    const response = await fetch(f.runtime.apiUrl + '/v1/watchers/' + watcher.watcherId + '/wait', {
+      method: 'POST', headers: f.apiHeaders, body: JSON.stringify({ waitMs }),
+    });
+    assert.equal(response.status, 400);
+    const rejected = await response.json();
+    assert.equal(rejected.watcherId, watcher.watcherId);
+    assert.equal(rejected.status, undefined);
+    assert.equal(rejected.recovery.reason, 'wait_limit_exceeded');
+    assert.deepEqual(rejected.nextCall, { tool: 'bridge_watch_get', arguments: { watcherId: watcher.watcherId } });
+    for (const name of ['bridge_watch_wait', 'bridge_call']) {
+      const args = { watcherId: watcher.watcherId, waitMs };
+      const denied = await f.call(name, name === 'bridge_call' ? { tool: 'bridge_watch_wait', arguments: args } : args);
+      assert.equal(denied.isError, true);
+      assert.deepEqual(plain(denied)[0].nextCall, rejected.nextCall);
+    }
+  }
+  assert.equal((await f.runtime.watchers.list(f.runtime.apiPrincipal)).total, 1);
+  assert.equal((await f.runtime.watchers.get(f.runtime.apiPrincipal, watcher.watcherId)).status, 'succeeded');
+});
+
+test('short waits and a lost connection preserve the deadline and recover every executor outcome without redispatch', async t => {
+  const f = await fixture(t);
+  for (const status of ['succeeded', 'failed', 'needs_input'] as const) {
+    const watcher = await f.create('recover-' + status);
+    // This successful dispatch is deliberately distinct from the external executor's later result.
+    const dispatch = await f.call('local_write_file', { projectId: 'principal', path: status + '.txt', content: 'enviado uma vez', expectedHash: null });
+    assert.equal(plain(dispatch)[0].status, 'succeeded');
+    for (let count = 0; count < 2; count++) {
+      const waiting = plain(await f.call('bridge_watch_wait', { watcherId: watcher.watcherId, waitMs: 5 }))[0];
+      assert.equal(waiting.status, 'waiting');
+      assert.equal(waiting.expiresAt, watcher.expiresAt);
+      assert.deepEqual(waiting.nextCall, { tool: 'bridge_watch_wait', arguments: { watcherId: watcher.watcherId, waitMs: 25000 } });
+    }
+    const abort = new AbortController();
+    const lost = f.call('bridge_watch_wait', { watcherId: watcher.watcherId, waitMs: 45000 }, abort.signal);
+    void lost.catch(() => {});
+    for (let count = 0; count < 100 && !f.runtime.state().watchers?.activeWaiters; count++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(f.runtime.state().watchers?.activeWaiters, 1);
+    abort.abort(); await assert.rejects(lost);
+    const receipt = { eventId: randomUUID(), status, summary: 'Resultado real do executor: ' + status, evidence: { executor: 'test', dispatchCount: 1 } };
+    assert.equal((await f.signal(watcher, receipt)).status, 200);
+    assert.equal((await f.signal(watcher, receipt)).status, 200);
+    const recovered = plain(await f.call('bridge_watch_get', { watcherId: watcher.watcherId }))[0];
+    assert.equal(recovered.watcherId, watcher.watcherId);
+    assert.equal(recovered.status, status);
+    assert.equal(recovered.expiresAt, watcher.expiresAt);
+    assert.equal(recovered.result.summary, receipt.summary);
+    assert.equal(recovered.nextCall, undefined);
+    assert.equal(recovered.canWakeClosedConversation, false);
+  }
+  assert.equal((await f.runtime.watchers.list(f.runtime.apiPrincipal)).total, 3);
+  assert.equal(f.runtime.jobs.list().filter(job => job.tool === 'local_write_file').length, 3);
+  assert.equal(f.runtime.jobs.list().filter(job => job.tool === 'bridge_watch_create').length, 3);
+});
+
+test('MCP watcher subscription survives restart and sends a signed event only after the executor callback is persisted', async t => {
+  const secret = 'whsec_' + Buffer.alloc(32, 52).toString('base64');
+  const received: any[] = [];
+  const eventPost: WebhookPost = async (_url, body, headers) => {
+    const expected = 'v1,' + createHmac('sha256', Buffer.from(secret.slice(6), 'base64'))
+      .update(headers['webhook-id'] + '.' + headers['webhook-timestamp'] + '.' + body).digest('base64');
+    assert.ok(headers['webhook-signature'].split(' ').includes(expected));
+    const parsed = JSON.parse(body);
+    if (parsed.type === 'verification') return { status: 200, body: JSON.stringify({ challenge: parsed.challenge }) };
+    received.push(parsed); return { status: 204, body: '' };
+  };
+  const f = await fixture(t, true, eventPost);
+  const watcher = await f.create('events');
+  const token = f.runtime.store.secrets.apiToken;
+  const catalog = await rpc(f.runtime, token, 'events/list');
+  assert.deepEqual(catalog.result.events.map((event: any) => event.name), ['ponte.job.completed', 'ponte.watcher.completed']);
+  const subscription = await rpc(f.runtime, token, 'events/subscribe', {
+    name: 'ponte.watcher.completed', arguments: { watcherId: watcher.watcherId },
+    delivery: { mode: 'webhook', url: 'https://receiver.example/watcher', secret },
+  });
+  assert.ok(subscription.result.id);
+  assert.equal(f.runtime.events.snapshot().subscriptions[0].watcherId, watcher.watcherId);
+  // Creation and successful delegation cannot finish this signal watcher or generate its event.
+  await f.call('local_write_file', { projectId: 'principal', path: 'dispatch.txt', content: 'sent', expectedHash: null });
+  await f.runtime.events.pump();
+  assert.equal(received.length, 0);
+  assert.equal((await f.runtime.watchers.get(f.runtime.apiPrincipal, watcher.watcherId)).status, 'waiting');
+  await f.runtime.close();
+  const reopened = await startApplication(f.options); f.runtimes.push(reopened);
+  assert.equal(reopened.events.snapshot().subscriptions[0].id, subscription.result.id);
+  assert.equal((await reopened.watchers.get(reopened.apiPrincipal, watcher.watcherId)).status, 'waiting');
+  const receipt = { eventId: randomUUID(), runId: watcher.trigger.runId, status: 'needs_input', summary: 'O executor precisa de uma decisão específica.' };
+  const callback = await fetch(reopened.apiUrl + '/hooks/watchers/' + watcher.watcherId + '/signal', {
+    method: 'POST', headers: { Authorization: 'Bearer ' + watcher.callback.token, 'Content-Type': 'application/json' }, body: JSON.stringify(receipt),
+  });
+  assert.equal(callback.status, 200);
+  const disk = JSON.parse(await readFile(path.join(f.options.stateDir, 'watchers.json'), 'utf8'));
+  assert.equal(disk.watchers[0].status, 'needs_input');
+  await reopened.events.flush(); await reopened.events.pump();
+  assert.equal(received.length, 1);
+  assert.equal(received[0].name, 'ponte.watcher.completed');
+  assert.equal(received[0].data.watcherId, watcher.watcherId);
+  assert.equal(received[0].data.status, 'needs_input');
+  assert.equal(received[0].data.result, undefined);
+  const result = await fetch(reopened.apiUrl + '/v1/watchers/' + watcher.watcherId, { headers: f.apiHeaders }).then(res => res.json());
+  assert.equal(result.result.summary, receipt.summary);
+  assert.equal(result.nextCall, undefined);
+  assert.equal(result.canWakeClosedConversation, false);
+  assert.equal(reopened.events.snapshot().subscriptions[0].status, 'delivered');
+  assert.equal(reopened.publicStatus().watchers.canWakeClosedConversation, false);
+  assert.ok(!JSON.stringify(received).includes(watcher.callback.token));
 });
 
 test('legacy and MCP2 expose native watchers with per-grant isolation and revocation', async t => {

@@ -4,6 +4,20 @@
 
 Este histórico reúne as entregas já implementadas. As notas de cada versão descrevem suas mudanças; os guias em `docs/` descrevem o comportamento atual. A revisão exclusivamente documental registrada abaixo manteve o programa na versão de sua etapa.
 
+## 0.8.0 — Recuperação de esperas e eventos de watchers — 22/10/2026
+
+- `bridge_watch_wait` usa 25000 ms por padrão e aceita no máximo 45000 ms no serviço, MCP direto, `bridge_call`, stdio e REST/Actions. Valores maiores são rejeitados com o mesmo ID e orientação `nextCall` para `bridge_watch_get`, sem ajuste silencioso.
+- Separação explícita entre `waitMs`, prazo de uma chamada, e `timeoutMs`/`expiresAt`, prazo total do watcher: uma hora por padrão, máximo de sete dias, sem renovação pelas esperas.
+- Recuperação estruturada para falhas de comunicação, inclusive antes dos cabeçalhos, durante a leitura do corpo e HTTP 503 no adaptador stdio. A orientação conserva o `watcherId` sem inventar estado nem reenviar a tarefa.
+- Instruções para manter o turno ativo com esperas de 25 segundos pelo mesmo ID enquanto `waiting`, até terminal ou limite concreto do cliente. `needs_input` exige informar a pendência e pedir intervenção; uma nova etapa explicitamente autorizada usa outro watcher.
+- Novo evento `ponte.watcher.completed`, com filtro obrigatório `{watcherId}`, proprietário verificado e payload restrito a ID, status e horários. O cliente recupera o resultado por `bridge_watch_get` após o aviso. `ponte.job.completed` permanece disponível.
+- Assinaturas, metadados de watcher e tentativas de entrega persistidos, com desafio de callback, assinatura de webhook, repetição com ID estável e recuperação de transições terminais após reinício. Resultados e tokens de watchers ficam fora do evento; o resultado permanece em `watchers.json`.
+- `monitorDurable: true` e `canWakeClosedConversation: false` preservados. HTTP 2xx confirma recebimento do evento; não comprova uma resposta posterior da conversa. O fluxo nativo não cria agendamentos no ChatGPT/Claude.
+- Registro anonimizado de um uso externo real, separado da consulta de leitura feita nesta revisão e dos testes locais. A instância conectada ainda anunciou 0.6.0 e somente o evento de job; a notificação de watcher após encerrar o turno continua sem comprovação nesse cliente.
+- Pesquisa documentada de Claude Code Channels como possibilidade futura, sem implementação nem promessa de retomada nesta entrega.
+
+A evidência e os limites desta versão estão em [Validação](docs/VALIDACAO.md#recuperação-de-esperas-e-eventos-de-watchers--080). A versão do repositório não comprova que uma instalação existente foi atualizada.
+
 ## 0.7.0 — MCPs adicionados pelo chat — 22/10/2026
 
 - Ferramentas `bridge_mcp_list`, `bridge_mcp_add` e `bridge_mcp_reconnect` para clientes MCP, stdio e REST/Actions, com a política existente de aprovação.

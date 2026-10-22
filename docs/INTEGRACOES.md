@@ -2,7 +2,7 @@
 
 [Índice da documentação](README.md) · [Referência da API](API.md) · [Operação](OPERACAO.md) · [Segurança](SEGURANCA.md)
 
-Este guia descreve as entradas e os contratos de integração da Ponte MCP **0.7.0**. Os roteiros específicos estão em [CHATGPT.md](CHATGPT.md) e [CLAUDE.md](CLAUDE.md); os testes efetivamente realizados estão em [VALIDACAO.md](VALIDACAO.md). As referências externas foram consultadas em **22 de outubro de 2026**. Disponibilidade e permissões dos clientes dependem da conta, do workspace e do produto utilizado.
+Este guia descreve as entradas e os contratos de integração da Ponte MCP **0.8.0**. Os roteiros específicos estão em [CHATGPT.md](CHATGPT.md) e [CLAUDE.md](CLAUDE.md); os testes efetivamente realizados estão em [VALIDACAO.md](VALIDACAO.md). As referências externas foram consultadas em **22 de outubro de 2026**. Disponibilidade e permissões dos clientes dependem da conta, do workspace e do produto utilizado.
 
 ## Escolha a entrada do cliente
 
@@ -27,13 +27,16 @@ Para uma tarefa assíncrona delegada a outro executor, use as cinco ferramentas 
 2. Se a criação retornar `pending_approval`, aguarde esse `jobId` com `bridge_job` e conclua a aprovação no painel. Só prossiga quando o resultado contiver `watcherId` e callback.
 3. Configure no executor a URL, o token exclusivo e o `runId` retornados. Para outro computador, use a URL pública HTTPS da API.
 4. Delegue a tarefa uma única vez. O executor envia o recibo quando souber o resultado real: `succeeded`, `failed` ou `needs_input`.
-5. Chame `bridge_watch_wait` para o mesmo `watcherId`. Se continuar `waiting`, use novas esperas limitadas dentro do turno ativo. Após reconectar, recupere o estado com `bridge_watch_get` ou `bridge_watch_list`.
+5. Chame `bridge_watch_wait` com o mesmo `watcherId` e `waitMs: 25000`. Enquanto voltar `waiting`, mantenha o turno ativo com novas esperas até terminal ou limite concreto do cliente. Após falha de comunicação, consulte primeiro `bridge_watch_get`; `bridge_watch_list` ajuda a recuperar o ID após reconectar.
+6. Informe `succeeded` ou `failed` com a evidência pertinente. `needs_input` é terminal: informe a pendência e peça intervenção; uma nova etapa explicitamente autorizada usa outro watcher.
 
 O token de callback serve apenas para sinalizar aquele watcher. Não o substitua pelo token API, pelo token administrativo ou pelo access token OAuth; não o exponha em mensagens ou logs. O endpoint de entrada é `/hooks/watchers/:watcherId/signal`, que precisa ser encaminhado junto da API quando houver um executor remoto.
 
 O gatilho `job` serve quando o próprio job da Ponte representa toda a operação observada. Um job que só enviou texto para tmux ou iniciou a delegação confirma somente esse envio. Para esperar a conclusão real do executor, use `signal`. A criação de um watcher também é um job curto: seu sucesso confirma a criação do acompanhamento.
 
-Watchers e resultados limitados persistem, mas uma espera HTTP não dura para sempre. O padrão de `bridge_watch_wait` é **25000 ms**, com faixa de 0 a **300000 ms**, respeitando o timeout do cliente e dos intermediários. A desconexão encerra somente a espera; ela não cancela o monitor. O watcher não reabre uma conversa encerrada. `bridge_watch_cancel` encerra apenas o acompanhamento e não interrompe o executor ou o job original.
+Watchers e resultados limitados persistem, mas uma espera HTTP tem prazo próprio. `bridge_watch_wait` usa **25000 ms** por padrão e aceita de 0 a **45000 ms** em todas as interfaces; um valor maior é rejeitado com orientação de `get` pelo mesmo ID, sem ajuste silencioso. `timeoutMs` define o prazo total desde a criação (padrão 1 hora, máximo 7 dias), registrado em `expiresAt`; novas esperas não o renovam. A desconexão encerra somente a espera. `bridge_watch_cancel` encerra apenas o acompanhamento e não interrompe o executor ou o job original. `expired` não prova falha da tarefa externa.
+
+Erros de comunicação podem ocorrer antes dos cabeçalhos ou durante a leitura da resposta. Quando a Ponte consegue devolver a falha, a recuperação estruturada preserva `watcherId` e indica `bridge_watch_get` sem inventar estado. Consulte o mesmo ID antes de voltar a esperar. Autenticação inválida ou registro ausente não autorizam retry cego, nova criação ou reenvio da demanda. `monitorDurable: true` e `canWakeClosedConversation: false` continuam no contrato da 0.8.0.
 
 O roteiro completo, o recibo e a recuperação estão em [WATCHERS.md](WATCHERS.md). Os limites e as diferenças entre reinício de watchers `signal` e `job` estão em [ARQUITETURA.md](ARQUITETURA.md#watchers-acompanhamento-nativo-e-durável).
 
@@ -96,7 +99,7 @@ Consultas de catálogo/estado, controles de jobs e `bridge_watch_get/list/wait/c
 |---|---|---|
 | Ferramenta MCP direta ou `bridge_call` | Job em `queued` ou `running`; `pending_approval` inicial retorna imediatamente | Até 25 segundos |
 | `bridge_job` | Mesmo job, incluindo aprovação | `waitMs` entre 0 e 25000; padrão 0 |
-| `bridge_watch_wait` / REST `waitWatcher` | Gatilho de um watcher existente | `waitMs` entre 0 e 300000; padrão 25000 |
+| `bridge_watch_wait` / REST `waitWatcher` | Gatilho de um watcher existente | `waitMs` entre 0 e 45000; padrão 25000 |
 | REST `getJob` / `getWatcher` | Consulta do estado atual | Sem parâmetro de espera |
 
 Ao vencer uma espera, consulte o mesmo identificador. Não reenvie uma operação porque o resultado não chegou. `pending_approval`, `queued`, `running` e `waiting` não significam sucesso. Uma tarefa externa pode ter continuado mesmo após timeout, cancelamento ou perda de conexão.
@@ -105,13 +108,15 @@ Ao vencer uma espera, consulte o mesmo identificador. Não reenvie uma operaçã
 
 Events é uma integração separada para **avisos de saída da Ponte ao cliente**. Watchers `signal` recebem **recibos de entrada do executor para a Ponte**. Eles têm endpoints, credenciais, persistência e finalidade diferentes. O fluxo de tarefas delegadas com watchers permanece nativo e não depende de criar uma assinatura de Events.
 
+No ChatGPT, a assinatura opcional usa o mecanismo do host de tarefas acionadas por eventos para receber o webhook. O acompanhamento e `timeoutMs`/`expiresAt` permanecem na Ponte; essa entrega não cria um agendamento por horário nem polling do chat.
+
 A [documentação oficial de MCP Events](https://developers.openai.com/plugins/build/mcp-events), consultada na data acima, lista suporte em Work no navegador, Work no desktop com Cloud selecionado e dots, sujeito aos controles do workspace. Não se deve inferir suporte a Events só porque uma conversa consegue chamar ferramentas MCP.
 
-A Ponte expõe `ponte.job.completed` pelo protocolo HTTP `2026-07-28`. O cliente cria a assinatura por `events/subscribe`, fornecendo callback HTTPS e segredo de assinatura, e identifica um `jobId` pertencente à conexão. Esse é um método do protocolo, não uma ferramenta enviada a `tools/call`. A Ponte verifica o callback e, ao concluir o job, entrega um evento assinado; o cliente busca o resultado com `bridge_job`. A decisão de continuar a conversa pertence ao cliente e às instruções do usuário.
+A Ponte expõe `ponte.job.completed` com `{jobId}` e `ponte.watcher.completed` com `{watcherId}` pelo protocolo HTTP `2026-07-28`. O cliente cria a assinatura por `events/subscribe`, fornecendo callback HTTPS e segredo de assinatura para um registro pertencente à sua conexão. Esse é um método do protocolo, não uma ferramenta enviada a `tools/call`. A Ponte verifica o callback e entrega o evento terminal assinado; o cliente busca o resultado com `bridge_job` ou `bridge_watch_get`, conforme o evento.
 
-Um aviso entregue não comprova retomada da conversa. A Ponte não fornece callback ou segredo em nome do cliente, não cria assinaturas globais e não usa eventos para iniciar ciclos de chamadas. Em particular, inscrever o job de `bridge_watch_create` avisa somente que o acompanhamento foi criado; não existe evento de conclusão de watcher nesta versão.
+Um aviso recebido por HTTP 2xx não comprova uma nova resposta da conversa: o cliente processa Events de forma assíncrona. A Ponte não fornece callback ou segredo em nome do cliente e não cria cron ou polling do chat. Inscrever o job de `bridge_watch_create` avisa somente que o acompanhamento foi criado; para o resultado externo, use o evento do watcher e consulte esse mesmo acompanhamento após o aviso. O contrato mantém `canWakeClosedConversation: false` até haver prova efetiva no cliente.
 
-Assinaturas, tentativas e cópias dos jobs acompanhados persistem com validade e capacidade limitadas. O painel mostra avisos e entregas; encerrá-los não cancela os jobs. O adaptador stdio não anuncia Events. Veja [MCP-EVENTS.md](MCP-EVENTS.md) para configuração, limites e diagnóstico.
+Assinaturas e tentativas persistem com validade e capacidade limitadas. Events mantém cópias dos jobs e somente metadados dos watchers; os resultados destes continuam em `watchers.json`. O painel mostra avisos e entregas; encerrá-los não cancela os jobs ou watchers. O adaptador stdio não anuncia Events. Veja [MCP-EVENTS.md](MCP-EVENTS.md) para configuração, limites e diagnóstico.
 
 ## MCP local por stdio
 
@@ -119,7 +124,7 @@ O comando `stdio` lê as credenciais do diretório de estado e usa a Ponte já i
 
 O diretório padrão é `.ponte` dentro da instalação, não a pasta atual do terminal. Ao mudar de instalação, reutilize explicitamente o estado antigo. Não inclua tokens no JSON do cliente quando usar o adaptador local.
 
-O adaptador estende o prazo da sua requisição interna somente para `bridge_watch_wait`, incluindo a chamada via `bridge_call`: espera solicitada mais 10 segundos. O cliente MCP ainda pode impor um timeout menor. Uma interrupção de espera preserva o watcher e orienta recuperar o mesmo ID. Código: [src/cli.ts](../src/cli.ts).
+O adaptador reserva para `bridge_watch_wait`, incluindo a chamada via `bridge_call`, a espera válida solicitada mais 10 segundos na requisição interna. O máximo permitido de `waitMs` é 45000 ms; um valor maior é recusado. O cliente MCP ainda pode impor um timeout menor. Interrupções de transporte e HTTP 503 retornam recuperação para `bridge_watch_get` do mesmo ID, sem fabricar status. Código: [src/cli.ts](../src/cli.ts).
 
 ## Secure MCP Tunnel
 
@@ -127,13 +132,13 @@ O [guia oficial de Secure MCP Tunnel](https://developers.openai.com/api/docs/gui
 
 O caminho de OAuth público documentado neste projeto usa uma origem HTTPS que também atende descoberta e consentimento. Um `tunnel_id` não é essa origem. Tampouco se deve presumir que um túnel MCP publique `/hooks/watchers/*` como callback HTTP para executores externos; configure a conectividade do executor separadamente.
 
-O guia do túnel informa um prazo absoluto de **120 segundos por requisição**, incluindo tempo na fila. Portanto, o máximo de 300 segundos aceito por `bridge_watch_wait` não garante que uma espera desse tamanho atravesse o túnel. Use a espera padrão de 25 segundos ou outra duração compatível, recuperando o mesmo watcher após interrupções. Os limites do túnel e do provedor permanecem válidos.
+O guia do túnel informa um prazo absoluto de **120 segundos por requisição**, incluindo tempo na fila. A Ponte limita cada espera de watcher a 45 segundos e recomenda o padrão de 25 segundos. Isso não elimina outros limites do cliente ou do intermediário; após interrupção, consulte o mesmo watcher e só retome a espera se ele continuar em `waiting`.
 
 ## Actions via HTTPS
 
 Use `/openapi.json` da origem HTTPS da API e configure autenticação API Key/Bearer com o **token API**. O schema é público e não contém o segredo; as operações `/v1/*` exigem autenticação. Access tokens OAuth emitidos para `/mcp` não autenticam a REST.
 
-O OpenAPI 0.7.0 define **nove operações**:
+O OpenAPI 0.8.0 define **nove operações**:
 
 | Operação | Endpoint | Finalidade |
 |---|---|---|
@@ -159,7 +164,7 @@ Se a origem mudar, atualize `publicUrl` e reimporte o schema no cliente. A refer
 
 ### Cadastrar pelo chat ou pelo painel
 
-A versão 0.7.0 expõe `bridge_mcp_list`, `bridge_mcp_add` e `bridge_mcp_reconnect`. Um chat autorizado pode identificar uma capacidade que falta à tarefa, consultar as conexões existentes e solicitar um cadastro com justificativa e configuração confirmada na fonte oficial. Esse fluxo usa a política de aprovação atual, incluindo `automatic`, e mostra uma prévia em **Execuções**. As conexões aparecem no painel **Conexões MCP**.
+A versão 0.8.0 expõe `bridge_mcp_list`, `bridge_mcp_add` e `bridge_mcp_reconnect`. Um chat autorizado pode identificar uma capacidade que falta à tarefa, consultar as conexões existentes e solicitar um cadastro com justificativa e configuração confirmada na fonte oficial. Esse fluxo usa a política de aprovação atual, incluindo `automatic`, e mostra uma prévia em **Execuções**. As conexões aparecem no painel **Conexões MCP**.
 
 O chat não substitui IDs existentes com configurações diferentes, não edita `readOnlyTools`, não remove conexões nem altera a política. Env/headers no contrato do chat aceitam somente referências de ambiente; edição e opções administrativas permanecem no painel. O resultado separa cadastro salvo de conexão estabelecida. Para reconectar, use a revisão retornada na listagem; para usar ferramentas novas na mesma conversa, consulte `bridge_list_tools` com `source: "mcp:ID"` e chame o nome retornado por `bridge_call`.
 

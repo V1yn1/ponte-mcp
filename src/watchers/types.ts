@@ -8,6 +8,32 @@ export const WATCH_MAX_ACTIVE = 100;
 export const WATCH_MAX_RECORDS = 500;
 export const WATCH_MAX_WAITERS = 200;
 export const WATCH_MAX_WAITERS_PER_WATCHER = 20;
+export const WATCH_DEFAULT_WAIT_MS = 25_000;
+export const WATCH_MAX_WAIT_MS = 45_000;
+export const watcherIdSchema = z.string().uuid();
+export const watchWaitOptionsSchema = z.object({ waitMs: z.number().int().min(0).max(WATCH_MAX_WAIT_MS).default(WATCH_DEFAULT_WAIT_MS) }).strict();
+export const watchWaitSchema = watchWaitOptionsSchema.extend({ watcherId: watcherIdSchema }).strict();
+export type WatcherRecoveryReason = 'wait_limit_exceeded' | 'communication_error' | 'wait_interrupted';
+export interface WatcherRecovery {
+  watcherId: string; monitorDurable: true; canWakeClosedConversation: false;
+  recovery: { reason: WatcherRecoveryReason; retryable: true; defaultWaitMs: number; maxWaitMs: number };
+  nextStep: string; nextCall: { tool: 'bridge_watch_get'; arguments: { watcherId: string } };
+}
+/** Recovery describes a safe query, never an unobserved task status or a task replay. */
+export function watcherRecovery(watcherId: unknown, reason: WatcherRecoveryReason): WatcherRecovery | undefined {
+  const parsed = watcherIdSchema.safeParse(watcherId);
+  if (!parsed.success) return undefined;
+  return {
+    watcherId: parsed.data, monitorDurable: true, canWakeClosedConversation: false,
+    recovery: { reason, retryable: true, defaultWaitMs: WATCH_DEFAULT_WAIT_MS, maxWaitMs: WATCH_MAX_WAIT_MS },
+    nextStep: (reason === 'wait_limit_exceeded' ? `waitMs aceita no máximo ${WATCH_MAX_WAIT_MS} ms por chamada; não repita a espera acima desse limite. ` : 'A chamada não confirmou o estado atual da tarefa. ') +
+      `Consulte bridge_watch_get com este mesmo watcherId. Se retornar waiting, continue bridge_watch_wait com waitMs:${WATCH_DEFAULT_WAIT_MS} até resultado terminal ou limite concreto do cliente ou expiresAt. O cliente pode ter um limite menor por chamada. Não crie outro watcher nem reenvie a tarefa por esta falha. Não use agendamentos do ChatGPT/Claude.`,
+    nextCall: { tool: 'bridge_watch_get', arguments: { watcherId: parsed.data } },
+  };
+}
+export class WatchRecoveryError extends Error {
+  constructor(message: string, readonly recovery: WatcherRecovery) { super(message); this.name = 'WatchRecoveryError'; }
+}
 export const watchStatusSchema = z.enum(['waiting', 'succeeded', 'failed', 'needs_input', 'cancelled', 'expired', 'interrupted']);
 export const watchTriggerSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('signal'), source: z.string().min(1).max(128), runId: watchRunIdSchema }).strict(),

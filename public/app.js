@@ -358,7 +358,7 @@
     const state = app.state;
     if (!state) return;
     updateConnectionStatus();
-    $('#sidebar-version').textContent = `Ponte MCP · v${state.version || '0.7.0'}`;
+    $('#sidebar-version').textContent = `Ponte MCP · v${state.version || '0.8.0'}`;
     $('#nav-project-count').textContent = number(state.config?.projects?.length);
     $('#nav-pending-count').textContent = number(state.stats?.pending);
     $('#nav-pending-count').hidden = !state.stats?.pending;
@@ -707,7 +707,7 @@
   function renderEvents() {
     const events = app.state?.events || {};
     const subscriptions = Array.isArray(events.subscriptions) ? events.subscriptions : [];
-    const labels = { waiting: ['Aguardando conclusão', 'neutral'], queued: ['Aviso na fila', 'blue'], retrying: ['Tentando novamente', 'warning'], delivered: ['Aviso recebido', 'success'], failed: ['Falha na entrega', 'danger'] };
+    const labels = { waiting: ['Aguardando conclusão', 'neutral'], queued: ['Aviso na fila', 'blue'], retrying: ['Tentando novamente', 'warning'], delivered: ['Recebido pelo cliente', 'success'], failed: ['Falha na entrega', 'danger'] };
     $('#events-count').textContent = number(subscriptions.length);
     $('#events-status').textContent = events.enabled ? 'Disponível' : 'Indisponível';
     $('#events-status').className = `badge badge-${events.enabled ? 'success' : 'neutral'}`;
@@ -716,8 +716,9 @@
     renderEventDiagnostics(events.diagnostics);
     replaceMarkup($('#events-list'), subscriptions.length ? subscriptions.map(item => {
       const [label, variant] = labels[item.status] || ['Acompanhando', 'neutral'];
-      return `<article class="oauth-grant"><span class="soft-icon">${icon('activity')}</span><div class="oauth-grant-main"><h3>Execução <code>${escape(String(item.jobId || '').slice(0, 12))}</code></h3><p>Válido até ${escape(dateLabel(item.refreshBefore, true))}</p><div>${badge(label, variant)}${item.attempts ? badge(`${number(item.attempts)} ${item.attempts === 1 ? 'tentativa' : 'tentativas'}`, 'neutral') : ''}</div>${item.lastError ? `<p class="event-delivery-error">${escape(item.lastError)}</p>` : ''}</div><button class="button button-secondary button-small" data-action="cancel-event" data-id="${escape(item.id)}" ${app.eventActions.has(item.id) || app.offline ? 'disabled' : ''}>Encerrar aviso</button></article>`;
-    }).join('') : emptyState('chat', 'Nenhuma execução acompanhada.', 'As inscrições criadas pelo ChatGPT aparecerão aqui. Cada inscrição acompanha uma execução específica.', '', true));
+      const kind = item.watcherId ? 'Acompanhamento' : 'Execução';
+      return `<article class="oauth-grant"><span class="soft-icon">${icon('activity')}</span><div class="oauth-grant-main"><h3>${kind} <code>${escape(String(item.watcherId || item.jobId || '').slice(0, 12))}</code></h3><p>Válido até ${escape(dateLabel(item.refreshBefore, true))}</p><div>${badge(label, variant)}${item.attempts ? badge(`${number(item.attempts)} ${item.attempts === 1 ? 'tentativa' : 'tentativas'}`, 'neutral') : ''}</div>${item.status === 'delivered' ? '<p>O cliente recebeu o aviso. A resposta do chat precisa ser confirmada na conversa.</p>' : ''}${item.lastError ? `<p class="event-delivery-error">${escape(item.lastError)}</p>` : ''}</div><button class="button button-secondary button-small" data-action="cancel-event" data-id="${escape(item.id)}" ${app.eventActions.has(item.id) || app.offline ? 'disabled' : ''}>Encerrar aviso</button></article>`;
+    }).join('') : emptyState('chat', 'Nenhuma inscrição para avisos.', 'As inscrições do cliente aparecerão aqui. Cada uma acompanha a conclusão de uma execução ou de um watcher específico.', '', true));
   }
 
   function renderEventDiagnostics(diagnostics) {

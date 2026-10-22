@@ -39,6 +39,39 @@ test('watcher signal persists before waking waiters and exposes no credentials i
   assert.equal((await f.service.wait(OWNER, created.watcherId, 0)).status, 'succeeded');
 });
 
+test('terminal listeners observe persisted watcher outcomes once without receiving callback credentials', async t => {
+  const f = await fixture(t);
+  const observed: Array<{ principal: string; watcher: any; stored: Promise<string> }> = [];
+  const stop = f.service.onTerminal((principal, watcher) => {
+    observed.push({ principal, watcher, stored: readFile(path.join(f.root, 'watchers.json'), 'utf8') });
+  });
+  const watcher = await f.service.create(OWNER, input);
+  assert.equal(observed.length, 0);
+  const event = body();
+  await f.service.signal(watcher.watcherId, watcher.signalToken!, event);
+  await f.service.signal(watcher.watcherId, watcher.signalToken!, event);
+  assert.equal(observed.length, 1);
+  assert.equal(observed[0].principal, OWNER);
+  assert.equal(observed[0].watcher.watcherId, watcher.watcherId);
+  assert.equal(JSON.parse(await observed[0].stored).watchers[0].status, 'succeeded');
+  assert.equal(observed[0].watcher.signalToken, undefined);
+  assert.equal(observed[0].watcher.tokenHash, undefined);
+  stop();
+  const next = await f.service.create(OWNER, input);
+  await f.service.cancel(OWNER, next.watcherId);
+  assert.equal(observed.length, 1);
+});
+
+test('a failing terminal listener cannot roll back a committed result or duplicate the signal', async t => {
+  const f = await fixture(t);
+  f.service.onTerminal(() => { throw new Error('subscriber unavailable'); });
+  const watcher = await f.service.create(OWNER, input);
+  const event = body();
+  assert.equal((await f.service.signal(watcher.watcherId, watcher.signalToken!, event)).status, 'succeeded');
+  assert.equal((await f.service.signal(watcher.watcherId, watcher.signalToken!, event)).status, 'succeeded');
+  assert.equal((await f.service.get(OWNER, watcher.watcherId)).status, 'succeeded');
+});
+
 test('watchers enforce ownership, callback credential and run correlation', async t => {
   const f = await fixture(t); const w = await f.service.create(OWNER, input);
   await assert.rejects(f.service.get(OTHER, w.watcherId)); await assert.rejects(f.service.cancel(OTHER, w.watcherId));
@@ -163,10 +196,10 @@ test('close rejects waits in authorization and leaves no waiter registered after
   const controller = new AbortController();
   t.after(async () => { release(); controller.abort(); await service.close(); await rm(root, { recursive: true, force: true }); });
   const watcher = await service.create(OWNER, input);
-  const existing = service.wait(OWNER, watcher.watcherId, 300000, controller.signal).then(() => 'resolved', () => 'rejected');
+  const existing = service.wait(OWNER, watcher.watcherId, 45000, controller.signal).then(() => 'resolved', () => 'rejected');
   await new Promise(resolve => setImmediate(resolve)); assert.equal(service.snapshot().activeWaiters, 1);
   blocked = true;
-  const waiting = service.wait(OWNER, watcher.watcherId, 300000, controller.signal).then(() => 'resolved', () => 'rejected');
+  const waiting = service.wait(OWNER, watcher.watcherId, 45000, controller.signal).then(() => 'resolved', () => 'rejected');
   await entered;
   const closing = service.close(); release(); await closing;
   assert.equal(service.snapshot().activeWaiters, 0, 'close must cover registrations that were awaiting authorization');

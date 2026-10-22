@@ -1,4 +1,4 @@
-# Acompanhar tarefas externas com a Ponte MCP 0.7.0
+# Acompanhar tarefas externas com a Ponte MCP 0.8.0
 
 [Índice da documentação](README.md) · [ChatGPT](CHATGPT.md) · [Claude](CLAUDE.md) · [MCP Events](MCP-EVENTS.md) · [API e ferramentas](API.md)
 
@@ -15,13 +15,13 @@ O watcher não observa automaticamente a janela do terminal, texto impresso, est
 | Direção do callback | Executor → Ponte | Ponte → cliente inscrito |
 | Quem fornece URL e credencial | A Ponte, no resultado de `bridge_watch_create` | O cliente, em `events/subscribe` |
 | Autenticação do aviso | Bearer exclusivo daquele watcher | Assinatura HMAC do webhook com o segredo da inscrição |
-| O que acompanha | Recibo da tarefa identificada por `runId` | Estado terminal de um job identificado por `jobId` |
-| Como consultar o resultado | `bridge_watch_get` ou `bridge_watch_wait` | `bridge_job` após o aviso |
+| O que acompanha | Recibo da tarefa identificada por `runId` | Estado terminal de um watcher por `watcherId` ou de um job por `jobId` |
+| Como consultar o resultado | `bridge_watch_get` ou `bridge_watch_wait` | `bridge_watch_get` para watcher; `bridge_job` para job |
 | Retomada de um chat encerrado | Não oferece | Depende de suporte, assinatura e processamento pelo cliente |
 
-Não é necessário criar cron, automation ou tarefa no agendador do ChatGPT/Claude para usar watchers. O retorno individual informa **`monitorDurable: true`** e **`canWakeClosedConversation: false`**. A duração do acompanhamento na Ponte é independente da duração do turno do cliente.
+Use o acompanhamento nativo da Ponte, sem criar cron, automation ou tarefa no agendador do ChatGPT/Claude. O retorno individual informa **`monitorDurable: true`** e **`canWakeClosedConversation: false`**. Esses valores permanecem na 0.8.0, mesmo com uma assinatura Events aceita ou um webhook recebido. Só um teste efetivo de retomada no cliente pode sustentar uma garantia diferente. A duração do acompanhamento na Ponte é independente da duração do turno do cliente.
 
-Na **0.7.0**, o único evento anunciado é `ponte.job.completed`: não há evento de conclusão de watcher. Assinar o job de criação de um watcher acompanha a criação; assinar um job que envia texto ao tmux acompanha o envio. Para o resultado da tarefa externa, consulte o watcher. O [guia de MCP Events](MCP-EVENTS.md) explica o fluxo separado de inscrição. Não invente um callback do ChatGPT nem reutilize as credenciais de um fluxo no outro.
+Na **0.8.0**, `ponte.watcher.completed` aceita o filtro `{watcherId}` e avisa os estados terminais do acompanhamento. O aviso contém somente ID, estado e horários; o cliente consulta `bridge_watch_get` para recuperar o resultado. `ponte.job.completed` continua disponível: assinar o job de criação de um watcher acompanha a criação, e assinar um job que envia texto ao tmux acompanha o envio. O [guia de MCP Events](MCP-EVENTS.md) explica a inscrição feita pelo cliente com seu próprio callback e segredo. Não invente um callback do ChatGPT nem reutilize as credenciais de um fluxo no outro.
 
 ## Ferramentas e prazos
 
@@ -35,7 +35,15 @@ Na **0.7.0**, o único evento anunciado é `ponte.job.completed`: não há event
 
 Mesmo em `approvalMode: "all"`, get, list, wait e cancel são controles diretos, autenticados, sem um novo job de aprovação. `bridge_watch_list` aceita `offset` de 0 a 500 e `limit` de 1 a 500, com padrões 0 e 50; retorna `watchers`, `total`, `offset` e `limit`. Use essa lista para recuperar o ID da mesma conexão depois de uma desconexão.
 
-O prazo do watcher é de **1 hora por padrão**, configurável de **1 segundo a 7 dias** por `timeoutMs`. Há no máximo 100 acompanhamentos ativos e 500 registros retidos; ao atingir a capacidade, a criação remove o terminal mais antigo, nunca um acompanhamento ativo. Há no máximo 200 chamadas em espera, sendo 20 por watcher. O tempo de uma chamada `bridge_watch_wait` é separado: **25 segundos por padrão**, de **0 a 300 segundos** por `waitMs`. `waitMs: 0` consulta sem aguardar.
+| Campo | O que limita | Contrato da 0.8.0 |
+|---|---|---|
+| `waitMs` | Uma chamada de `bridge_watch_wait` | Padrão **25000 ms**, mínimo 0 e máximo **45000 ms**; 0 consulta sem aguardar |
+| `timeoutMs` | Prazo total do watcher, contado desde a criação | Padrão **3600000 ms** (1 hora), de 1000 a **604800000 ms** (7 dias) |
+| `expiresAt` | Instante final do prazo total | É preservado em consultas, novas esperas e recuperação idempotente |
+
+Repetir `bridge_watch_wait` não renova o watcher. O teto de 45 segundos é o mesmo no serviço, nas ferramentas MCP diretas ou via `bridge_call`, no adaptador stdio e na REST/Actions. Um `waitMs` acima desse teto é rejeitado; a resposta conserva o `watcherId` e orienta `bridge_watch_get` em `nextCall`. O valor não é reduzido silenciosamente.
+
+Há no máximo 100 acompanhamentos ativos e 500 registros retidos; ao atingir a capacidade, a criação remove o terminal mais antigo, nunca um acompanhamento ativo. Há no máximo 200 chamadas em espera, sendo 20 por watcher.
 
 O cliente pode encerrar a chamada antes desse prazo. Desconectar ou parar uma espera libera somente aquele aguardador: o watcher `signal` continua no serviço e sobrevive ao reinício da Ponte. Um novo `bridge_watch_wait` ou `bridge_watch_get` recupera seu estado. A conexão precisa continuar autorizada. Revogar o acesso cancela os acompanhamentos ainda em `waiting`; os resultados existentes deixam de ser acessíveis por essa autorização. Uma nova autorização OAuth não herda os registros da anterior. Clientes stdio que compartilham o token API usam a mesma identidade local.
 
@@ -143,7 +151,7 @@ node /CAMINHO/ponte-watch-notify.mjs \
   --exit-code 0
 ```
 
-Para uma pendência humana, use `--status needs_input --summary 'É necessário escolher entre as alternativas descritas no resultado.'`. Esse é um estado terminal do acompanhamento: depois da decisão, crie um novo watcher para a próxima etapa. Não converta uma pendência em sucesso por ausência de atividade.
+Para uma pendência humana, use `--status needs_input --summary 'É necessário escolher entre as alternativas descritas no resultado.'`. Esse é um estado terminal do acompanhamento: o chat deve informar a pendência e pedir a intervenção necessária, sem continuar o loop de espera. Uma próxima etapa explicitamente autorizada recebe um novo watcher. Não converta uma pendência em sucesso por ausência de atividade.
 
 O evento [`Stop` do Claude Code](https://code.claude.com/docs/en/hooks#stop) indica que o agente principal terminou de responder. Por isso, um `Stop` genérico não comprova os critérios de aceite de uma demanda. Esta integração não instala um hook global que transforma todo fim de turno em conclusão. O recibo deve sair do caminho que efetivamente verifica o trabalho.
 
@@ -158,16 +166,36 @@ Depois da delegação, chame `bridge_watch_wait`:
 }
 ```
 
-Se voltar `waiting`, continue aguardando o mesmo watcher enquanto o turno e os limites do cliente permitirem. Uma resposta `waiting` não pede nova delegação nem uma nova criação. Se o callback já chegou, a espera retorna imediatamente. É possível pedir até `300000` ms; esse limite do servidor não obriga o cliente a manter a chamada aberta.
+Se voltar `waiting`, **mantenha o turno ativo e chame novamente `bridge_watch_wait` com o mesmo ID e `waitMs: 25000`**. Continue até um estado terminal ou um limite concreto do cliente, sem encerrar o turno apenas porque uma espera acabou. Se o callback já chegou, a espera retorna imediatamente. Informe ao usuário o resultado terminal; em `needs_input`, apresente a pendência e pare de esperar.
 
-No Claude Code, a [documentação oficial de MCP](https://code.claude.com/docs/en/mcp#automatic-backgrounding-of-long-tool-calls) descreve que chamadas da conversa principal ainda em execução após dois minutos passam a uma tarefa em segundo plano por padrão. O comportamento tem exceções e configuração própria; sair da sessão encerra essa tarefa do cliente. O watcher persistente da Ponte é separado dela. O padrão de 25 segundos evita depender desse comportamento para cada espera.
+Se um limite do cliente impedir continuar, informe qual limite foi alcançado e conserve o ID para recuperação. O watcher continua no serviço até seu prazo, cancelamento ou sinal terminal. Não prometa uma mensagem posterior sem evidência de que o cliente oferece e executa essa retomada.
+
+### Recuperar uma espera interrompida
+
+Timeout, desconexão, resposta incompleta ou erro temporário de comunicação não dizem se o executor terminou. O callback pode ter chegado à Ponte durante a falha. O próximo passo é sempre a consulta autenticada do **mesmo watcher**:
+
+```json
+{ "watcherId": "ID_RETORNADO_PELA_PONTE" }
+```
+
+Envie esses argumentos a `bridge_watch_get`. A 0.8.0 retorna orientação estruturada quando a camada da Ponte consegue tratar a falha, incluindo falhas antes dos cabeçalhos HTTP, durante a leitura da resposta e respostas temporárias como HTTP 503 no adaptador stdio. A orientação conserva `watcherId` e `nextCall` para `bridge_watch_get`, sem inventar um `status`. Se o próprio cliente cortar a chamada antes de receber essa orientação, aplique a mesma recuperação.
+
+| Resultado da consulta | Ação do chat |
+|---|---|
+| `waiting` | Retomar esperas de 25000 ms pelo mesmo ID durante o turno ativo |
+| `succeeded` ou `failed` | Informar o resultado e a evidência pertinente ao usuário |
+| `needs_input` | Informar a pendência e pedir intervenção; é terminal |
+| `cancelled`, `expired` ou `interrupted` | Explicar o limite observado e conferir o estado externo antes de outra ação |
+| Falha de autenticação ou registro não encontrado | Conferir conexão, autorização e ID; não fazer retry cego, criar outro watcher ou reenviar a demanda |
+
+A recuperação consulta o acompanhamento existente. Ela não cria outro watcher, renova `expiresAt`, repete a demanda nem reenvia automaticamente o callback.
 
 | Estado | Interpretação |
 |---|---|
 | `waiting` | Aguardando recibo ou prazo; pode não haver nenhum cliente esperando. |
 | `succeeded` | O executor declarou sucesso e enviou seu resumo. Confira a evidência informada. |
 | `failed` | O executor ou o job acompanhado declarou falha. |
-| `needs_input` | O executor solicitou intervenção; consulte o resumo. |
+| `needs_input` | Terminal: o executor solicitou intervenção. Informe o resumo e aguarde decisão; não mantenha a espera. |
 | `cancelled` | Acompanhamento cancelado, inclusive por revogação de acesso. Não encerra o processo remoto. |
 | `expired` | O prazo do watcher terminou sem recibo terminal. Não prova que a tarefa falhou. |
 | `interrupted` | O job acompanhado deixou de estar disponível após reinício. |
@@ -236,7 +264,10 @@ Para acompanhar um job da própria Ponte, crie `trigger: {"type":"job","jobId":"
 | Sintoma | Próximo passo |
 |---|---|
 | `waiting` após `tmux send-keys` bem-sucedido | Verifique se o executor recebeu o critério de conclusão e consegue emitir o recibo. |
-| O cliente encerrou a espera | Consulte ou aguarde o mesmo `watcherId`; não reenvie a demanda. |
+| O cliente encerrou a espera, a resposta foi interrompida ou houve erro temporário | Chame `bridge_watch_get` com o mesmo `watcherId`; só retome esperas de 25000 ms se o estado consultado for `waiting`. |
+| `waitMs` maior que 45000 foi rejeitado | Siga `nextCall` para consultar o mesmo watcher; use 25000 ms na próxima espera se ele continuar ativo. |
+| Consulta informa autenticação inválida ou registro não encontrado | Confira a autorização e o ID originais; não repita cegamente a consulta nem crie ou delegue outra tarefa. |
+| Resultado `needs_input` | Informe a pendência e peça a intervenção. Uma nova etapa autorizada usa outro watcher. |
 | Produtor informa HTTP 401 | Confira token, watcher e autorização original; o endpoint não distingue credencial inválida de acompanhamento inacessível. |
 | Produtor informa HTTP 404 | Confira a URL e o encaminhamento do caminho `/hooks/watchers/.../signal`. |
 | Produtor informa conflito HTTP 409 | Consulte o estado: o watcher pode já ter recebido um evento terminal diferente. |
@@ -250,10 +281,10 @@ Para acompanhar um job da própria Ponte, crie `trigger: {"type":"job","jobId":"
 
 ## Validação e referências
 
-Teste local do produtor: `node --import tsx --test tests/watchers-notify.test.ts`. Os testes usam listeners HTTP temporários e verificam recibo, autorização, repetição do mesmo evento, erro permanente, redirect e ausência de segredo no stderr. Não fazem chamadas a uma VPS, tmux real ou contas dos clientes. O [histórico de validação](VALIDACAO.md) registra o que foi efetivamente executado; esta revisão documental não enviou demandas nem instalou hooks.
+Teste local do produtor: `node --import tsx --test tests/watchers-notify.test.ts`. Os testes usam listeners HTTP temporários e verificam recibo, autorização, repetição do mesmo evento, erro permanente, redirect e ausência de segredo no stderr. Não executam a tarefa externa real. [Validação](VALIDACAO.md#recuperação-de-esperas-e-eventos-de-watchers--080) separa o relato do usuário de 22/10/2026, a consulta de estado realizada na revisão e os testes automatizados da entrega. A recuperação do mesmo ID funcionou no relato externo; a notificação de watcher após encerramento do turno ainda não foi comprovada no cliente instalado.
 
 O contrato é definido por [src/watchers/types.ts](../src/watchers/types.ts), [src/watchers/tools.ts](../src/watchers/tools.ts), [src/watchers/service.ts](../src/watchers/service.ts) e pelo [endpoint HTTP](../src/http.ts). As referências externas consultadas em **22/10/2026** foram:
 
-- [Claude Code — MCP e chamadas longas](https://code.claude.com/docs/en/mcp#automatic-backgrounding-of-long-tool-calls).
+- [Claude Code — MCP](https://code.claude.com/docs/en/mcp).
 - [Claude Code — significado do hook Stop](https://code.claude.com/docs/en/hooks#stop).
 - [OpenAI — MCP Events e callback fornecido pelo cliente](https://developers.openai.com/plugins/build/mcp-events).

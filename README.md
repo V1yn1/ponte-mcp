@@ -4,7 +4,7 @@
 
 A Ponte é um serviço local com painel em português. Ela permite que clientes compatíveis, como ChatGPT e Claude, trabalhem em projetos autorizados, executem comandos e usem ferramentas de outros servidores MCP, incluindo Roblox Studio e Playwright. Cada solicitação segue as permissões e a política de aprovação definidas no painel.
 
-**Versão atual: 0.7.0.** O chat agora pode **cadastrar e reconectar servidores MCP pelo próprio catálogo da Ponte**, a pedido do usuário ou quando identificar uma capacidade necessária à tarefa. A solicitação mostra uma prévia e segue a política do painel, inclusive aprovação automática. Os watchers nativos continuam disponíveis para acompanhar a conclusão real de tarefas.
+**Versão atual: 0.8.0.** Os watchers usam esperas de **25 segundos por padrão e no máximo 45 segundos por chamada**, com recuperação pelo mesmo ID quando a comunicação falha. O novo evento **`ponte.watcher.completed`** permite avisar clientes MCP Events inscritos quando um acompanhamento termina. O resultado continua persistido na Ponte; a retomada de uma conversa encerrada depende do cliente e ainda precisa de comprovação específica.
 
 [Documentação completa](docs/README.md) · [Instalar e atualizar](docs/OPERACAO.md) · [ChatGPT](docs/CHATGPT.md) · [Claude](docs/CLAUDE.md) · [MCPs pelo chat](docs/MCPS-PELO-CHAT.md) · [Watchers](docs/WATCHERS.md) · [Histórico de versões](CHANGELOG.md)
 
@@ -19,7 +19,7 @@ A Ponte é um serviço local com painel em português. Ela permite que clientes 
 | MCPs pelo chat | Listar conexões, cadastrar e reconectar com justificativa, revisão e uso imediato pelo catálogo dinâmico |
 | Chats | MCP HTTP com OAuth, MCP local por stdio e API REST com OpenAPI para GPT Actions |
 | Watchers | Criar, consultar, listar, aguardar e cancelar; gatilhos `signal` e `job`; estado e resultados persistidos |
-| MCP Events | Evento `ponte.job.completed` por trabalho, com inscrição e callback fornecidos por um cliente compatível |
+| MCP Events | Eventos `ponte.job.completed` por trabalho e `ponte.watcher.completed` por acompanhamento, com inscrição e callback fornecidos por um cliente compatível |
 | Painel | Projetos, conexões, ferramentas, execuções, acompanhamentos, autorização OAuth e diagnóstico de Events |
 
 A Ponte não inclui um modelo de IA e não remove cotas do chat ou dos serviços conectados. O cliente precisa oferecer integração de ferramentas; apenas colar uma URL em uma conversa não dá acesso ao computador. O projeto foi feito para uso pessoal em um computador, com um único administrador.
@@ -71,8 +71,9 @@ Para um fluxo como “enviar uma demanda ao Claude e aguardar a conclusão”, c
 
 1. Chame `bridge_watch_create` com `trigger.type: "signal"`, `source` e um `runId` único. Se a criação exigir aprovação, acompanhe seu `jobId` até obter o resultado.
 2. Configure o executor com a URL e a credencial exclusivas retornadas em `callback`. O executor deve informar `succeeded`, `failed` ou `needs_input` quando tiver verificado o resultado real.
-3. Delegue a demanda uma única vez e chame `bridge_watch_wait` com o `watcherId` criado.
-4. Se retornar `waiting`, continue a espera pelo mesmo ID durante o turno ativo, dentro dos limites do cliente. Depois de reconectar, use `bridge_watch_get` ou `bridge_watch_list`.
+3. Delegue a demanda uma única vez e chame `bridge_watch_wait` com o `watcherId` criado e `waitMs: 25000`.
+4. Se retornar `waiting`, continue o turno ativo com novas esperas pelo mesmo ID até um estado terminal ou um limite concreto do cliente. Se a comunicação falhar, consulte primeiro `bridge_watch_get` com o mesmo ID; depois de reconectar, `bridge_watch_list` também ajuda a localizá-lo.
+5. Informe o resultado ao usuário. `needs_input` é terminal: apresente a intervenção necessária e aguarde a decisão. Uma nova etapa explicitamente autorizada recebe outro watcher.
 
 Exemplo de argumentos para criar o acompanhamento:
 
@@ -94,13 +95,15 @@ O produtor [ponte-watch-notify.mjs](scripts/ponte-watch-notify.mjs) envia o resu
 | Mecanismo | O que acompanha | Limite da continuidade |
 |---|---|---|
 | `bridge_job` | Uma execução da Ponte | Espera de até 25 s por chamada, durante o turno ativo |
-| Watcher `signal` | O resultado explícito informado por um executor externo | Persiste após desconexão/reinício; `bridge_watch_wait` aceita até 300 s se o cliente permitir |
+| Watcher `signal` | O resultado explícito informado por um executor externo | Persiste após desconexão/reinício; espera de 25 s por padrão, máximo de 45 s por chamada |
 | Watcher `job` | O estado final de uma execução da Ponte | Não atribui ao trabalho um significado maior que a própria execução |
-| MCP Events | A conclusão de um trabalho com inscrição ativa do cliente | Pode avisar um cliente compatível por webhook; depende da inscrição e do suporte do cliente |
+| MCP Events | O estado terminal de um job ou watcher com inscrição ativa do cliente | Pode avisar um cliente compatível por webhook; depende da inscrição e do processamento pelo cliente |
 
-**Watchers pertencem à Ponte e não usam o agendador do ChatGPT ou Claude.** Eles não abrem um novo turno em uma conversa encerrada. O fim de `tmux send-keys`, do comando que enviou a demanda ou de uma resposta do Claude não comprova a conclusão da tarefa. Cancelar o watcher encerra somente o acompanhamento, sem interromper o executor.
+**Watchers pertencem à Ponte e não usam o agendador do ChatGPT ou Claude.** `monitorDurable: true` e `canWakeClosedConversation: false` permanecem no contrato desta versão. O fim de `tmux send-keys`, do comando que enviou a demanda ou de uma resposta do Claude não comprova a conclusão da tarefa. Cancelar o watcher encerra somente o acompanhamento, sem interromper o executor. `expired` significa que o prazo do acompanhamento acabou; não comprova falha da tarefa externa.
 
-MCP Events é uma integração separada e opcional. Ela usa `events/subscribe`, um método do protocolo, com callback e segredo fornecidos pelo cliente. Um watcher não cria essa inscrição. Veja [MCP Events](docs/MCP-EVENTS.md).
+`waitMs` vale para uma chamada. O prazo total usa `timeoutMs` na criação, com padrão de uma hora e máximo de sete dias, e fica registrado em `expiresAt`; repetir uma espera não o renova. Valores acima de 45000 ms são rejeitados com orientação para consultar o mesmo ID, sem reduzir silenciosamente o valor. Um timeout de comunicação também não autoriza recriar o watcher ou reenviar a demanda.
+
+MCP Events é uma integração opcional de entrega ao cliente. Ela usa `events/subscribe`, um método do protocolo, com callback e segredo fornecidos pelo cliente. No ChatGPT, esse fluxo usa o mecanismo do host de tarefas acionadas por eventos; o watcher e seu prazo continuam na Ponte, sem agendamento por horário ou polling do chat. Para uma tarefa externa, a inscrição usa `ponte.watcher.completed` e `{watcherId}`; depois do evento, o cliente consulta `bridge_watch_get`. Criar o watcher não cria essa inscrição. HTTP 2xx confirma recebimento do aviso, sem provar que o chat respondeu. Veja [MCP Events](docs/MCP-EVENTS.md).
 
 ## Política de aprovação
 
@@ -163,7 +166,7 @@ npm.cmd start
 
 Preserve a pasta `.ponte` inteira, incluindo `secrets.json`, `oauth.json`, `events.json`, `watchers.json` e backups. O watcher usa a chave da instalação; apagar ou recriar as credenciais isoladamente pode impedir a leitura do estado existente. Não execute duas instâncias sobre o mesmo diretório.
 
-Confira **0.7.0** com `bridge_status` ou `doctor` e atualize o catálogo no cliente para encontrar `bridge_mcp_list`, `bridge_mcp_add` e `bridge_mcp_reconnect`, além das cinco ferramentas `bridge_watch_*`. Se o cliente ainda mantiver o catálogo anterior, pesquise `search: "bridge_mcp"` em `bridge_list_tools` e chame o nome retornado por `bridge_call`. Na listagem atual, `source: "bridge:mcps"` também seleciona essas ferramentas. Para instalações por ZIP, diretório personalizado, mudança de túnel e recuperação, siga [Operação](docs/OPERACAO.md).
+Confira **0.8.0** com `bridge_status` ou `doctor` e atualize o catálogo no cliente: `bridge_watch_wait` deve anunciar máximo de **45000 ms**, e Events deve listar **`ponte.watcher.completed`** junto de `ponte.job.completed`. As três ferramentas `bridge_mcp_*` e as cinco `bridge_watch_*` continuam disponíveis. Se o cliente mantiver o catálogo de ferramentas em cache, use `bridge_list_tools` e `bridge_call`; isso não substitui a atualização da descoberta de Events. Para instalações por ZIP, diretório personalizado, mudança de túnel e recuperação, siga [Operação](docs/OPERACAO.md).
 
 ## Desenvolvimento e evidência
 

@@ -1,4 +1,4 @@
-# Adicionar MCPs pelo chat — Ponte MCP 0.7.0
+# Adicionar MCPs pelo chat — Ponte MCP 0.8.0
 
 [Índice da documentação](README.md) · [API e ferramentas](API.md) · [Integrações](INTEGRACOES.md) · [Segurança](SEGURANCA.md)
 
@@ -8,7 +8,7 @@ O fluxo registra um processo stdio ou um endereço MCP HTTP/SSE, tenta conectar 
 
 ## Pedir em linguagem natural
 
-Depois de atualizar a Ponte para **0.7.0**, confirme `bridge_status` e habilite sua conexão no chat. Um pedido possível é:
+Depois de atualizar a Ponte para **0.8.0**, confirme `bridge_status` e habilite sua conexão no chat. Um pedido possível é:
 
 ```text
 Adicione o Playwright MCP à minha Ponte e use-o para testar a página do projeto.

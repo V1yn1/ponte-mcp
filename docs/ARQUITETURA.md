@@ -1,4 +1,4 @@
-# Arquitetura da Ponte MCP 0.7.0
+# Arquitetura da Ponte MCP 0.8.0
 
 [Índice da documentação](README.md) · [Referência da API](API.md) · [Segurança](SEGURANCA.md)
 
@@ -22,6 +22,7 @@ flowchart TD
     Jobs -->|"criar watcher e observar jobs"| Watch
     Executor["Executor externo"] -->|"sinal autenticado"| Watch
     Jobs -->|"conclusão de job inscrito"| Events["EventService: avisos ao cliente"]
+    Watch -->|"conclusão de watcher inscrito"| Events
 ```
 
 A autenticação identifica a conexão antes do despacho. As ferramentas locais, as ferramentas de upstreams, `bridge_watch_create` e as três `bridge_mcp_*` passam pelo `JobManager`. Os controles `bridge_status`, `bridge_list_tools`, `bridge_job`, `bridge_cancel` e `bridge_watch_get/list/wait/cancel` têm caminhos próprios; consultar ou aguardar um watcher não cria um trabalho nem ocupa uma vaga de execução. Os métodos de protocolo `events/*` também são tratados diretamente pelo serviço de Events.
@@ -35,7 +36,7 @@ A autenticação identifica a conexão antes do despacho. As ferramentas locais,
 | `McpManagement` | Listar conexões sem segredos, validar cadastro/reconexão e serializar alterações de upstreams pelo chat e painel | [src/mcp/management.ts](../src/mcp/management.ts) |
 | `McpHub` | Manter clientes upstream, descobrir schemas e preservar os blocos de conteúdo retornados | [src/mcp/hub.ts](../src/mcp/hub.ts) |
 | `WatchService` | Persistir acompanhamentos, receber sinais e manter esperas limitadas por proprietário | [src/watchers/service.ts](../src/watchers/service.ts) |
-| `EventService` | Manter assinaturas, cópias de jobs e tentativas de entrega de avisos | [src/events/service.ts](../src/events/service.ts) |
+| `EventService` | Manter assinaturas, cópias de jobs, metadados de watchers e tentativas de entrega | [src/events/service.ts](../src/events/service.ts) |
 
 `ToolDefinition` reúne schema MCP, risco (`read`, `write` ou `execute`), origem, fingerprint opcional, prévia e execução com `AbortSignal`. O `JobManager` usa a assinatura desses dados para detectar uma ferramenta ou configuração que mudou depois da solicitação. O contrato está em [src/types.ts](../src/types.ts).
 
@@ -106,7 +107,9 @@ Use `signal` para uma tarefa delegada a Claude, tmux ou outro executor. O fim de
 
 O sinal permite `succeeded`, `failed` ou `needs_input`. A Ponte verifica o token específico, a autorização proprietária, o `runId` e o tamanho do JSON. Repetir o mesmo `eventId` com o mesmo conteúdo confirma o resultado já persistido; um sinal diferente depois de um estado terminal é recusado. `needs_input` também encerra esse acompanhamento e informa que a tarefa exige intervenção, sem significar conclusão bem-sucedida.
 
-`bridge_watch_get/list/wait/cancel` usam o `WatchService` diretamente, inclusive quando encaminhados por `bridge_call`. A espera tem padrão de **25 segundos** e máximo de **300 segundos**, condicionado ao timeout do cliente e dos intermediários. Uma desconexão encerra somente aquela espera. O watcher permanece consultável pela mesma identidade, mas não reabre uma conversa encerrada. `bridge_watch_cancel` encerra a observação; não cancela o job original, não interrompe o executor e não desfaz seus efeitos.
+`bridge_watch_get/list/wait/cancel` usam o `WatchService` diretamente, inclusive quando encaminhados por `bridge_call`. A espera tem padrão de **25 segundos** e máximo de **45 segundos** no serviço e em todas as interfaces. Valores maiores são rejeitados com recuperação `get` pelo mesmo ID, sem ajuste silencioso. O prazo total usa `timeoutMs` na criação e `expiresAt`; uma nova espera não o estende. Uma desconexão encerra somente aquela chamada. Falhas de comunicação tratadas preservam o ID e orientam consulta, sem inventar estado. `bridge_watch_cancel` encerra a observação; não cancela o job original, não interrompe o executor e não desfaz seus efeitos.
+
+Enquanto houver `waiting`, o chat mantém o turno ativo com esperas de 25000 ms pelo mesmo ID até terminal ou limite concreto do cliente. `needs_input` é terminal e exige apresentar a pendência ao usuário. `monitorDurable: true` e `canWakeClosedConversation: false` permanecem no contrato, independentemente da entrega HTTP de um evento.
 
 `watchers.json` guarda estado, resultado limitado, vínculo de identidade, hash do token e recibo de deduplicação. A chave de idempotência do watcher persiste com o registro: chamar `bridge_watch_create` com a mesma identidade, chave e argumentos recupera o acompanhamento e sua credencial de sinal. Essa recuperação ainda passa pela política de criação. O token é derivado de um HMAC com o token API estável da instância; preservar somente `watchers.json` sem o `secrets.json` correspondente não é suficiente.
 
@@ -136,13 +139,13 @@ A revogação pelo painel ou por `/revoke` remove a autorização inteira e seus
 
 Events é um mecanismo separado do callback de entrada de um watcher. A implementação usa o [perfil de MCP Events da OpenAI](https://developers.openai.com/plugins/build/mcp-events) na fachada HTTP moderna. O cliente compatível precisa oferecer o recurso e criar a assinatura; o acompanhamento nativo descrito acima não depende dessa integração.
 
-`ponte.job.completed` exige `arguments.jobId` e só acompanha um job da mesma identidade. O cliente fornece callback HTTPS e segredo `whsec_` em `events/subscribe`. A Ponte verifica o destino com desafio assinado antes de ativá-lo. O evento contém metadados da conclusão; o cliente consulta `bridge_job` para obter o resultado. Uma assinatura posterior à conclusão recebe o estado terminal atual, sem histórico por cursor.
+`ponte.job.completed` exige `arguments.jobId`; `ponte.watcher.completed` exige `arguments.watcherId`. Cada assinatura acompanha somente um registro da mesma identidade. O cliente fornece callback HTTPS e segredo `whsec_` em `events/subscribe`. A Ponte verifica o destino com desafio assinado antes de ativá-lo. Os eventos contêm metadados da conclusão; o cliente consulta `bridge_job` ou `bridge_watch_get` para obter o resultado. Uma assinatura posterior à conclusão recebe o estado terminal atual, sem histórico por cursor.
 
-Assinaturas e tentativas de entrega persistem em `events.json`, junto de cópias dos jobs acompanhados, sem seus argumentos de entrada. A inscrição reserva espaço para o resultado final. A identidade do evento permanece estável nos reenvios, com no máximo **seis tentativas**; o destinatário deve deduplicar por `eventId`. HTTP 410/413 encerra a entrega; 2xx confirma o recebimento, sem comprovar continuidade ou sucesso de uma conversa.
+Assinaturas e tentativas de entrega persistem em `events.json`, junto de cópias dos jobs acompanhados, sem seus argumentos de entrada. Para jobs, a inscrição reserva espaço para o resultado final. Para watchers, Events guarda somente ID, status, horários e vínculo de retenção/proprietário; o resultado continua em `watchers.json`, sujeito à capacidade própria do serviço. A identidade do evento permanece estável nos reenvios, com no máximo **seis tentativas**; o destinatário deve deduplicar por `eventId`. HTTP 410/413 encerra a entrega; 2xx confirma o recebimento, sem comprovar continuidade ou sucesso de uma conversa.
 
 Há até **100 assinaturas**, validade padrão e máxima de **24 horas por renovação** e orçamento de **64 MiB**, incluindo reservas. As cópias dos jobs persistem até a maior validade concedida para aquela combinação de identidade e job, mesmo após encerrar uma assinatura. Ao reiniciar, jobs arquivados que estavam incompletos e não existem no processo restaurado tornam-se `cancelled`; nenhuma ferramenta é repetida. Se um watcher `job` encontrar essa cópia recuperada, ele reflete seu estado `cancelled`, em vez de `interrupted`.
 
-Uma assinatura do job de `bridge_watch_create` informa o fim da **criação do acompanhamento**, não o fim da tarefa externa. Não existe evento de conclusão de watcher nesta versão. Para tarefas delegadas, mantenha `signal` e `bridge_watch_wait/get`; para um fluxo de Events autorizado e suportado pelo cliente, veja [MCP-EVENTS.md](MCP-EVENTS.md).
+Uma assinatura do job de `bridge_watch_create` informa o fim da **criação do acompanhamento**. Para a tarefa externa, use o watcher `signal` e, quando houver suporte e inscrição do cliente, `ponte.watcher.completed`; depois do aviso, consulte `bridge_watch_get`. O fluxo de Events está em [MCP-EVENTS.md](MCP-EVENTS.md).
 
 ## Persistência e operação
 
@@ -154,7 +157,7 @@ O diretório padrão é `.ponte` na instalação, substituível por `--state-dir
 | `secrets.json` | Tokens administrativo/API; token API também é a chave dos sinais | Preservar junto do estado de watchers |
 | `oauth.json` | Clientes, grants e hashes de tokens | Reutilizar mantém conexões OAuth ainda válidas |
 | `watchers.json` | Acompanhamentos e resultados limitados | Sobrevive à chamada e ao reinício; não reinicia executores |
-| `events.json` | Assinaturas, entregas, segredos de webhook e cópias de jobs | Recupera resultados somente dentro do prazo e da identidade |
+| `events.json` | Assinaturas, entregas, segredos de webhook, cópias de jobs e metadados de watchers | Recupera avisos; resultados de jobs seguem retenção e identidade, e resultados de watchers permanecem em `watchers.json` |
 | `audit.jsonl` e backups | Metadados de transições e conteúdos anteriores de arquivos editados | Não equivalem a uma fila de execução recuperável |
 | Fila e jobs comuns | Memória | Perdidos no reinício, salvo as cópias limitadas de Events |
 

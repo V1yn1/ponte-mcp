@@ -1,4 +1,4 @@
-# Referência da API e ferramentas — Ponte MCP 0.7.0
+# Referência da API e ferramentas — Ponte MCP 0.8.0
 
 [Índice da documentação](README.md) · [Integrações](INTEGRACOES.md) · [Watchers](WATCHERS.md)
 
@@ -114,10 +114,10 @@ Depois de conectar, use `bridge_list_tools` com `source: "mcp:ID"` e os nomes co
 | `bridge_watch_create` | `name`, `trigger`, `timeoutMs?`, `idempotencyKey?` | Job de risco `write`; resultado contém `watcherId` e, para `signal`, callback de configuração |
 | `bridge_watch_get` | `watcherId` | Consulta direta do acompanhamento e resultado |
 | `bridge_watch_list` | `offset?`, `limit?` | Lista da identidade atual; padrão 50, máximo 500 |
-| `bridge_watch_wait` | `watcherId`, `waitMs?` | Espera direta, padrão 25000 ms, intervalo 0–300000 ms |
+| `bridge_watch_wait` | `watcherId`, `waitMs?` | Espera direta, padrão 25000 ms, intervalo 0–45000 ms |
 | `bridge_watch_cancel` | `watcherId` | Cancela somente o acompanhamento, sem cancelar executor/job |
 
-Os quatro controles diretos não ocupam os slots de execução nem criam pedidos de aprovação. Eles continuam autenticados e vinculados ao proprietário. O timeout aceito pelo cliente pode ser menor que os 300 segundos suportados pelo servidor.
+Os quatro controles diretos não ocupam os slots de execução nem criam pedidos de aprovação. Eles continuam autenticados e vinculados ao proprietário. O teto de 45000 ms vale no serviço, MCP direto, `bridge_call`, stdio e REST/Actions. Valores maiores são rejeitados, sem ajuste silencioso, com o mesmo `watcherId` e `nextCall` indicando `bridge_watch_get`. O cliente ainda pode interromper a chamada antes do limite.
 
 `trigger` aceita exclusivamente:
 
@@ -131,11 +131,13 @@ ou, com um `jobId` real da mesma identidade:
 { "type": "job", "jobId": "00000000-0000-4000-8000-000000000001" }
 ```
 
-O UUID acima é ilustrativo e não identifica um trabalho existente. O nome aceita 1–160 caracteres; `source` e `runId`, 1–128, com restrições adicionais para controles/espaços em `runId`. O prazo do watcher é de 1000 a 604800000 ms (sete dias), com padrão 3600000 ms (uma hora). Ele é independente do prazo da chamada de espera.
+O UUID acima é ilustrativo e não identifica um trabalho existente. O nome aceita 1–160 caracteres; `source` e `runId`, 1–128, com restrições adicionais para controles/espaços em `runId`. `timeoutMs` define o prazo total do watcher: de 1000 a 604800000 ms (sete dias), com padrão 3600000 ms (uma hora). `expiresAt` registra seu vencimento. `waitMs` limita somente uma chamada; consultar, esperar novamente ou recuperar a criação idempotente não renova esse prazo total.
 
-Detalhe, criação, espera e cancelamento informam `monitorDurable: true` e `canWakeClosedConversation: false`. Resultados de executor são marcados como dados não confiáveis. Quando `waiting`, a resposta orienta a próxima espera pelo mesmo ID. A lista retorna `{watchers, total, offset, limit}` sem tokens de callback.
+Detalhe, criação, espera e cancelamento informam `monitorDurable: true` e `canWakeClosedConversation: false`. Esses valores permanecem na 0.8.0, inclusive após entrega de Events. Resultados de executor são marcados como dados não confiáveis. Quando `waiting`, a resposta orienta a próxima espera de 25000 ms pelo mesmo ID; o chat continua durante o turno ativo até terminal ou limite concreto do cliente. A lista retorna `{watchers, total, offset, limit}` sem tokens de callback.
 
-O contrato completo de criação, callback, retenção, replay, expiração e estados está em [Watchers](WATCHERS.md). Não existe evento MCP de conclusão de watcher na v0.7.0; `ponte.job.completed` refere-se a jobs.
+Falhas de comunicação tratadas pela Ponte retornam recuperação estruturada para `bridge_watch_get` com o mesmo `watcherId`, sem fabricar estado do acompanhamento. Isso inclui interrupção antes dos cabeçalhos, durante a leitura do corpo e HTTP 503 no adaptador stdio. Consulte o estado antes de retomar a espera. Erros de autenticação ou registro não encontrado exigem conferir autorização/ID; não autorizam retry cego, criação de outro watcher ou reenvio da tarefa. O [roteiro de recuperação](WATCHERS.md#recuperar-uma-espera-interrompida) detalha cada resultado.
+
+O contrato completo de criação, callback, retenção, replay, expiração e estados está em [Watchers](WATCHERS.md). O evento `ponte.watcher.completed` usa `{watcherId}` e instrui a consulta do resultado por `bridge_watch_get`; `ponte.job.completed` continua restrito a jobs.
 
 ## REST e GPT Actions
 
@@ -182,7 +184,7 @@ O proxy local adicional `POST /v1/mcp/call` recebe `{ "name": "bridge_status", "
 | Job | `pending_approval`, `queued`, `running` | `succeeded`, `failed`, `rejected`, `cancelled`, `expired` |
 | Watcher | `waiting` | `succeeded`, `failed`, `needs_input`, `cancelled`, `expired`, `interrupted` |
 
-`needs_input` encerra aquele acompanhamento e pede intervenção; uma nova etapa exige novo watcher. `succeeded` de um job descreve a execução da ferramenta. Se ela apenas enviou uma mensagem a outro executor, isso não comprova o sucesso da tarefa delegada. O chat deve conferir a evidência pertinente do resultado.
+`needs_input` encerra aquele acompanhamento: o chat deve apresentar a pendência e pedir intervenção, sem repetir esperas. Uma nova etapa explicitamente autorizada exige outro watcher. `expired` informa o vencimento do acompanhamento e não prova falha externa. `succeeded` de um job descreve a execução da ferramenta. Se ela apenas enviou uma mensagem a outro executor, isso não comprova o sucesso da tarefa delegada. O chat deve conferir a evidência pertinente do resultado.
 
 | Controle | Regra da implementação |
 |---|---|
@@ -206,4 +208,4 @@ As chaves de job e criação de watcher aceitam letras, números, `.`, `_`, `:` 
 
 `POST /hooks/watchers/{watcherId}/signal` recebe a conclusão do executor, com token exclusivo e corpo `{eventId, runId, status, summary, exitCode?, evidence?}`. `status` aceita `succeeded`, `failed` e `needs_input`. O serviço salva o resultado antes de confirmar sucesso. Detalhes de 400/401/409/413/429/503 e tentativas estão em [Watchers](WATCHERS.md).
 
-No sentido oposto, MCP Events envia um evento da Ponte para o cliente. `events/list`, `events/subscribe` e `events/unsubscribe` são métodos do protocolo em `/mcp`, não ferramentas para `bridge_call`, rotas de sinal ou operações do OpenAPI. O único evento publicado é `ponte.job.completed`, com `arguments.jobId` e inscrição criada pelo cliente. Veja [MCP Events](MCP-EVENTS.md).
+No sentido oposto, MCP Events envia um evento da Ponte para o cliente. `events/list`, `events/subscribe` e `events/unsubscribe` são métodos do protocolo em `/mcp`, não ferramentas para `bridge_call`, rotas de sinal ou operações do OpenAPI. A 0.8.0 publica `ponte.job.completed` com `arguments: {jobId}` e `ponte.watcher.completed` com `arguments: {watcherId}`. Ambos exigem inscrição do cliente, escopo à identidade proprietária e webhook verificado/assinado. O evento de watcher contém somente `watcherId`, `status`, `createdAt` e `updatedAt`; resultado e credencial de sinal ficam fora do aviso. Veja [MCP Events](MCP-EVENTS.md).

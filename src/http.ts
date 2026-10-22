@@ -12,7 +12,8 @@ import { makeMcpServer, publicTools, callGateway, SERVER_INSTRUCTIONS } from './
 import { handleModernMcp } from './mcp/modern.js';
 import { authenticateMcp, isOAuthProtocolPath, mountOAuth } from './auth/http.js';
 import { WatchError } from './watchers/service.js';
-import { jobForObservation, watcherResult, WATCH_DEFAULT_WAIT_MS, WATCH_MAX_WAIT_MS } from './watchers/tools.js';
+import { jobForObservation, watcherResult } from './watchers/tools.js';
+import { watchWaitOptionsSchema, watcherRecovery, WatchRecoveryError, WATCH_MAX_WAIT_MS } from './watchers/types.js';
 
 function equalSecret(value: string, secret: string): boolean {
   const a = Buffer.from(value); const b = Buffer.from(secret);
@@ -82,6 +83,9 @@ function errors(error: unknown, req: Request, res: Response, _next: NextFunction
     const reason = error.data?.reason;
     const status = reason === 'not_found' ? 404 : reason === 'authorization_required' ? 401 : reason === 'conflict' ? 409 : ['watcher_limit', 'waiter_limit'].includes(reason ?? '') ? 429 : reason === 'payload_too_large' ? 413 : reason === 'storage_limit' ? 503 : 400;
     res.status(status).json({ error: error.message }); return;
+  }
+  if (error instanceof WatchRecoveryError) {
+    res.status(error.recovery.recovery.reason === 'wait_limit_exceeded' ? 400 : 503).json({ error: error.message, ...error.recovery }); return;
   }
   if (req.path === '/mcp' && ['entity.parse.failed', 'entity.too.large', 'charset.unsupported', 'encoding.unsupported'].includes(parserError?.type ?? '')) {
     const modern = req.get('MCP-Protocol-Version') === '2026-07-28';
@@ -241,8 +245,15 @@ export function createHttpApps(runtime: Application): { admin: Express; api: Exp
   });
   api.get('/v1/watchers/:id', async (req, res) => { res.json(watcherResult(await runtime.watchers.get(runtime.apiPrincipal, z.string().uuid().parse(req.params.id)))); });
   api.post('/v1/watchers/:id/wait', async (req, res) => {
-    const { waitMs } = z.object({ waitMs: z.number().int().min(0).max(WATCH_MAX_WAIT_MS).default(WATCH_DEFAULT_WAIT_MS) }).strict().parse(req.body ?? {});
-    res.json(watcherResult(await runtime.watchers.wait(runtime.apiPrincipal, z.string().uuid().parse(req.params.id), waitMs, requestSignal(req, res))));
+    const watcherId = z.string().uuid().parse(req.params.id);
+    const params = watchWaitOptionsSchema.safeParse(req.body ?? {});
+    if (!params.success) {
+      const recovery = typeof req.body?.waitMs === 'number' && req.body.waitMs > WATCH_MAX_WAIT_MS
+        ? watcherRecovery(watcherId, 'wait_limit_exceeded') : undefined;
+      if (recovery) throw new WatchRecoveryError(`Cada chamada aceita no máximo ${WATCH_MAX_WAIT_MS} ms; o prazo total do watcher não foi alterado.`, recovery);
+      throw params.error;
+    }
+    res.json(watcherResult(await runtime.watchers.wait(runtime.apiPrincipal, watcherId, params.data.waitMs, requestSignal(req, res))));
   });
   api.post('/v1/watchers/:id/cancel', async (req, res) => { res.json(watcherResult(await runtime.watchers.cancel(runtime.apiPrincipal, z.string().uuid().parse(req.params.id)))); });
   api.get('/v1/mcp/tools', (_req, res) => { res.json({ tools: publicTools(runtime) }); });
@@ -257,7 +268,7 @@ export function createHttpApps(runtime: Application): { admin: Express; api: Exp
     const getTools = () => publicTools(runtime, Boolean(runtime.store.config.publicUrl));
     const disconnected = requestSignal(req, res);
     const call = (name: string, args: Record<string, unknown>, signal?: AbortSignal) => callGateway(runtime, name, args, principal, signal ? AbortSignal.any([disconnected, signal]) : disconnected);
-    if (await handleModernMcp(req, res, { getTools, call, events: runtime.events, principal, version: '0.7.0', instructions: SERVER_INSTRUCTIONS })) return;
+    if (await handleModernMcp(req, res, { getTools, call, events: runtime.events, principal, version: '0.8.0', instructions: SERVER_INSTRUCTIONS })) return;
     const server = makeMcpServer(getTools, call);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     try { await server.connect(transport); await transport.handleRequest(req, res, req.body); }

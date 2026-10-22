@@ -1,50 +1,51 @@
-# MCP Events na Ponte MCP 0.7.0
+# MCP Events na Ponte MCP 0.8.0
 
 [Índice da documentação](README.md) · [Conectar ao ChatGPT](CHATGPT.md) · [Watchers nativos](WATCHERS.md) · [API e ferramentas](API.md)
 
-MCP Events permite que a Ponte avise uma conversa inscrita quando um trabalho termina. O ChatGPT pode então consultar o resultado e continuar o pedido do usuário. A Ponte implementa o evento **`ponte.job.completed`**, com um `jobId` obrigatório por assinatura, usando webhooks verificados e assinados.
+MCP Events permite que a Ponte avise um cliente inscrito quando um job ou watcher termina. A versão 0.8.0 acrescenta **`ponte.watcher.completed`**, com filtro obrigatório `{watcherId}`, e mantém **`ponte.job.completed`**, com `{jobId}`. O cliente consulta o resultado pela ferramenta correspondente e decide como continuar o pedido autorizado. As entregas usam webhooks verificados e assinados.
 
 O cliente precisa oferecer Events e criar a inscrição. Instalar a Ponte, autorizar OAuth ou ativar a aprovação automática não cria uma assinatura. A disponibilidade documentada pela OpenAI é **Work no navegador**, **Work com Cloud selecionado no aplicativo desktop** e **dots**, sujeita aos controles da conta e do workspace. Este guia usa Work. Fonte: [MCP Events da OpenAI](https://developers.openai.com/plugins/build/mcp-events), consultada em **22/10/2026**.
 
-**MCP Events e watchers têm funções diferentes.** Events envia uma notificação da Ponte ao cliente. Um [watcher `signal`](WATCHERS.md) recebe um recibo do executor na Ponte e mantém seu resultado consultável. Na 0.7.0, o único evento anunciado é `ponte.job.completed`; não há evento de conclusão de watcher. Um aviso sobre o job que criou o watcher comprova a criação, e um aviso sobre um job que enviou texto ao Claude comprova o término daquele envio. Para a tarefa externa, confira o recibo do watcher.
+Um [watcher `signal`](WATCHERS.md) recebe o recibo do executor e mantém seu resultado na Ponte. `ponte.watcher.completed` avisa essa transição terminal a quem se inscreveu; o resultado é recuperado com `bridge_watch_get`. Já um aviso de `ponte.job.completed` sobre o job de criação do watcher comprova somente a criação, e um aviso do job de envio ao Claude comprova somente esse envio.
+
+`monitorDurable: true` e `canWakeClosedConversation: false` permanecem no contrato da 0.8.0. Uma assinatura aceita ou entrega HTTP 2xx não muda esses valores: o cliente processa o evento de forma assíncrona. Para comprovar retomada, é preciso observar a consulta do resultado e a resposta efetiva da conversa após a entrega. [Validação](VALIDACAO.md#recuperação-de-esperas-e-eventos-de-watchers--080) registra o que foi observado e o que continua sem comprovação.
 
 ## Começar pelo ChatGPT
 
-1. Atualize a Ponte para **0.7.0**, preserve seu diretório de estado e reinicie o serviço. Os comandos estão em [Instalação e operação](OPERACAO.md).
+1. Atualize a Ponte para **0.8.0**, preserve seu diretório de estado e reinicie o serviço. Os comandos estão em [Instalação e operação](OPERACAO.md).
 2. Mantenha a API em execução, com a origem HTTPS correta em **Conectar IA → URL pública da API**. Preserve uma conexão OAuth já concluída quando a origem continuar a mesma.
-3. Na conexão da Ponte em **Plugins**, selecione **Refresh/Atualizar**. Confirme que **`ponte.job.completed`** aparece entre os eventos descobertos.
+3. Na conexão da Ponte em **Plugins**, selecione **Refresh/Atualizar**. Confirme os eventos **`ponte.job.completed`** e **`ponte.watcher.completed`**. A versão anunciada pelo servidor é a referência para a instalação em uso.
 4. Abra uma **nova conversa Work** compatível, com Cloud selecionado se estiver no desktop, e selecione a Ponte com `@`.
-5. Peça uma tarefa em um projeto autorizado. Quando uma chamada retornar um `jobId` pendente de aprovação ou de execução, peça para acompanhar aquele ID e continuar quando ele terminar.
+5. Para uma tarefa externa, crie e configure o watcher antes de delegar e peça para acompanhar seu `watcherId`. Para uma execução da própria Ponte, acompanhe o `jobId` retornado pela ferramenta.
 
-Exemplo de pedido, substituindo `JOB_ID` pelo ID realmente retornado:
+Exemplo de pedido, substituindo `WATCHER_ID` pelo ID realmente retornado:
 
 ```text
-Acompanhe o trabalho JOB_ID com ponte.job.completed da Ponte.
-Quando o aviso chegar, consulte bridge_job com esse mesmo ID, confira
-o resultado e continue a tarefa que eu pedi. Não reenvie a operação
-que criou o trabalho. Se falhar, for recusado ou cancelado, explique
-o estado antes de propor outra ação.
+Acompanhe o watcher WATCHER_ID com ponte.watcher.completed da Ponte.
+Quando o aviso chegar, consulte bridge_watch_get com esse mesmo ID e
+informe o resultado. Em needs_input, apresente a pendência e peça minha
+intervenção. Não reenvie a tarefa nem crie outro watcher para recuperá-la.
 ```
 
-O cliente envia `events/subscribe` com `arguments.jobId` e fornece a URL de callback e o segredo de assinatura. **`events/subscribe` é um método do protocolo, não uma ferramenta MCP:** não aparece em `tools/list` e não deve ser encaminhado a `bridge_call`. A Ponte verifica o destino antes de aceitar a inscrição. Esses dados não precisam ser copiados pelo usuário e não devem aparecer na conversa.
+O cliente envia `events/subscribe` com `arguments.watcherId` ou `arguments.jobId`, conforme o evento, e fornece a URL de callback e o segredo de assinatura. **`events/subscribe` é um método do protocolo, não uma ferramenta MCP:** não aparece em `tools/list` e não deve ser encaminhado a `bridge_call`. A Ponte verifica o destino antes de aceitar a inscrição. Esses dados não precisam ser copiados pelo usuário e não devem aparecer na conversa.
 
-Para um primeiro teste, use uma alteração pequena em um projeto de teste com a política de revisão ativa: a chamada fica em `pending_approval`, permitindo confirmar a inscrição antes de aprovar em **Execuções**. Não é necessário mudar sua política para usar Events. Se o trabalho concluir antes de terminar a inscrição, a Ponte também envia o estado final atual, desde que o trabalho ainda esteja disponível para aquela conexão.
+Para testar o evento de watcher, confirme a inscrição e faça o executor de teste emitir seu recibo real. Para testar o evento de job, uma operação pequena aguardando revisão permite confirmar a inscrição antes de aprová-la em **Execuções**. Não é necessário mudar sua política para usar Events. Se o registro terminar antes de concluir a inscrição, a Ponte enfileira seu estado terminal atual, desde que ainda esteja disponível para aquela conexão.
 
 ## Conferir no painel
 
-Abra **Conectar IA → Avisos de conclusão**. Cada item corresponde a uma assinatura de um trabalho, com validade, situação, número de tentativas e eventual erro de entrega.
+Abra **Conectar IA → Avisos de conclusão**. Cada item corresponde a uma assinatura de um job ou watcher, com validade, situação, número de tentativas e eventual erro de entrega.
 
 | Estado | Significado |
 |---|---|
-| Aguardando conclusão | Assinatura aceita; o trabalho ainda não atingiu estado final |
-| Aviso na fila | O trabalho terminou e a entrega está enfileirada |
+| Aguardando conclusão | Assinatura aceita; o registro ainda não atingiu estado final |
+| Aviso na fila | O job ou watcher terminou e a entrega está enfileirada |
 | Tentando novamente | Uma tentativa foi iniciada ou há nova tentativa prevista |
-| Aviso recebido | O callback respondeu com HTTP 2xx |
+| Recebido pelo cliente | O callback respondeu com HTTP 2xx |
 | Falha na entrega | A entrega foi encerrada sem confirmação de sucesso |
 
-**Aviso recebido** confirma o recebimento pelo cliente. A prova de continuidade é observar a conversa consultar `bridge_job` e responder a partir do resultado, ou executar a próxima etapa já autorizada. O protocolo não permite à Ponte confirmar que o modelo concluiu essa continuação.
+**Recebido pelo cliente** confirma o recebimento pelo cliente. A prova de continuidade é observar a conversa consultar `bridge_watch_get` ou `bridge_job` para o mesmo ID e responder a partir do resultado, ou executar a próxima etapa já autorizada. O protocolo não permite à Ponte confirmar que o modelo concluiu essa continuação.
 
-Use **Encerrar aviso** para cancelar a inscrição. Isso não cancela a execução, não desfaz um evento já recebido e não apaga imediatamente o resultado retido. O encerramento também pode ser solicitado pelo mecanismo de Events do próprio cliente. O painel nunca exibe a URL do callback ou o segredo de assinatura.
+Use **Encerrar aviso** para cancelar a inscrição. Isso não cancela o job ou watcher, não desfaz um evento já recebido e não apaga imediatamente o resultado retido. O encerramento também pode ser solicitado pelo mecanismo de Events do próprio cliente. O painel nunca exibe a URL do callback ou o segredo de assinatura.
 
 ## Aprovação, espera e aviso são controles diferentes
 
@@ -52,12 +53,15 @@ Use **Encerrar aviso** para cancelar a inscrição. Isso não cancela a execuç�
 |---|---|
 | Política `automatic` | Libera ferramentas válidas conforme as permissões locais |
 | `bridge_job` com `waitMs` | Espera até 25 segundos pelo mesmo trabalho durante uma chamada ativa |
-| Watcher `signal` e `bridge_watch_wait` | Recebe um resultado do executor e permite aguardá-lo na Ponte; não cria assinatura Events |
+| Watcher `signal` e `bridge_watch_wait` | Recebe um resultado do executor; espera de 25 s por padrão, máximo de 45 s por chamada; não cria assinatura Events |
 | Assinatura de `ponte.job.completed` | Entrega um aviso depois que um trabalho específico chega ao estado final |
+| Assinatura de `ponte.watcher.completed` | Entrega um aviso depois que um acompanhamento específico chega ao estado final |
 
-Uma conversa pode combinar esses mecanismos quando houver necessidade. Uma assinatura também pode acompanhar um trabalho que exige aprovação manual; o aviso chega depois da execução, recusa, cancelamento ou expiração. Cada novo trabalho que precise de acompanhamento exige seu próprio `jobId` na assinatura. Consultas de acompanhamento não devem gerar uma cadeia de novas assinaturas.
+Uma conversa pode combinar esses mecanismos quando houver necessidade. Uma assinatura também pode acompanhar um trabalho que exige aprovação manual; o aviso chega depois da execução, recusa, cancelamento ou expiração. Cada registro acompanhado tem seu próprio ID e assinatura. Consultas de acompanhamento não devem gerar uma cadeia de novas assinaturas. O prazo da assinatura (`ttlMs`/`refreshBefore`) e o prazo total do watcher (`timeoutMs`/`expiresAt`) são independentes; renovar a assinatura não prolonga o watcher.
 
-O fluxo de watcher não usa o agendador do ChatGPT/Claude. Events depende do mecanismo de entrega disponibilizado pelo cliente, que pode apresentá-lo como tarefa acionada por evento e aplicar suas próprias permissões. Uma assinatura só existe depois de aceita pela Ponte; um pedido em linguagem natural ou uma tela de criação do cliente não comprovam esse aceite.
+O watcher, o recibo do executor e seu prazo total permanecem na Ponte. A inscrição opcional de Events acrescenta a entrega ao cliente. **No ChatGPT, essa entrega usa o mecanismo do host de tarefas acionadas por eventos**, com suas permissões e processamento; não é um agendamento por horário nem polling do chat. Uma assinatura só existe depois de aceita pela Ponte; um pedido em linguagem natural ou uma tela de criação do cliente não comprovam esse aceite.
+
+Durante um turno ativo, `waiting` continua exigindo esperas de 25000 ms pelo mesmo ID até terminal ou limite concreto. Criar uma tarefa periódica no ChatGPT/Claude não substitui esse acompanhamento nativo. O evento também não transforma um resultado pendente em conclusão.
 
 Events não fornece um modelo de IA dentro da Ponte, não remove cotas e não acrescenta autorização para novas tarefas. A continuação depende das instruções da conversa e das decisões do cliente. Actions e o adaptador stdio mantêm seus fluxos anteriores; este recurso está implementado na entrada HTTP moderna de MCP.
 
@@ -72,8 +76,8 @@ O adaptador de [src/mcp/modern.ts](../src/mcp/modern.ts) atende o protocolo **`2
 | `server/discover` | Descobrir versões e capacidades `tools`/`events` |
 | `tools/list` | Listar o catálogo, com paginação de até 100 ferramentas |
 | `tools/call` | Chamar ferramentas pelo fluxo existente de validação e trabalhos |
-| `events/list` | Descobrir o evento e seus schemas |
-| `events/subscribe` | Criar ou renovar a inscrição de um trabalho |
+| `events/list` | Descobrir os eventos e seus schemas |
+| `events/subscribe` | Criar ou renovar a inscrição de um job ou watcher |
 | `events/unsubscribe` | Encerrar a inscrição de forma idempotente |
 
 O SDK `@modelcontextprotocol/sdk` 1.32.1 continua atendendo as versões legadas e as conexões upstream. O adaptador não anuncia resources, prompts, sampling, tarefas do protocolo ou outros recursos não implementados. A atualização não é uma migração completa para o SDK v2.
@@ -116,57 +120,22 @@ As respostas de sucesso incluem `resultType: "complete"` e `_meta["io.modelconte
 
 Referências normativas: [metadados](https://modelcontextprotocol.io/specification/2026-07-28/basic/index), [transporte HTTP](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http), [descoberta](https://modelcontextprotocol.io/specification/2026-07-28/server/discover) e [ferramentas](https://modelcontextprotocol.io/specification/2026-07-28/server/tools).
 
-### Descobrir o evento
+### Descobrir os eventos
 
-`events/list` recebe apenas os metadados de transporte. Não há uma segunda página do catálogo de eventos. O resultado contém:
+`events/list` recebe apenas os metadados de transporte. A 0.8.0 devolve os dois eventos em uma única página, com `delivery: ["webhook"]`, `resultType: "complete"` e os metadados da versão do servidor.
 
-```json
-{
-  "events": [
-    {
-      "name": "ponte.job.completed",
-      "description": "Avisa quando um trabalho específico chega ao estado final.",
-      "delivery": ["webhook"],
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "jobId": { "type": "string", "format": "uuid" }
-        },
-        "required": ["jobId"],
-        "additionalProperties": false
-      },
-      "payloadSchema": {
-        "type": "object",
-        "properties": {
-          "jobId": { "type": "string", "format": "uuid" },
-          "tool": { "type": "string" },
-          "status": {
-            "type": "string",
-            "enum": ["succeeded", "failed", "rejected", "cancelled", "expired"]
-          },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time" }
-        },
-        "required": ["jobId", "tool", "status", "createdAt", "updatedAt"],
-        "additionalProperties": false
-      }
-    }
-  ],
-  "resultType": "complete",
-  "_meta": {
-    "io.modelcontextprotocol/serverInfo": {
-      "name": "ponte-mcp",
-      "version": "0.7.0"
-    }
-  }
-}
-```
+| Evento | `inputSchema` de `arguments` | Campos obrigatórios de `payloadSchema` |
+|---|---|---|
+| `ponte.job.completed` | Objeto estrito com `jobId` UUID | `jobId`, `tool`, `status`, `createdAt`, `updatedAt` |
+| `ponte.watcher.completed` | Objeto estrito com `watcherId` UUID | `watcherId`, `status`, `createdAt`, `updatedAt` |
 
-A descrição está abreviada no exemplo; a resposta real orienta o cliente a consultar `bridge_job`. `payloadSchema` descreve o objeto `data` de cada evento, e não todo o envelope de entrega.
+Os dois schemas recusam propriedades extras. `payloadSchema` descreve o objeto `data`, não todo o envelope. Os horários usam formato `date-time`. O status de job aceita `succeeded`, `failed`, `rejected`, `cancelled` e `expired`. O status de watcher aceita **`succeeded`, `failed`, `needs_input`, `cancelled`, `expired` e `interrupted`**.
+
+O catálogo orienta a consulta autenticada de `bridge_watch_get` após o evento de watcher e `bridge_job` após o de job. Não há `result`, `summary`, `evidence`, `runId` ou credencial de callback no evento de watcher. `needs_input` encerra o acompanhamento e exige intervenção, sem outra espera automática; `expired` não prova falha do executor.
 
 ### Criar ou renovar uma assinatura
 
-Exemplo do corpo de `events/subscribe`. O UUID deve ser um trabalho real criado pela mesma conexão, e os campos de entrega devem ser fornecidos pelo cliente. A URL e o segredo abaixo são marcadores de exemplo, não credenciais utilizáveis.
+Exemplo de `events/subscribe` para um watcher. O UUID abaixo é ilustrativo: substitua pelo acompanhamento real da mesma conexão. A URL e o segredo são marcadores e precisam ser fornecidos pelo cliente. Para um job, use `name: "ponte.job.completed"` e `arguments: {"jobId":"ID_DO_JOB"}`.
 
 ```json
 {
@@ -178,9 +147,9 @@ Exemplo do corpo de `events/subscribe`. O UUID deve ser um trabalho real criado 
       "io.modelcontextprotocol/protocolVersion": "2026-07-28",
       "io.modelcontextprotocol/clientCapabilities": {}
     },
-    "name": "ponte.job.completed",
+    "name": "ponte.watcher.completed",
     "arguments": {
-      "jobId": "f94d3b6b-73b6-4af1-a1f7-bf20b31822c1"
+      "watcherId": "00000000-0000-4000-8000-000000000001"
     },
     "delivery": {
       "mode": "webhook",
@@ -208,11 +177,11 @@ O ID é determinístico para a identidade autenticada, a URL exata de callback, 
 
 A Ponte prepara uma inscrição ou renovação por vez. Solicitações concorrentes excedentes recebem HTTP **429**, código **`-32025`** e `data.reason: "subscription_busy"`, sem formar uma fila de verificações. O cliente pode repetir a inscrição depois que a chamada em andamento terminar; não deve reenviar a operação original da ferramenta. Uma verificação lenta ainda pode atrasar o registro e o cancelamento de avisos pelo prazo de rede de uma chamada, de até dez segundos.
 
-Esse vínculo também protege a consulta e o cancelamento do trabalho enquanto ele está em memória, além da recuperação de resultados arquivados. Saber o `jobId` de outra conexão não concede acesso ao trabalho. A administração local mantém acesso a todas as execuções. Catálogo, projetos e política de aprovação continuam compartilhados pelo único proprietário da Ponte.
+O proprietário é conferido antes da verificação de callback e novamente antes de ativar a inscrição. Saber o `jobId` ou `watcherId` de outra conexão não concede acesso nem permite criar sua assinatura. A administração local mantém acesso aos registros no painel. Catálogo, projetos e política de aprovação continuam compartilhados pelo único proprietário da Ponte.
 
-`ttlMs` aceita inteiro não negativo, `null` ou omissão. O padrão e o máximo são 24 horas; valores maiores são limitados, e zero recebe validade mínima de 1 ms, portanto não é útil para acompanhamento. O valor efetivo é informado em `refreshBefore`. O cliente deve renovar antes desse horário se ainda precisar acompanhar o trabalho.
+`ttlMs` aceita inteiro não negativo, `null` ou omissão. O padrão e o máximo são 24 horas; valores maiores são limitados, e zero recebe validade mínima de 1 ms, portanto não é útil para acompanhamento. O valor efetivo é informado em `refreshBefore`. O cliente deve renovar antes desse horário se ainda precisar receber o aviso. Essa renovação não altera `expiresAt` do watcher nem estende a retenção do resultado em `watchers.json`.
 
-Esta implementação não oferece reprodução histórica. `cursor` deve ser omitido ou `null`; outro valor é rejeitado com `-32026` e `data.feature: "replay"`. `maxAgeMs` pode ser enviado como inteiro não negativo, mas não ativa replay nem filtra o estado final atual do trabalho. Assinar um trabalho já concluído enfileira uma fotografia de seu estado atual, enquanto ele estiver disponível para a mesma identidade.
+Esta implementação não oferece reprodução histórica. `cursor` deve ser omitido ou `null`; outro valor é rejeitado com `-32026` e `data.feature: "replay"`. `maxAgeMs` pode ser enviado como inteiro não negativo, mas não ativa replay nem filtra o estado terminal atual. Assinar um job ou watcher já concluído enfileira uma fotografia de seu estado atual, enquanto ele estiver disponível para a mesma identidade. A consulta após o desafio cobre uma conclusão que aconteça durante a criação da assinatura.
 
 ### Encerrar uma assinatura
 
@@ -228,9 +197,9 @@ Esta implementação não oferece reprodução histórica. `cursor` deve ser omi
       "io.modelcontextprotocol/protocolVersion": "2026-07-28",
       "io.modelcontextprotocol/clientCapabilities": {}
     },
-    "name": "ponte.job.completed",
+    "name": "ponte.watcher.completed",
     "arguments": {
-      "jobId": "f94d3b6b-73b6-4af1-a1f7-bf20b31822c1"
+      "watcherId": "00000000-0000-4000-8000-000000000001"
     },
     "delivery": {
       "mode": "webhook",
@@ -260,11 +229,10 @@ O corpo de um evento normal usa este envelope; ele não tem o campo `type` da ve
 ```json
 {
   "eventId": "67cc9e88-8a03-4915-9410-2ec7c595adce",
-  "name": "ponte.job.completed",
+  "name": "ponte.watcher.completed",
   "timestamp": "2026-10-22T12:00:01.000Z",
   "data": {
-    "jobId": "f94d3b6b-73b6-4af1-a1f7-bf20b31822c1",
-    "tool": "local_write_file",
+    "watcherId": "00000000-0000-4000-8000-000000000001",
     "status": "succeeded",
     "createdAt": "2026-10-22T12:00:00.000Z",
     "updatedAt": "2026-10-22T12:00:01.000Z"
@@ -273,7 +241,9 @@ O corpo de um evento normal usa este envelope; ele não tem o campo `type` da ve
 }
 ```
 
-O cliente recebe somente metadados de conclusão. Para obter o resultado da ferramenta e a mensagem de erro do trabalho, use a consulta autenticada a `bridge_job` dentro do prazo de retenção. O aviso não inclui argumentos, código ou conteúdo de arquivos, e a cópia arquivada remove os argumentos de entrada. Quando o job criou um watcher, a cópia também remove `callback.token`; a recuperação desse segredo segue o fluxo idempotente de [WATCHERS.md](WATCHERS.md).
+O `timestamp` corresponde ao `updatedAt` da conclusão. O cliente recebe somente metadados: use `bridge_watch_get` com o mesmo ID para obter o resultado. Resumo e evidência continuam sendo dados não confiáveis enviados pelo executor e não ampliam a tarefa autorizada. O aviso e a cópia de metadados de watcher em Events não contêm resultado, nome, gatilho, `runId` ou token.
+
+O evento de job mantém seu envelope com `name: "ponte.job.completed"` e `data: {jobId, tool, status, createdAt, updatedAt}`. O cliente consulta `bridge_job` dentro do prazo de retenção. Argumentos de entrada ficam fora do aviso e da cópia arquivada. Quando o job criou um watcher, a cópia também remove `callback.token`; a recuperação desse segredo segue o fluxo idempotente de [Watchers](WATCHERS.md).
 
 Os cabeçalhos de entrega são:
 
@@ -291,7 +261,7 @@ O `eventId` e o corpo de um evento permanecem estáveis nas novas tentativas. O 
 
 ### Prazos e respostas
 
-- Um 2xx registra a entrega como recebida.
+- Um 2xx registra a entrega como recebida. O processamento pelo cliente é assíncrono e exige observação separada da resposta da conversa.
 - Falha de rede ou resposta sem sucesso permite novas tentativas com atraso exponencial, até **seis tentativas no total**, enquanto a assinatura e a autorização permanecerem válidas.
 - HTTP **410** e **413** encerram a entrega daquele evento sem nova tentativa; isso não equivale a cancelar toda a assinatura.
 - Redirecionamentos são recusados. Cada envio tem prazo total de até **dez segundos**, corpo de até **256 KiB** e resposta de até **64 KiB**.
@@ -303,24 +273,31 @@ O perfil da OpenAI especifica **`-32015` (`CallbackEndpointError`)** para falhas
 
 ## Persistência, capacidade e reinício
 
-O arquivo privado `events.json` no diretório de estado guarda assinaturas, URLs e chaves de callback, fila de entrega e cópias dos trabalhos acompanhados. O estado é gravado antes de iniciar a entrega. Não inclua esse arquivo em um repositório público ou pacote de distribuição. Ele não é cifrado em repouso e pode conter o resultado completo de ferramentas; os argumentos de entrada são removidos da cópia arquivada.
+O arquivo privado `events.json` guarda assinaturas, URLs e chaves de callback, fila de entrega, cópias dos jobs acompanhados e metadados dos watchers. O estado é gravado antes de iniciar a entrega. Não inclua esse arquivo em repositório público ou pacote de distribuição. Ele não é cifrado em repouso e pode conter resultados de jobs; seus argumentos de entrada são removidos da cópia arquivada.
+
+Para watchers, `watcherArchives` conserva apenas ID, estado, horários, proprietário e prazo da cópia; não duplica resultado nem credencial de sinal. **`watchers.json` continua sendo a fonte do resultado**, sujeito aos limites próprios de retenção. Uma assinatura de Events não impede que um watcher terminal antigo seja removido por capacidade. Consulte e preserve a evidência necessária enquanto o registro estiver disponível.
+
+A 0.8.0 lê o estado anterior `version: 1` sem `watcherArchives`. Ao persistir esse campo, o arquivo pode deixar de ser aceito por versões anteriores com schema estrito. Um retorno de versão exige o conjunto de backup anterior compatível, não apenas trocar o código; veja [Operação](OPERACAO.md#estado-de-events-e-retorno-a-uma-versão-anterior).
 
 | Limite | Política da Ponte |
 |---|---|
 | Assinaturas | Até 100 ativas, sujeitas também ao orçamento de armazenamento |
+| Cópias arquivadas | Até 1000 registros somando jobs e metadados de watchers |
 | Criação ou renovação simultânea | Uma em andamento; excedentes recebem 429 e podem tentar novamente |
 | Validade | Padrão e máximo de 24 horas por inscrição ou renovação |
 | Estado de Events | Até 64 MiB, contando estado atual e reserva para resultados pendentes |
 | Resultado de um trabalho | Até 4 MiB, mais espaço reservado para metadados |
-| Conteúdo enviado por evento | Somente metadados de um trabalho, dentro do limite de 256 KiB |
+| Conteúdo enviado por evento | Somente metadados do job ou watcher, dentro do limite de 256 KiB |
 | Reenvios | Até seis tentativas por evento, incluindo a primeira |
 | Sobreposição de chaves | Até cinco minutos após a rotação |
 
-Cada trabalho pendente acompanhado reserva espaço para seu possível resultado antes de aceitar a assinatura. Assim, a capacidade pode se esgotar antes de chegar a 100 inscrições. O erro é devolvido ao cliente; a Ponte não aceita um aviso que já sabe não poder reter. Há também limite interno de cópias arquivadas, para que a renovação e o cancelamento de assinaturas não criem crescimento ilimitado.
+Cada job pendente acompanhado reserva espaço para seu possível resultado antes de aceitar a assinatura. O orçamento de watchers em Events contém somente metadados. A capacidade pode se esgotar antes de chegar a 100 inscrições. O erro é devolvido ao cliente; a Ponte não aceita um aviso que já sabe não poder reter. Há também limite interno de cópias arquivadas, para que a renovação e o cancelamento não criem crescimento ilimitado.
 
 A cópia de um trabalho permanece até a maior validade já concedida para aquela identidade e `jobId`, inclusive depois de `events/unsubscribe` ou **Encerrar aviso**. Renovar pode estender esse prazo. Ao expirar, a cópia é removida mesmo se não houver outras assinaturas ativas. Invalidar a autorização bloqueia o acesso e as entregas vinculadas a ela.
 
 Depois de reiniciar, assinaturas e entregas ainda válidas voltam do disco. `bridge_job` pode recuperar o resultado retido para a mesma conexão quando o trabalho já não está na memória. Se um trabalho acompanhado estava pendente ou em execução e não existe no processo restaurado, a Ponte registra `cancelled` com uma mensagem de interrupção e de possível efeito externo. **Ela não reenvia a operação.** O cliente deve conferir o destino antes de propor uma nova execução.
+
+Para watchers, a inicialização e o processamento de entregas consultam o estado persistido do acompanhamento. Isso permite recuperar uma transição terminal ocorrida antes de reiniciar ou durante uma inscrição, sem reenviar a tarefa. O evento usa o mesmo `eventId` e os mesmos bytes nas tentativas; assinatura e horário do cabeçalho são recalculados. O resultado continua sendo consultado por `bridge_watch_get`.
 
 Trabalhos sem assinatura mantêm a retenção em memória da Ponte. O arquivo de auditoria contém metadados e não substitui um resultado completo. A persistência de Events também não recupera a janela de idempotência de uma operação após reiniciar; use o resultado consultável, sem submeter novamente o trabalho.
 
@@ -351,26 +328,28 @@ Se a descoberta tiver sido recebida, mas `subscribeRequests` continuar em zero, 
 
 Uma tentativa anterior de **22/10/2026** descobriu a Ponte e seu evento: a captura registrou `server/discover` e `events/list` com HTTP 200. O cliente retornou **“Webhook connectors could not be validated before creation.”** e a janela examinada não mostrou `events/subscribe`. Isso situa a interrupção daquela tentativa antes da inscrição recebida pela Ponte, sem identificar a causa interna do cliente. Não comprova falha de desafio, assinatura HMAC ou filtragem de endereços da Ponte.
 
-Há também uma evidência manual posterior, em **nova conversa Work**, de inscrição criada, aviso `ponte.job.completed` recebido e consulta ao job correspondente. O [histórico de validação](VALIDACAO.md) registra o alcance dessa evidência. A falha anterior deve ser interpretada como ocorrência daquela tentativa, não como indisponibilidade universal de Events. Esta revisão documental não executou um novo teste de conta, e a entrega histórica de um evento de job não valida a conclusão de uma tarefa externa nem a retomada por watcher.
+Há também uma evidência manual posterior, em **nova conversa Work**, de inscrição criada, aviso `ponte.job.completed` recebido e consulta ao job correspondente. O [histórico de validação](VALIDACAO.md) registra seu alcance. A falha anterior pertence àquela tentativa e não demonstra indisponibilidade universal de Events.
+
+Na revisão de **0.8.0**, a consulta real de leitura recuperou `succeeded` e o resultado preservado do watcher original. Porém, a conexão instalada ainda anunciou **0.6.0**, e a descoberta real retornou **somente `ponte.job.completed`**. Não foi criada inscrição nem tarefa agendada no cliente. O novo evento de watcher e a resposta após encerrar o turno continuam sem comprovação nessa instalação; a entrega histórica de um evento de job não substitui esse teste.
 
 | Sintoma | Conferência útil |
 |---|---|
-| O plugin não lista `ponte.job.completed` | Confirme a 0.7.0 e a mesma origem HTTPS, use Refresh/Atualizar e abra nova conversa; o cliente precisa descobrir o protocolo `2026-07-28` |
+| O plugin não lista `ponte.watcher.completed` | Confirme a 0.8.0 na instância conectada, a mesma origem HTTPS e Refresh/Atualizar; uma descoberta antiga só de jobs não valida o novo evento |
 | Ferramentas funcionam, mas Events não aparece | Confirme Work no navegador ou Work com Cloud no desktop, além das permissões da conta/workspace |
 | O painel mostra zero avisos | Ainda não há assinatura ativa; aprovação automática e autorização OAuth não criam uma inscrição |
 | A criação do acompanhamento informa que os conectores de webhook não puderam ser validados | Confira `subscribeRequests` desde a inicialização e a captura HTTP da tentativa. Sem uma chamada recebida, a etapa de verificação de callback da Ponte ainda não foi alcançada; esse erro genérico não identifica sozinho a causa |
-| Assinatura recusada por trabalho indisponível | Use o `jobId` retornado pela mesma autorização que está assinando; um trabalho de outra conexão ou já expurgado não pode ser acompanhado |
+| Assinatura recusada por registro indisponível | Use o `jobId` ou `watcherId` da mesma autorização; um registro de outra conexão ou já removido não pode ser acompanhado |
 | Erro `-32015` | Leia `data.reason`; a Ponte exige callback HTTPS público válido, segredo válido e resposta correta ao desafio |
 | Erro `-32025` com `subscription_busy` | Aguarde a inscrição ou renovação em andamento e tente inscrever novamente; não repita a ferramenta que criou o trabalho |
-| Aviso permanece aguardando conclusão | Confira o trabalho em **Execuções**, a política de aprovação e a pausa da fila |
-| Aviso falhou após tentativas | Confira o erro sanitizado e a conectividade de saída; consulte `bridge_job` para o resultado, sem repetir a operação |
-| Aviso recebido, sem nova resposta do chat | A entrega foi aceita; confira as instruções da conversa e o suporte do cliente à retomada |
+| Aviso permanece aguardando conclusão | Para job, confira **Execuções** e aprovação; para watcher, confira **Acompanhamentos**, prazo e recibo do executor |
+| Aviso falhou após tentativas | Confira o erro sanitizado e a conectividade de saída; consulte `bridge_job` ou `bridge_watch_get` pelo mesmo ID, sem repetir a operação |
+| Recebido pelo cliente, sem nova resposta do chat | A entrega foi aceita; confira as instruções da conversa e o suporte do cliente à retomada |
 | Mudança de URL, revogação ou novo consentimento | A autorização anterior não acompanha a nova identidade; refaça a conexão e o acompanhamento necessário |
 | Limite de armazenamento ou de assinaturas | Encerre avisos desnecessários e aguarde a expiração das cópias retidas; cancelar um aviso não apaga seu resultado imediatamente |
 | Trabalho cancelado após reinício | Consulte a mensagem de interrupção e confira o estado externo antes de qualquer repetição |
-| Um aviso chegou, mas a tarefa do Claude ainda continua | Confira qual `jobId` foi assinado. Jobs de criação de watcher ou envio ao tmux terminam antes da tarefa externa; consulte o watcher `signal` correspondente |
+| Um aviso chegou, mas a tarefa do Claude ainda continua | Confira o evento e seu ID. Jobs de criação de watcher ou envio ao tmux terminam antes da tarefa externa; acompanhe o watcher `signal` correspondente |
 
-Para um teste completo no ChatGPT, observe quatro evidências: evento descoberto no plugin, assinatura visível no painel, aviso recebido e consulta ao mesmo `jobId` pela conversa. Testes locais de protocolo e transporte não comprovam disponibilidade de Events em uma conta específica. As verificações efetivamente executadas e a origem de cada evidência ficam em [VALIDACAO.md](VALIDACAO.md).
+Para um teste completo no ChatGPT, observe separadamente: evento correto descoberto, assinatura aceita, webhook recebido e consulta ao mesmo ID seguida de resposta ao usuário. Para afirmar retomada após encerrar o turno, essa última etapa precisa ocorrer depois do encerramento, no cliente real. Testes locais de protocolo e transporte não comprovam essa capacidade. As verificações executadas e a origem de cada evidência ficam em [Validação](VALIDACAO.md).
 
 ## Referências oficiais e perfil adotado
 
@@ -383,6 +362,6 @@ Para um teste completo no ChatGPT, observe quatro evidências: evento descoberto
 - [MCP — Schema TypeScript da versão](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2026-07-28/schema.ts): formas normativas de requisições e resultados, incluindo `resultType`.
 - [Grupo de trabalho de MCP Events — rascunho experimental](https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/main/docs/design-sketch-proposal.md): identidade da assinatura e semântica geral de eventos; é um rascunho em evolução.
 
-A Ponte implementa o perfil de webhook e verificação documentado pela OpenAI. Não implementa polling de eventos, streams de eventos, replay por cursor, eventos globais de todos os trabalhos nem mensagens de controle de lacuna/encerramento. Exemplos abreviados da documentação de Events são complementados pelos metadados e pelo `resultType` exigidos pelo protocolo `2026-07-28`.
+A Ponte implementa o perfil de webhook e verificação documentado pela OpenAI. Não implementa polling de eventos, streams de eventos, replay por cursor, eventos globais de todos os jobs/watchers nem mensagens de controle de lacuna/encerramento. Exemplos abreviados da documentação de Events são complementados pelos metadados e pelo `resultType` exigidos pelo protocolo `2026-07-28`.
 
 Os limites e as políticas específicos da Ponte descritos neste guia estão em [src/events/service.ts](../src/events/service.ts), [src/events/webhook.ts](../src/events/webhook.ts) e [src/mcp/modern.ts](../src/mcp/modern.ts). Eles não são limites universais do protocolo ou dos clientes.

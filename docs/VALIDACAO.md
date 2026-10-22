@@ -1,10 +1,54 @@
-# Validação das entregas — Ponte MCP 0.7.0
+# Validação das entregas — Ponte MCP 0.8.0
 
 [Índice da documentação](README.md) · [Histórico de versões](../CHANGELOG.md) · [Operação](OPERACAO.md)
 
 Este documento registra a evidência de cada etapa. Os números de testes são os observados na entrega indicada, não uma nova execução feita ao editar a documentação. Registros históricos de erro não descrevem automaticamente o estado atual do produto; a verificação manual posterior de Events está registrada junto do diagnóstico original.
 
-## Cadastro de MCPs pelo chat — 0.7.0
+## Recuperação de esperas e eventos de watchers — 0.8.0
+
+Registro de **22 de outubro de 2026**. O caso externo abaixo foi anonimizado: não publica nomes de clientes, demanda, identificadores reais, credenciais, infraestrutura ou conteúdo do produto. O relato da execução, a leitura atual do estado e os testes controlados têm alcances diferentes.
+
+| Origem da evidência | O que foi observado | O que essa evidência permite afirmar |
+|---|---|---|
+| Relato do usuário sobre execução externa | O executor concluiu implementação e publicação, enviou callback `succeeded` e houve conferência posterior no sistema de acompanhamento | O usuário relatou uma tarefa concluída e seu recibo. Esta revisão não executou o trabalho externo nem verificou diretamente sua publicação |
+| Relato do usuário sobre as esperas | Chamadas de 25–45 segundos funcionaram; uma espera com `waitMs: 300000` terminou em timeout do cliente MCP; recuperar o mesmo watcher funcionou | O timeout da chamada não demonstrou falha do executor nem perda do acompanhamento. O relato motivou limitar a 45 segundos cada chamada da 0.8.0 |
+| Consulta real de leitura nesta revisão | `bridge_watch_get` recuperou `succeeded` e o resultado preservado do watcher original | O registro terminal estava acessível pelo mesmo ID. A consulta não recriou o watcher, não reenviou a demanda e não reexecutou o executor |
+| Descoberta real do cliente nesta revisão | A conexão consultada anunciou **0.6.0**; a descoberta da fonte e de seu schema retornou **somente `ponte.job.completed`** | A instalação conectada não ofereceu o novo evento `ponte.watcher.completed` da 0.8.0. A versão do código local não prova atualização da instalação do usuário |
+| Tentativa de validação do novo evento no cliente | A verificação ficou limitada à descoberta da instalação anterior; nenhuma inscrição ou tarefa agendada foi criada | Não houve teste real de recebimento do novo evento nem de resposta após o encerramento do turno |
+| Testes locais automatizados da 0.8.0 | Tipos, **293 testes**, build e smoke concluídos; detalhes abaixo | Confirmam os contratos exercitados em ambiente controlado, sem comprovar retomada no cliente instalado |
+
+### Verificações locais executadas
+
+Os comandos foram executados separadamente. A suíte usou estado, portas, clientes e receptores controlados; não reexecutou a demanda externa relatada pelo usuário.
+
+Após a revisão independente, `npm run verify` repetiu a checagem de tipos, os **293 testes** e a compilação no código preparado para integração; todas as etapas passaram.
+
+| Verificação | Resultado observado |
+|---|---|
+| `npm run check` | Concluído sem erros de TypeScript |
+| `npm test` | **293 testes aprovados**, zero falhas e zero ignorados |
+| `npm run build` | Compilação concluída |
+| `npm run smoke` | Concluiu OAuth/DCR/PKCE e emissor, MCP legado/moderno, aprovação manual/automática, cadastro de MCP e uso do catálogo em cache, Events de job e watcher com assinatura HMAC e cancelamento da inscrição, sinal nativo persistido, renovação/revogação e `canWakeClosedConversation: false` |
+| Espera e recuperação | Contrato de 45000 ms conferido em status, catálogo e OpenAPI; excesso de prazo rejeitado com consulta do mesmo ID; esperas interrompidas recuperaram `succeeded`, `failed` e `needs_input` sem reenviar a tarefa |
+| Events de watcher | Inscrição, filtro/proprietário, estado terminal durante a verificação, reinício, retries e metadados sem resultado/token exercitados com receptor controlado; HTTP 2xx não alterou a capacidade de retomada |
+| Revisão independente | Nenhum achado material restante; um probe isolado confirmou que falha temporária ao gravar Events não reverte o watcher e que a reconciliação produz uma única entrega, sem deadlock |
+| Documentação | **25 arquivos Markdown**, **319 referências locais e âncoras**, **33 blocos JSON** e **13 blocos sh/bash** conferidos; `bash -n` validou sintaxe sem executar os exemplos |
+| OpenAPI | O exemplo publicado corresponde exatamente à exportação da CLI compilada, com nove operações |
+| Sintaxe e diff | `node --check public/app.js`, `node --check scripts/smoke.mjs` e `git diff --check` passaram |
+
+Esses resultados validam a implementação local. O receptor de webhook controlado não é uma conversa real do ChatGPT após encerramento do turno. A leitura de arquivos antigos de Events é compatível com a 0.8.0; retornar a um código anterior requer backup de estado anterior compatível, porque o campo novo `watcherArchives` pode ser recusado por schemas antigos.
+
+### Consequências para o contrato
+
+O padrão de `waitMs` permanece 25000 ms e seu máximo passa a 45000 ms em todas as interfaces. O valor histórico de 300000 ms acima descreve o incidente na instalação anterior; não é recomendação atual. Um valor acima de 45000 é rejeitado com recuperação pelo mesmo ID, sem reduzir silenciosamente a espera. Falhas de comunicação orientam `bridge_watch_get` sem inventar estado.
+
+Enquanto `waiting`, o chat deve continuar o turno ativo com esperas de 25000 ms pelo mesmo ID até terminal ou limite concreto do cliente. O prazo total (`timeoutMs`/`expiresAt`) não é renovado por essas chamadas. `needs_input` é terminal: informe a pendência, peça intervenção e aguarde autorização explícita para outra etapa com novo watcher. `expired` não prova falha da tarefa externa.
+
+`monitorDurable: true` e `canWakeClosedConversation: false` permanecem na 0.8.0. A [documentação oficial de MCP Events](https://developers.openai.com/plugins/build/mcp-events), consultada nesta data, separa aceite HTTP do processamento assíncrono. O novo evento, sua assinatura e os retries no servidor não provam que a conversa respondeu. Para comprovar isso na instalação do usuário, será necessário descobrir `ponte.watcher.completed` em uma instância 0.8.0, observar a inscrição aceita, a entrega e a consulta do mesmo watcher seguida de resposta após o turno anterior encerrar.
+
+A pesquisa de [Claude Code Channels](https://code.claude.com/docs/en/channels) e da [referência de canais próprios](https://code.claude.com/docs/en/channels-reference) identificou um possível caminho futuro, que depende de opt-in e de sessão/processo em execução. Nenhum canal Claude foi implementado ou validado nesta entrega. O fluxo atual usa watchers nativos; não cria cron, polling ou agendamentos no ChatGPT/Claude.
+
+## Histórico: cadastro de MCPs pelo chat — 0.7.0
 
 Verificação em **22 de outubro de 2026**, em Linux com Node.js **24.19.0**. Os testes usaram diretórios, credenciais, processos MCP e portas locais temporários. Nenhum MCP foi instalado no computador do usuário e nenhuma conta real de ChatGPT ou Claude foi modificada nesta entrega.
 

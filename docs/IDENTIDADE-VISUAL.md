@@ -1,8 +1,8 @@
-# Identidade visual da Ponte — 0.7.0
+# Identidade visual da Ponte — 0.8.0
 
 [Índice da documentação](README.md) · [Histórico de versões](../CHANGELOG.md)
 
-A identidade introduzida na versão 0.5.0 e mantida na 0.7.0 usa uma ponte com dois pilares e um arco como símbolo da conexão entre assistentes e ferramentas. O painel aplica azul cobalto nos controles, grafite na navegação e fundos claros nas áreas de leitura. A cor verde deixou de ser a base da interface.
+A identidade introduzida na versão 0.5.0 e mantida na 0.8.0 usa uma ponte com dois pilares e um arco como símbolo da conexão entre assistentes e ferramentas. O painel aplica azul cobalto nos controles, grafite na navegação e fundos claros nas áreas de leitura. A cor verde deixou de ser a base da interface.
 
 ## Logotipo
 
