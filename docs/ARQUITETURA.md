@@ -1,4 +1,4 @@
-# Arquitetura da Ponte MCP 0.6.0
+# Arquitetura da Ponte MCP 0.7.0
 
 [Índice da documentação](README.md) · [Referência da API](API.md) · [Segurança](SEGURANCA.md)
 
@@ -17,12 +17,14 @@ flowchart TD
     Entrada --> Watch["WatchService: controles e espera"]
     Jobs --> Local["Arquivos e comandos locais"]
     Jobs --> Hub["McpHub: servidores externos"]
+    Jobs --> Management["McpManagement: cadastro e reconexão"]
+    Management --> Hub
     Jobs -->|"criar watcher e observar jobs"| Watch
     Executor["Executor externo"] -->|"sinal autenticado"| Watch
     Jobs -->|"conclusão de job inscrito"| Events["EventService: avisos ao cliente"]
 ```
 
-A autenticação identifica a conexão antes do despacho. As ferramentas locais, as ferramentas de upstreams e `bridge_watch_create` passam pelo `JobManager`. Os controles `bridge_status`, `bridge_list_tools`, `bridge_job`, `bridge_cancel` e `bridge_watch_get/list/wait/cancel` têm caminhos próprios; consultar ou aguardar um watcher não cria um trabalho nem ocupa uma vaga de execução. Os métodos de protocolo `events/*` também são tratados diretamente pelo serviço de Events.
+A autenticação identifica a conexão antes do despacho. As ferramentas locais, as ferramentas de upstreams, `bridge_watch_create` e as três `bridge_mcp_*` passam pelo `JobManager`. Os controles `bridge_status`, `bridge_list_tools`, `bridge_job`, `bridge_cancel` e `bridge_watch_get/list/wait/cancel` têm caminhos próprios; consultar ou aguardar um watcher não cria um trabalho nem ocupa uma vaga de execução. Os métodos de protocolo `events/*` também são tratados diretamente pelo serviço de Events.
 
 | Componente | Responsabilidade | Implementação |
 |---|---|---|
@@ -30,6 +32,7 @@ A autenticação identifica a conexão antes do despacho. As ferramentas locais,
 | `ConfigStore` | Validar projetos, servidores e política; persistir configuração e credenciais locais | [src/core/config.ts](../src/core/config.ts) |
 | `PonteOAuthProvider` | Registro de clientes, consentimento, tokens e autorizações revogáveis | [src/auth/provider.ts](../src/auth/provider.ts) |
 | `JobManager` | Validar argumentos, gerar prévia, aprovar, enfileirar, executar e cancelar ferramentas | [src/core/jobs.ts](../src/core/jobs.ts) |
+| `McpManagement` | Listar conexões sem segredos, validar cadastro/reconexão e serializar alterações de upstreams pelo chat e painel | [src/mcp/management.ts](../src/mcp/management.ts) |
 | `McpHub` | Manter clientes upstream, descobrir schemas e preservar os blocos de conteúdo retornados | [src/mcp/hub.ts](../src/mcp/hub.ts) |
 | `WatchService` | Persistir acompanhamentos, receber sinais e manter esperas limitadas por proprietário | [src/watchers/service.ts](../src/watchers/service.ts) |
 | `EventService` | Manter assinaturas, cópias de jobs e tentativas de entrega de avisos | [src/events/service.ts](../src/events/service.ts) |
@@ -52,7 +55,7 @@ A fachada MCP usa **POST com respostas JSON, sem sessão persistente de transpor
 
 O adaptador moderno anuncia `tools` e `events` e implementa `server/discover`, `tools/list`, `tools/call`, `events/list`, `events/subscribe` e `events/unsubscribe`. Os resultados modernos incluem `resultType: "complete"`. Resources, prompts, sampling e tarefas do protocolo não são anunciados. O adaptador stdio e os clientes upstream continuam no SDK v1; Events está disponível pela fachada HTTP moderna. A ausência de sessão HTTP não elimina o estado da aplicação em disco ou na memória.
 
-O modo `stdio` é um adaptador do serviço já iniciado: lê o estado local, autentica-se com o token API e encaminha catálogo e chamadas para `/v1/mcp/tools` e `/v1/mcp/call`. Ele não inicia uma segunda instância independente da Ponte. A REST de Actions usa um OpenAPI com **nove operações**, cinco para status/catálogo/jobs e quatro para controles de watchers. A criação do watcher usa a operação existente `createJob`, com `tool: "bridge_watch_create"`; não há uma décima operação de criação. Consulte [API.md](API.md) e [INTEGRACOES.md](INTEGRACOES.md).
+O modo `stdio` é um adaptador do serviço já iniciado: lê o estado local, autentica-se com o token API e encaminha catálogo e chamadas para `/v1/mcp/tools` e `/v1/mcp/call`. Ele não inicia uma segunda instância independente da Ponte. A REST de Actions usa um OpenAPI com **nove operações**, cinco para status/catálogo/jobs e quatro para controles de watchers. A criação do watcher usa a operação existente `createJob`, com `tool: "bridge_watch_create"`; as três ferramentas `bridge_mcp_*` também usam `createJob`. Não há novas operações de administração no OpenAPI. Consulte [API.md](API.md) e [INTEGRACOES.md](INTEGRACOES.md).
 
 ## Jobs: aprovação, execução e espera
 
@@ -64,7 +67,7 @@ Ao receber uma ferramenta do catálogo, o `JobManager` copia os argumentos, vali
 | `all` | Toda ferramenta submetida aguarda revisão, inclusive leituras |
 | `automatic` | Libera solicitações válidas pendentes e novas submissões |
 
-Essa política inclui `bridge_watch_create`, classificado como escrita. Os controles de watcher consultam o serviço diretamente e continuam disponíveis sob `all`; cancelá-lo também não exige criar um job de aprovação. Todos exigem a identidade autorizada que possui o acompanhamento.
+Essa política inclui `bridge_watch_create`, classificado como escrita, `bridge_mcp_list`, classificado como leitura, e `bridge_mcp_add/reconnect`, classificados como execução. Os controles de watcher consultam o serviço diretamente e continuam disponíveis sob `all`; cancelá-lo também não exige criar um job de aprovação. Todos exigem a identidade autorizada que possui o acompanhamento.
 
 A assinatura é revalidada antes de aprovar e executar. A aprovação não suspende `allowWrite`, `allowExec`, listas de ferramentas permitidas, validação de argumentos ou `expectedHash`. Pedidos de aprovação expiram após **15 minutos**. O campo `approval` identifica liberações `manual` ou `automatic`; leituras permitidas por `mutations` podem não incluir esse campo.
 
@@ -75,6 +78,20 @@ A execução passa por `queued` e `running` até `succeeded`, `failed`, `rejecte
 A chamada MCP de uma ferramenta aguarda até **25 segundos** enquanto seu job está `queued` ou `running`; `pending_approval` inicial retorna imediatamente. `bridge_job` aceita `waitMs` de 0 a 25000, padrão 0, e pode aguardar também a aprovação. Ao vencer a espera, retorna o estado atual do mesmo job. A espera da chamada e o prazo da execução são independentes.
 
 Jobs e suas chaves de idempotência ficam em memória. Reutilizar uma chave com os mesmos argumentos recupera o job enquanto ele estiver retido; argumentos diferentes são recusados. Reiniciar ou remover o job da retenção encerra essa garantia. Nenhuma operação externa é reenviada automaticamente após reconectar ou reiniciar.
+
+## Gerenciamento de servidores MCP
+
+`McpManagement` mantém um contrato restrito para o chat e operações administrativas para o painel. Suas definições têm origem `bridge:mcps` e entram no catálogo dinâmico de `Application`. A prévia de cadastro é somente uma representação dos argumentos validados; a configuração e o processo externo só são alterados durante a execução aprovada.
+
+`bridge_mcp_add` normaliza a configuração com `enabled: true` e `readOnlyTools: []`. Não incorpora a lista inteira de servidores à assinatura da ferramenta: aprovar um cadastro independente não invalida outro apenas porque um servidor foi adicionado. Dentro da gravação, um ID ausente é incluído; configuração idêntica é reconhecida sem reiniciar; configuração diferente é conflito. O chat não altera projetos, política, permissões de leitura ou conexões existentes.
+
+`bridge_mcp_list` projeta somente identificação, estado, quantidade de ferramentas e revisão, sem comandos, argumentos ou credenciais. A revisão é um HMAC da configuração normalizada com a chave da instância. `bridge_mcp_reconnect` exige a revisão esperada e a confere novamente na execução, impedindo iniciar uma configuração alterada depois da solicitação.
+
+As operações de upstream do chat e as rotas administrativas de cadastro/edição, remoção, reconexão e preset Roblox compartilham uma fila. A fila serializa persistência e reconciliação com o hub, incluindo a tentativa de conexão. O serviço verifica autorização e `AbortSignal` antes do commit. Após persistir, conclui a reconciliação; uma falha de conexão mantém o cadastro e informa `registered: true` junto do status real e `isError: true`. Não restaura snapshots antigos sobre alterações concorrentes.
+
+Uma conexão lenta pode consumir o prazo de jobs de gerenciamento que aguardam essa fila. O timeout máximo de 120 segundos do JobManager continua valendo; checagens antes da gravação impedem que um job já cancelado enquanto aguardava inicie seu cadastro posteriormente. O fechamento do serviço bloqueia novas mutações, aguarda a fila e só depois encerra definitivamente o hub.
+
+O catálogo consulta `hub.tools()` a cada chamada. `bridge_list_tools` aceita filtro por `source`, e `bridge_call` encontra a definição atual quando executa. Assim, um cliente com o `tools/list` inicial em cache pode cadastrar um servidor, consultar `source: "mcp:ID"` e usar seus nomes atuais na mesma conversa. A fachada HTTP permanece stateless; não anuncia notificações de catálogo por um canal persistente. O guia [MCPs pelo chat](MCPS-PELO-CHAT.md) detalha o uso e os limites.
 
 ## Watchers: acompanhamento nativo e durável
 
@@ -113,7 +130,7 @@ O navegador recebe um código de verificação de oito caracteres. A decisão é
 
 A identidade de um cliente OAuth é o **grant**, a autorização individual concedida; renovar tokens preserva essa identidade. Um novo consentimento cria outra identidade. Clientes REST, stdio e MCP que usam o mesmo token API compartilham a identidade derivada desse token. Jobs, watchers e assinaturas de Events verificam esse vínculo. O administrador local tem acesso aos registros pelo painel. O catálogo, os projetos e as políticas continuam compartilhados entre conexões: não existe isolamento por projeto ou usuário.
 
-A revogação pelo painel ou por `/revoke` remove a autorização inteira e seus tokens. Reutilizar um refresh token consumido também revoga a autorização. Mudar `publicUrl` invalida grants, tokens, pedidos pendentes e códigos vinculados ao emissor anterior; os cadastros de clientes permanecem. Essas ações impedem novos acessos e entregas autorizadas, mas não cancelam automaticamente jobs já aceitos nem desfazem operações externas. Consulte [SEGURANCA.md](SEGURANCA.md) para limites e preservação de credenciais.
+A revogação pelo painel ou por `/revoke` remove a autorização inteira e seus tokens. Reutilizar um refresh token consumido também revoga a autorização. Mudar `publicUrl` invalida grants, tokens, pedidos pendentes e códigos vinculados ao emissor anterior; os cadastros de clientes permanecem. Essas ações impedem novos acessos e entregas autorizadas, mas não cancelam automaticamente todos os jobs já aceitos nem desfazem operações externas. As ferramentas de gerenciamento MCP revalidam a autorização antes de executar e persistir, além da autenticação da chamada inicial. Consulte [SEGURANCA.md](SEGURANCA.md) para limites e preservação de credenciais.
 
 ## MCP Events: notificações de saída
 

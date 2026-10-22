@@ -358,7 +358,7 @@
     const state = app.state;
     if (!state) return;
     updateConnectionStatus();
-    $('#sidebar-version').textContent = `Ponte MCP · v${state.version || '0.6.0'}`;
+    $('#sidebar-version').textContent = `Ponte MCP · v${state.version || '0.7.0'}`;
     $('#nav-project-count').textContent = number(state.config?.projects?.length);
     $('#nav-pending-count').textContent = number(state.stats?.pending);
     $('#nav-pending-count').hidden = !state.stats?.pending;
@@ -438,6 +438,12 @@
   function renderServers() {
     const upstreams = app.state.config?.upstreams || [];
     const servers = app.state.servers || [];
+    $('#mcp-chat-policy').textContent = app.state.config?.approvalMode === 'automatic'
+      ? 'Aprovação automática ativa: cadastros e reconexões solicitados pelo chat podem executar diretamente. A prévia e o resultado ficam em Execuções.'
+      : 'Cadastros e reconexões pelo chat aguardam sua aprovação em Execuções. Revise o programa ou endereço e o motivo antes de aprovar.';
+    const pending = (app.state.jobs || []).filter(job => job.status === 'pending_approval' && ['bridge_mcp_add', 'bridge_mcp_reconnect'].includes(job.tool));
+    $('#mcp-pending-notice').hidden = !pending.length;
+    $('#mcp-pending-message').textContent = `${number(pending.length)} ${pending.length === 1 ? 'solicitação de conexão aguarda' : 'solicitações de conexão aguardam'} sua aprovação.`;
     replaceMarkup($('#servers-list'), upstreams.length ? upstreams.map(config => {
       const server = servers.find(item => item.id === config.id) || {};
       const [statusLabel, statusVariant] = serverStatuses[server.status] || ['Não iniciado', 'neutral'];
@@ -448,7 +454,7 @@
         ? 'Aprovação automática ativa para as ferramentas desta conexão.'
         : app.state.config?.approvalMode !== 'all' && config.readOnlyTools?.length
           ? 'Demais ferramentas aguardam aprovação manual.' : 'Todas as ferramentas aguardam aprovação manual.';
-      return `<article class="config-card"><div class="config-card-top"><span class="soft-icon">${icon(config.transport === 'stdio' ? 'terminal' : 'plug')}</span><div class="config-card-heading"><h3>${escape(config.name || config.id)}</h3><span class="mono">${escape(config.id)} · ${escape(config.transport)}</span></div><div class="card-actions"><button class="icon-button" data-action="edit-server" data-id="${escape(config.id)}" aria-label="Editar conexão ${escape(config.name || config.id)}" title="Editar conexão">${icon('edit')}</button><button class="icon-button danger" data-action="delete-server" data-id="${escape(config.id)}" aria-label="Remover conexão ${escape(config.name || config.id)}" title="Remover conexão">${icon('trash')}</button></div></div><div class="config-path">${icon(config.transport === 'stdio' ? 'terminal' : 'plug')}<code>${escape(endpoint || 'Sem endpoint configurado')}</code></div><div class="config-card-footer">${badge(statusLabel, statusVariant)}${badge(`${number(server.toolCount)} ferramentas`, 'neutral')}${secretCount ? badge('Credenciais configuradas', 'neutral', 'lock') : ''}</div><p class="config-description">${number(config.readOnlyTools?.length)} ${config.readOnlyTools?.length === 1 ? 'ferramenta declarada' : 'ferramentas declaradas'} como leitura · ${allowedLabel}</p>${server.error ? `<pre class="server-card-error">${escape(server.error)}</pre>` : ''}<div class="server-card-bottom"><p>${config.enabled === false ? 'Conexão desativada na configuração.' : Array.isArray(config.allowedTools) && !config.allowedTools.length ? 'Nenhuma ferramenta está exposta por esta conexão.' : approvalNote}</p><button class="button button-secondary" data-action="reconnect-server" data-id="${escape(config.id)}" ${config.enabled === false ? 'disabled' : ''}>${icon('refresh')}Reconectar</button></div></article>`;
+      return `<article class="config-card"><div class="config-card-top"><span class="soft-icon">${icon(config.transport === 'stdio' ? 'terminal' : 'plug')}</span><div class="config-card-heading"><h3>${escape(config.name || config.id)}</h3><span class="mono">${escape(config.id)} · ${escape(config.transport)}</span></div><div class="card-actions"><button class="icon-button" data-action="edit-server" data-id="${escape(config.id)}" aria-label="Editar conexão ${escape(config.name || config.id)}" title="Editar conexão">${icon('edit')}</button><button class="icon-button danger" data-action="delete-server" data-id="${escape(config.id)}" aria-label="Remover conexão ${escape(config.name || config.id)}" title="Remover conexão">${icon('trash')}</button></div></div><div class="config-path">${icon(config.transport === 'stdio' ? 'terminal' : 'plug')}<code>${escape(endpoint || 'Sem endpoint configurado')}</code></div><div class="config-card-footer">${badge(statusLabel, statusVariant)}${badge(`${number(server.toolCount)} ferramentas`, 'neutral')}${secretCount ? badge('Credenciais configuradas', 'neutral', 'lock') : ''}</div><p class="config-description">${number(config.readOnlyTools?.length)} ${config.readOnlyTools?.length === 1 ? 'ferramenta declarada' : 'ferramentas declaradas'} como leitura · ${allowedLabel}</p>${server.status === 'error' ? '<p class="server-registration-note">Cadastro salvo. Corrija a conexão e reconecte para disponibilizar as ferramentas.</p>' : ''}${server.error ? `<pre class="server-card-error">${escape(server.error)}</pre>` : ''}<div class="server-card-bottom"><p>${config.enabled === false ? 'Conexão desativada na configuração.' : Array.isArray(config.allowedTools) && !config.allowedTools.length ? 'Nenhuma ferramenta está exposta por esta conexão.' : approvalNote}</p><button class="button button-secondary" data-action="reconnect-server" data-id="${escape(config.id)}" ${config.enabled === false ? 'disabled' : ''}>${icon('refresh')}Reconectar</button></div></article>`;
     }).join('') : emptyState('plug', 'Sua ponte pode ir além.', 'Conecte um servidor MCP local ou remoto para reunir suas ferramentas neste painel.', `<button class="button button-primary" data-action="new-server">${icon('plus')}Adicionar primeira conexão</button>`));
   }
 
@@ -1069,17 +1075,77 @@
       cancelled: 'A solicitação foi cancelada. Consulte os registros disponíveis para verificar se houve efeitos antes do cancelamento.',
       expired: 'A solicitação expirou antes de ser aprovada.'
     };
-    const preview = typeof job.preview === 'string' ? job.preview : job.preview ? job.preview.diff || pretty(job.preview) : '';
+    const mcpPreview = mcpPreviewMarkup(job.preview);
+    const preview = mcpPreview ? '' : typeof job.preview === 'string' ? job.preview : job.preview ? job.preview.diff || pretty(job.preview) : '';
     const approval = job.approval === 'automatic' ? badge('Aprovação automática', 'blue', 'check')
       : job.approval === 'manual' ? badge('Aprovação manual', 'neutral', 'shield') : '';
     const diff = preview ? preview.split('\n').map(line => `<span class="diff-line${line.startsWith('+') && !line.startsWith('+++') ? ' diff-add' : line.startsWith('-') && !line.startsWith('---') ? ' diff-remove' : line.startsWith('@@') || line.startsWith('+++') || line.startsWith('---') ? ' diff-header' : ''}">${escape(line)}</span>`).join('') : '';
-    replaceMarkup(body, `<div class="job-detail-meta">${statusBadge(job.status)}${riskBadge(job.risk)}${approval}${badge(job.source || 'Origem desconhecida', 'neutral')}</div>${notes[job.status] ? `<div class="job-status-note">${escape(notes[job.status])}</div>` : ''}<dl class="job-meta-grid"><div><dt>ID da solicitação</dt><dd>${escape(job.id)}</dd></div><div><dt>Origem</dt><dd>${escape(job.source)}</dd></div><div><dt>Criada em</dt><dd>${escape(dateLabel(job.createdAt, true))}</dd></div><div><dt>Atualizada em</dt><dd>${escape(dateLabel(job.updatedAt, true))}</dd></div></dl><details class="job-section" data-section="arguments" ${open('arguments')}><summary>Argumentos</summary><pre>${escape(pretty(job.arguments))}</pre></details>${preview ? `<details class="job-section" data-section="preview" ${open('preview')}><summary>Prévia de alterações</summary><pre class="diff-preview">${diff}</pre></details>` : job.status === 'pending_approval' ? '<p class="job-no-preview">Esta ferramenta não forneceu uma prévia de alterações. Confira os argumentos antes de aprovar.</p>' : ''}${job.error ? `<div class="form-error" role="status">${escape(typeof job.error === 'string' ? job.error : pretty(job.error))}</div>` : ''}${job.result !== undefined && job.result !== null ? `<details class="job-section" data-section="result" ${open('result')}><summary>Resultado</summary>${resultMarkup(job.result)}</details>` : job.status === 'succeeded' ? '<p class="job-no-preview">Execução concluída sem conteúdo de resultado.</p>' : ''}`);
+    const previewSection = mcpPreview
+      ? `<details class="job-section" data-section="preview" ${open('preview')}><summary>${job.preview.kind === 'mcp_add' ? 'Conexão proposta pelo chat' : 'Reconexão solicitada pelo chat'}</summary>${mcpPreview}</details>`
+      : preview ? `<details class="job-section" data-section="preview" ${open('preview')}><summary>Prévia de alterações</summary><pre class="diff-preview">${diff}</pre></details>`
+      : job.status === 'pending_approval' ? '<p class="job-no-preview">Esta ferramenta não forneceu uma prévia de alterações. Confira os argumentos antes de aprovar.</p>' : '';
+    const argumentsSection = `<details class="job-section" data-section="arguments" ${mcpPreview && !Object.hasOwn(detailsOpen, 'arguments') ? '' : open('arguments')}><summary>Argumentos${mcpPreview ? ' em JSON' : ''}</summary><pre>${escape(pretty(job.arguments))}</pre></details>`;
+    replaceMarkup(body, `<div class="job-detail-meta">${statusBadge(job.status)}${riskBadge(job.risk)}${approval}${badge(job.source || 'Origem desconhecida', 'neutral')}</div>${notes[job.status] ? `<div class="job-status-note">${escape(notes[job.status])}</div>` : ''}<dl class="job-meta-grid"><div><dt>ID da solicitação</dt><dd>${escape(job.id)}</dd></div><div><dt>Origem</dt><dd>${escape(job.source)}</dd></div><div><dt>Criada em</dt><dd>${escape(dateLabel(job.createdAt, true))}</dd></div><div><dt>Atualizada em</dt><dd>${escape(dateLabel(job.updatedAt, true))}</dd></div></dl>${mcpPreview ? previewSection + argumentsSection : argumentsSection + previewSection}${mcpResultNotice(job)}${job.error ? `<div class="form-error" role="status">${escape(typeof job.error === 'string' ? job.error : pretty(job.error))}</div>` : ''}${job.result !== undefined && job.result !== null ? `<details class="job-section" data-section="result" ${open('result')}><summary>Resultado</summary>${resultMarkup(job.result)}</details>` : job.status === 'succeeded' ? '<p class="job-no-preview">Execução concluída sem conteúdo de resultado.</p>' : ''}`);
     const busy = app.jobActions.has(job.id) ? 'disabled' : '';
     let actions = '<button class="button button-secondary" data-close-dialog>Fechar</button>';
     if (job.status === 'pending_approval') actions = `<span class="footer-note">A decisão vale para esta solicitação.</span><button class="button button-secondary" data-action="reject-job" data-id="${escape(job.id)}" ${busy}>Recusar</button><button class="button button-primary" data-action="approve-job" data-id="${escape(job.id)}" ${busy}>${icon('check')}Aprovar e executar</button>`;
     if (job.status === 'running' || job.status === 'queued') actions = `<span class="footer-note">Atualização automática</span><button class="button button-secondary" data-close-dialog>Fechar</button><button class="button button-danger" data-action="cancel-job" data-id="${escape(job.id)}" ${busy}>${icon('close')}Cancelar execução</button>`;
     replaceMarkup($('#job-detail-actions'), actions);
     dialog.scrollTop = scroll;
+  }
+
+  function mcpPreviewMarkup(preview) {
+    if (!preview || !['mcp_add', 'mcp_reconnect'].includes(preview.kind) || !preview.server || typeof preview.server !== 'object') return '';
+    const server = preview.server;
+    const adding = preview.kind === 'mcp_add';
+    const field = (label, value, wide = false) => `<div${wide ? ' class="mcp-preview-wide"' : ''}><dt>${escape(label)}</dt><dd>${escape(value)}</dd></div>`;
+    let fields = field('Identificador', server.id) + field('Transporte', server.transport);
+    if (adding && server.transport === 'stdio') {
+      fields += field('Programa', server.command, true);
+      const args = Array.isArray(server.args) ? server.args : [];
+      fields += `<div class="mcp-preview-wide"><dt>Argumentos do programa</dt><dd>${args.length ? `<ol class="mcp-preview-args">${args.map(arg => `<li><code>${escape(JSON.stringify(arg))}</code></li>`).join('')}</ol>` : 'Nenhum argumento.'}</dd></div>`;
+      if (server.cwd) fields += field('Diretório de execução', server.cwd, true);
+    } else if (adding) {
+      fields += field('Endereço do servidor', server.url, true);
+    }
+    if (!adding) fields += field('Revisão da configuração', server.revision, true);
+    if (adding && server.timeoutMs) fields += field('Prazo de conexão', `${number(server.timeoutMs)} ms`);
+    if (adding) {
+      const allowed = Array.isArray(server.allowedTools) ? server.allowedTools : null;
+      fields += field('Ferramentas permitidas', allowed ? allowed.length ? allowed.join(', ') : 'Nenhuma ferramenta.' : 'Todas as ferramentas descobertas.', true);
+    }
+    const references = adding ? [['Variáveis de ambiente', server.env], ['Cabeçalhos HTTP', server.headers]].map(([label, values]) => {
+      if (!values || typeof values !== 'object' || Array.isArray(values) || !Object.keys(values).length) return '';
+      return `<div class="mcp-preview-references"><h4>${label}</h4><dl>${Object.entries(values).map(([name, value]) => field(name, typeof value === 'string' && /^(?:Bearer )?\$\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(value) ? value : 'Valor não exibido')).join('')}</dl></div>`;
+    }).join('') : '';
+    let source = '';
+    if (adding && typeof preview.sourceUrl === 'string') {
+      try {
+        const url = new URL(preview.sourceUrl);
+        if (url.protocol === 'https:' && !url.username && !url.password) source = `<p class="mcp-preview-source"><strong>Fonte informada pelo chat</strong><a href="${escape(url.href)}" target="_blank" rel="noopener noreferrer">${escape(preview.sourceUrl)}${icon('external')}</a></p>`;
+      } catch { /* Uma fonte inválida não vira um link no painel. */ }
+    }
+    return `<div class="mcp-preview"><div class="mcp-preview-heading"><span class="soft-icon">${icon(adding ? server.transport === 'stdio' ? 'terminal' : 'plug' : 'refresh')}</span><div><span class="section-kicker">${adding ? 'CADASTRAR E CONECTAR' : 'RECONECTAR'}</span><h3>${escape(server.name || server.id)}</h3></div></div><div class="mcp-preview-reason"><h4>Motivo da solicitação</h4><p>${escape(preview.reason || 'Não informado.')}</p></div><dl class="job-meta-grid mcp-preview-fields">${fields}</dl>${references}${source}<p class="mcp-preview-note">${escape(adding ? preview.note || 'O cadastro inicia o programa ou acessa o servidor informado para descobrir suas ferramentas.' : 'A reconexão usa a configuração desta revisão. Se ela tiver sido editada depois da solicitação, o chat precisará enviar uma nova reconexão.')}</p>${adding ? '<p class="mcp-preview-note">As novas ferramentas começam classificadas como execução e seguem a política de aprovação do painel.</p>' : ''}</div>`;
+  }
+
+  function mcpResultNotice(job) {
+    if (!['bridge_mcp_add', 'bridge_mcp_reconnect'].includes(job.tool) || !Array.isArray(job.result?.content)) return '';
+    for (const block of job.result.content) {
+      if (block.type !== 'text' || typeof block.text !== 'string') continue;
+      try {
+        const result = JSON.parse(block.text);
+        if (result?.registered !== true || !result.server || typeof result.server !== 'object') continue;
+        const server = result.server;
+        const message = server.status === 'connected'
+          ? `Cadastro salvo e conexão estabelecida. ${number(server.toolCount)} ferramentas disponíveis no catálogo.`
+          : server.status === 'error' ? 'Cadastro salvo, mas a conexão falhou. Corrija a configuração ou o ambiente em Conexões MCP e tente reconectar.'
+          : server.status === 'connecting' ? 'Cadastro salvo. A conexão está em andamento; acompanhe o status em Conexões MCP.'
+          : server.status === 'disabled' ? 'Cadastro salvo. Esta conexão está desativada no painel.'
+          : 'Cadastro salvo. Consulte o estado atual em Conexões MCP.';
+        return `<div class="notice ${server.status === 'error' ? 'notice-warning' : 'notice-subtle'} mcp-result-notice" role="status">${icon(server.status === 'connected' ? 'check' : 'info')}<span>${message}</span></div>`;
+      } catch { /* Resultados de texto continuam disponíveis na seção Resultado. */ }
+    }
+    return '';
   }
 
   async function jobAction(action, id, button) {

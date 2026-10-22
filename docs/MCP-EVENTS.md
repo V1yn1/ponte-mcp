@@ -1,4 +1,4 @@
-# MCP Events na Ponte MCP 0.6.0
+# MCP Events na Ponte MCP 0.7.0
 
 [Índice da documentação](README.md) · [Conectar ao ChatGPT](CHATGPT.md) · [Watchers nativos](WATCHERS.md) · [API e ferramentas](API.md)
 
@@ -6,11 +6,11 @@ MCP Events permite que a Ponte avise uma conversa inscrita quando um trabalho te
 
 O cliente precisa oferecer Events e criar a inscrição. Instalar a Ponte, autorizar OAuth ou ativar a aprovação automática não cria uma assinatura. A disponibilidade documentada pela OpenAI é **Work no navegador**, **Work com Cloud selecionado no aplicativo desktop** e **dots**, sujeita aos controles da conta e do workspace. Este guia usa Work. Fonte: [MCP Events da OpenAI](https://developers.openai.com/plugins/build/mcp-events), consultada em **22/10/2026**.
 
-**MCP Events e watchers têm funções diferentes.** Events envia uma notificação da Ponte ao cliente. Um [watcher `signal`](WATCHERS.md) recebe um recibo do executor na Ponte e mantém seu resultado consultável. Na 0.6.0, o único evento anunciado é `ponte.job.completed`; não há evento de conclusão de watcher. Um aviso sobre o job que criou o watcher comprova a criação, e um aviso sobre um job que enviou texto ao Claude comprova o término daquele envio. Para a tarefa externa, confira o recibo do watcher.
+**MCP Events e watchers têm funções diferentes.** Events envia uma notificação da Ponte ao cliente. Um [watcher `signal`](WATCHERS.md) recebe um recibo do executor na Ponte e mantém seu resultado consultável. Na 0.7.0, o único evento anunciado é `ponte.job.completed`; não há evento de conclusão de watcher. Um aviso sobre o job que criou o watcher comprova a criação, e um aviso sobre um job que enviou texto ao Claude comprova o término daquele envio. Para a tarefa externa, confira o recibo do watcher.
 
 ## Começar pelo ChatGPT
 
-1. Atualize a Ponte para **0.6.0**, preserve seu diretório de estado e reinicie o serviço. Os comandos estão em [Instalação e operação](OPERACAO.md).
+1. Atualize a Ponte para **0.7.0**, preserve seu diretório de estado e reinicie o serviço. Os comandos estão em [Instalação e operação](OPERACAO.md).
 2. Mantenha a API em execução, com a origem HTTPS correta em **Conectar IA → URL pública da API**. Preserve uma conexão OAuth já concluída quando a origem continuar a mesma.
 3. Na conexão da Ponte em **Plugins**, selecione **Refresh/Atualizar**. Confirme que **`ponte.job.completed`** aparece entre os eventos descobertos.
 4. Abra uma **nova conversa Work** compatível, com Cloud selecionado se estiver no desktop, e selecione a Ponte com `@`.
@@ -156,7 +156,7 @@ Referências normativas: [metadados](https://modelcontextprotocol.io/specificati
   "_meta": {
     "io.modelcontextprotocol/serverInfo": {
       "name": "ponte-mcp",
-      "version": "0.6.0"
+      "version": "0.7.0"
     }
   }
 }
@@ -355,7 +355,7 @@ Há também uma evidência manual posterior, em **nova conversa Work**, de inscr
 
 | Sintoma | Conferência útil |
 |---|---|
-| O plugin não lista `ponte.job.completed` | Confirme a 0.6.0 e a mesma origem HTTPS, use Refresh/Atualizar e abra nova conversa; o cliente precisa descobrir o protocolo `2026-07-28` |
+| O plugin não lista `ponte.job.completed` | Confirme a 0.7.0 e a mesma origem HTTPS, use Refresh/Atualizar e abra nova conversa; o cliente precisa descobrir o protocolo `2026-07-28` |
 | Ferramentas funcionam, mas Events não aparece | Confirme Work no navegador ou Work com Cloud no desktop, além das permissões da conta/workspace |
 | O painel mostra zero avisos | Ainda não há assinatura ativa; aprovação automática e autorização OAuth não criam uma inscrição |
 | A criação do acompanhamento informa que os conectores de webhook não puderam ser validados | Confira `subscribeRequests` desde a inicialização e a captura HTTP da tentativa. Sem uma chamada recebida, a etapa de verificação de callback da Ponte ainda não foi alcançada; esse erro genérico não identifica sozinho a causa |

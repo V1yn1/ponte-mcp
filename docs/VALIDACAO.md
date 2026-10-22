@@ -1,10 +1,32 @@
-# Validação da entrega — Ponte MCP 0.6.0
+# Validação das entregas — Ponte MCP 0.7.0
 
 [Índice da documentação](README.md) · [Histórico de versões](../CHANGELOG.md) · [Operação](OPERACAO.md)
 
 Este documento registra a evidência de cada etapa. Os números de testes são os observados na entrega indicada, não uma nova execução feita ao editar a documentação. Registros históricos de erro não descrevem automaticamente o estado atual do produto; a verificação manual posterior de Events está registrada junto do diagnóstico original.
 
-## Revisão integral da documentação — 22/10/2026
+## Cadastro de MCPs pelo chat — 0.7.0
+
+Verificação em **22 de outubro de 2026**, em Linux com Node.js **24.19.0**. Os testes usaram diretórios, credenciais, processos MCP e portas locais temporários. Nenhum MCP foi instalado no computador do usuário e nenhuma conta real de ChatGPT ou Claude foi modificada nesta entrega.
+
+| Verificação | Resultado observado |
+|---|---|
+| `npm run verify` | TypeScript, **257 testes**, zero falhas, zero ignorados e build concluído |
+| Núcleo de gerenciamento | **18 testes**: prévia sem efeitos, aprovação, rejeição, pausa, modo automático, listagem segura, referências de ambiente, IDs conflitantes/idempotentes, concorrência com o painel, revisão obsoleta, falha de conexão e de armazenamento, cancelamento, revogação e encerramento |
+| Integração HTTP/MCP | **2 testes** com o serviço real: cliente autenticado cadastra após aprovação e chama a ferramenta recém-descoberta pelo broker; REST Actions cadastra em modo automático, reaproveita a chave de idempotência e continua sem acesso administrativo |
+| `npm run smoke` | Build compilado completou OAuth/DCR/PKCE, aprovação do cadastro MCP, persistência, descoberta e chamada da ferramenta nova sem recarregar `tools/list`, além dos fluxos existentes de arquivos, modo automático, Events e watcher nativo |
+| Revogação OAuth no smoke | Um cadastro pendente foi aprovado depois de revogar seu grant; o job falhou, nenhum servidor foi registrado e o token revogado recebeu 401 |
+| Painel | Sintaxe JavaScript e execução das funções reais do renderer em VM passaram; HTML gerado conferido para escape, links HTTPS, referências sem valores literais, reconexão sem configuração privada, política, pendências, estado salvo/conectado e preservação de detalhes/rolagem |
+| Documentação | **25 arquivos Markdown**, **314 referências locais**, **33 blocos JSON**, **13 blocos sh/bash** e três exemplos JSON conferidos; OpenAPI igual à exportação da CLI, com **nove operações** |
+| Revisão independente | Nenhum achado material restante; reexecução dos 18 testes do núcleo, dos dois testes HTTP e de `git diff --check` passou |
+| Formatação | `git diff --check`, `node --check public/app.js` e `node --check scripts/smoke.mjs` passaram |
+
+O fluxo de integração manteve o catálogo inicial do cliente intacto. Depois de cadastrar e conectar um MCP de teste, `bridge_list_tools` filtrou sua origem, devolveu o nome e schema novos e `bridge_call` executou a ferramenta após a aprovação correspondente. A anotação de leitura declarada pelo upstream não dispensou a política: as ferramentas cadastradas pelo chat continuaram classificadas como `execute`.
+
+O teste de conexão indisponível confirmou o resultado `registered: true` com estado de erro e a configuração mantida no disco. Outra chamada corrigiu o ambiente e reconectou usando a revisão atual. Os testes de cancelamento distinguem a espera pela fila, que não pode gravar depois de cancelada, da gravação já aceita, cuja reconciliação com o hub deve terminar.
+
+**Limites desta verificação:** não houve execução desta versão no Windows/macOS, instalação real do Playwright ou Roblox, login em conta real do ChatGPT/Claude nem teste pelo túnel ngrok. O navegador Chromium não estava instalado; o painel teve validação de renderer e CSS, sem inspeção visual renderizada. A fila de gerenciamento aguarda a descoberta: o tempo em espera conta no prazo do job, e fechar o serviço pode aguardar uma conexão já aceita. Pausa e mudança de política preservam trabalhos que já estão em `running`; cancelar após persistir não desfaz o cadastro. Esses limites não são uma promessa de instalação universal, login OAuth de upstreams ou retomada de uma conversa encerrada.
+
+## Histórico: revisão integral da documentação — 22/10/2026
 
 Esta revisão manteve o programa na **0.6.0** e alterou guias, exemplos e instruções. O conteúdo foi confrontado com os schemas, rotas, CLI e serviços da versão atual; as orientações dos clientes e upstreams foram conferidas nas fontes oficiais vinculadas em cada guia.
 
@@ -20,7 +42,7 @@ Esta revisão manteve o programa na **0.6.0** e alterou guias, exemplos e instru
 
 Não houve nova execução dos 237 testes do produto nesta revisão documental, nova autenticação em conta de cliente, teste no computador do usuário, instalação de upstream, renderização de navegador ou envio de sinal a tarefa real. A evidência da implementação da 0.6.0 está registrada abaixo; o teste manual histórico de Events permanece identificado separadamente.
 
-## Watchers nativos da Ponte — 0.6.0
+## Histórico: watchers nativos da Ponte — 0.6.0
 
 Verificação em **22 de outubro de 2026**, em Linux com Node.js 24.19.0. Os testes usam arquivos, credenciais, portas e executores controlados. Nenhuma demanda real do Slack foi encaminhada e nenhuma sessão real do Claude foi alterada nesta validação.
 

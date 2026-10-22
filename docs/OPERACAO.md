@@ -1,4 +1,4 @@
-# Operação e configuração — Ponte MCP 0.6.0
+# Operação e configuração — Ponte MCP 0.7.0
 
 [Índice da documentação](README.md) · [Integrações](INTEGRACOES.md) · [Segurança](SEGURANCA.md)
 
@@ -115,11 +115,11 @@ node dist/cli.js start --state-dir "C:\Projetos\ponte-mcp-antiga\.ponte"
 
 Atualize também o caminho do executável `dist/cli.js` na configuração de clientes stdio. Uma conexão OAuth já concluída pode continuar válida com a mesma origem e o mesmo estado; pedidos de conexão em andamento devem ser refeitos.
 
-Confira `version: "0.6.0"` em `bridge_status` ou no resultado de `doctor`. Atualize a descoberta de ferramentas no chat para obter `bridge_watch_create`, `bridge_watch_get`, `bridge_watch_list`, `bridge_watch_wait` e `bridge_watch_cancel`. Os guias de [ChatGPT](CHATGPT.md) e [Claude](CLAUDE.md) explicam a atualização do cliente.
+Confira `version: "0.7.0"` em `bridge_status` ou no resultado de `doctor`. Atualize a descoberta de ferramentas no chat para obter `bridge_mcp_list`, `bridge_mcp_add` e `bridge_mcp_reconnect`, além das cinco ferramentas `bridge_watch_*`. Com `bridge_list_tools` e `bridge_call` disponíveis, também é possível descobrir e chamar os nomes atuais pelo broker sem depender do catálogo inicial em cache. Os guias de [ChatGPT](CHATGPT.md) e [Claude](CLAUDE.md) explicam a atualização do cliente.
 
 ### Credenciais e restauração
 
-**Não apague ou recrie `secrets.json` isoladamente para “renovar o token”.** Na v0.6.0, a chave API é usada para validar as credenciais de watchers persistidos. Trocar essa chave sem migrar o estado pode fazer a inicialização recusar `watchers.json`. Esta versão não oferece um comando de rotação coordenada dessas chaves.
+**Não apague ou recrie `secrets.json` isoladamente para “renovar o token”.** Na v0.7.0, a chave API é usada para validar as credenciais de watchers persistidos. Trocar essa chave sem migrar o estado pode fazer a inicialização recusar `watchers.json`. Esta versão não oferece um comando de rotação coordenada dessas chaves.
 
 Para restaurar uma instalação, pare o serviço e restaure o conjunto completo e coerente de estado a partir da cópia privada. Isso volta os dados ao momento do backup; efeitos já produzidos em arquivos ou sistemas externos não são revertidos por essa restauração. Confira os destinos antes de repetir uma tarefa cujo resultado ficou incerto.
 
@@ -147,7 +147,7 @@ As opções `--port` e `--api-port` escolhem portas somente ao **criar** a confi
 node dist/cli.js init --port 5317 --api-port 5318 --workspace "C:\Projetos\MeuProjeto"
 ```
 
-Portas válidas vão de 1024 a 65535 e devem ser diferentes. Para alterar uma instalação existente, pare o serviço, faça backup, edite esses campos em `config.json` e inicie novamente. Ajuste o túnel e o endereço do painel às novas portas. Alterações de projetos/upstreams pelo painel são aplicadas pelo serviço; os comandos CLI de cadastro exigem reinício.
+Portas válidas vão de 1024 a 65535 e devem ser diferentes. Para alterar uma instalação existente, pare o serviço, faça backup, edite esses campos em `config.json` e inicie novamente. Ajuste o túnel e o endereço do painel às novas portas. Alterações de projetos/upstreams pelo painel e novos cadastros de MCPs pelo chat são aplicados pelo serviço; os comandos CLI de cadastro exigem reinício.
 
 ## Configuração e variáveis de ambiente
 
@@ -170,6 +170,16 @@ IDs de projeto e upstream começam com letra minúscula, seguidos de letras min�
 | `PONTE_WATCH_URL`, `PONTE_WATCH_TOKEN`, `PONTE_WATCH_RUN_ID` | Script produtor, no ambiente do executor de uma tarefa específica |
 
 Depois de mudar uma variável no terminal que inicia a Ponte, reinicie o processo para que ele receba o novo ambiente. O produtor de watcher deve receber suas variáveis por tarefa; não configure o mesmo token como credencial global de todos os executores. Veja [Watchers](WATCHERS.md).
+
+## Conexões adicionadas durante a conversa
+
+O cadastro por `bridge_mcp_add` aparece em **Conexões MCP** e é salvo em `config.json`, no mesmo diretório de estado. Não exige reiniciar a Ponte. A execução segue a política atual; prévias e resultados ficam em **Execuções**. Leia [MCPs pelo chat](MCPS-PELO-CHAT.md) para exemplos, campos e revisão.
+
+Uma falha de conexão não apaga automaticamente o cadastro. Confira comando/endpoint, dependências e variáveis de ambiente antes de tentar novamente. O chat pode listar o status e reconectar com a revisão atual; editar e remover ficam no painel. Configurações administrativas existentes com o mesmo ID não são substituídas pelo chat.
+
+Credenciais no contrato do chat usam referências `${NOME}` (ou `Bearer ${NOME}` nos headers) resolvidas no ambiente da Ponte. Se precisar disponibilizar uma variável nova a um processo já iniciado, encerre-o e inicie novamente com esse ambiente, preservando o estado. Cadastrar um upstream não instala programas do sistema nem autentica automaticamente uma conta externa.
+
+Depois de conectar, `bridge_list_tools` com `source: "mcp:ID"` retorna as ferramentas atuais para uso por `bridge_call`. Uma atualização de metadados do cliente pode ser necessária para que os nomes também apareçam diretamente na interface, mas não é requisito para a chamada pelo broker.
 
 ## URL pública e diagnóstico
 

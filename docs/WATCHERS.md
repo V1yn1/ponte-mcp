@@ -1,4 +1,4 @@
-# Acompanhar tarefas externas com a Ponte MCP 0.6.0
+# Acompanhar tarefas externas com a Ponte MCP 0.7.0
 
 [Índice da documentação](README.md) · [ChatGPT](CHATGPT.md) · [Claude](CLAUDE.md) · [MCP Events](MCP-EVENTS.md) · [API e ferramentas](API.md)
 
@@ -21,7 +21,7 @@ O watcher não observa automaticamente a janela do terminal, texto impresso, est
 
 Não é necessário criar cron, automation ou tarefa no agendador do ChatGPT/Claude para usar watchers. O retorno individual informa **`monitorDurable: true`** e **`canWakeClosedConversation: false`**. A duração do acompanhamento na Ponte é independente da duração do turno do cliente.
 
-Na **0.6.0**, o único evento anunciado é `ponte.job.completed`: não há evento de conclusão de watcher. Assinar o job de criação de um watcher acompanha a criação; assinar um job que envia texto ao tmux acompanha o envio. Para o resultado da tarefa externa, consulte o watcher. O [guia de MCP Events](MCP-EVENTS.md) explica o fluxo separado de inscrição. Não invente um callback do ChatGPT nem reutilize as credenciais de um fluxo no outro.
+Na **0.7.0**, o único evento anunciado é `ponte.job.completed`: não há evento de conclusão de watcher. Assinar o job de criação de um watcher acompanha a criação; assinar um job que envia texto ao tmux acompanha o envio. Para o resultado da tarefa externa, consulte o watcher. O [guia de MCP Events](MCP-EVENTS.md) explica o fluxo separado de inscrição. Não invente um callback do ChatGPT nem reutilize as credenciais de um fluxo no outro.
 
 ## Ferramentas e prazos
 

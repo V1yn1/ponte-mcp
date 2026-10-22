@@ -1,4 +1,4 @@
-# Referência da API e ferramentas — Ponte MCP 0.6.0
+# Referência da API e ferramentas — Ponte MCP 0.7.0
 
 [Índice da documentação](README.md) · [Integrações](INTEGRACOES.md) · [Watchers](WATCHERS.md)
 
@@ -26,26 +26,26 @@ O MCP HTTP é stateless e usa POST. Um GET autenticado em `/mcp` retorna 405; is
 
 | Chamada | Conteúdo |
 |---|---|
-| MCP `tools/list` | Cinco ferramentas gerais `bridge_*`, cinco ferramentas de watchers, ferramentas locais e ferramentas upstream |
-| `bridge_list_tools` | Ferramentas locais/upstream, `bridge_watch_create` e os quatro controles de watchers; paginação e pesquisa |
-| `GET /v1/tools` | Ferramentas que podem virar jobs, incluindo `bridge_watch_create`; não inclui os quatro controles diretos de watchers |
+| MCP `tools/list` | Cinco ferramentas gerais da fachada, cinco de watchers, três de gerenciamento MCP, ferramentas locais e upstream |
+| `bridge_list_tools` | Ferramentas locais/upstream, `bridge_watch_create`, três `bridge_mcp_*` e os quatro controles de watchers; paginação, pesquisa e filtro por origem |
+| `GET /v1/tools` | Ferramentas que podem virar jobs, incluindo `bridge_watch_create` e as três `bridge_mcp_*`; não inclui os quatro controles diretos de watchers |
 | `GET /v1/mcp/tools` | Catálogo MCP completo usado pelo adaptador stdio |
 
-`bridge_list_tools` aceita `search`, `offset` e `limit` (padrão 25, máximo 50). A rota REST aceita também `source`, com `limit` padrão 20 e máximo 50. Ambas devolvem `total`, `tools` e `nextOffset`.
+`bridge_list_tools` aceita `search`, `source`, `offset` e `limit` (padrão 25, máximo 50). A rota REST aceita os mesmos filtros, com `limit` padrão 20 e máximo 50. `source` seleciona uma origem exata. Ambas devolvem `total`, `tools` e `nextOffset`.
 
-As origens são `local`, `bridge:watchers` e `mcp:ID_DO_SERVIDOR`. O nome exportado de uma ferramenta upstream contém um namespace e pode incluir um hash. Nunca deduza esse nome a partir de um exemplo; descubra-o e use o `inputSchema` recebido.
+As origens são `local`, `bridge:watchers`, `bridge:mcps` e `mcp:ID_DO_SERVIDOR`. O nome exportado de uma ferramenta upstream contém um namespace e pode incluir um hash. Nunca deduza esse nome a partir de um exemplo; descubra-o e use o `inputSchema` recebido.
 
 ## Ferramentas gerais da fachada
 
 | Ferramenta | Argumentos | Comportamento |
 |---|---|---|
 | `bridge_status` | `{}` | Estado, versão, projetos, upstreams e política |
-| `bridge_list_tools` | `search?`, `offset?`, `limit?` | Catálogo paginado com schemas, risco e origem |
+| `bridge_list_tools` | `search?`, `source?`, `offset?`, `limit?` | Catálogo paginado com schemas, risco e origem |
 | `bridge_call` | `tool`, `arguments`, `idempotencyKey?` | Chamar um nome descoberto; ferramentas comuns criam jobs; controles de watchers seguem a rota direta |
 | `bridge_job` | `jobId`, `waitMs?` | Consultar o mesmo job; espera de 0–25000 ms, padrão 0 |
 | `bridge_cancel` | `jobId` | Solicitar cancelamento do job; não desfaz efeitos já ocorridos |
 
-Ferramentas locais e upstream também podem ser chamadas diretamente por MCP, sem `bridge_call`. O wrapper é útil para enviar a chave de idempotência do job. A chamada inicial aguarda até 25 segundos enquanto o job estiver `queued` ou `running`; `pending_approval` retorna imediatamente. `bridge_job` pode aguardar também durante a aprovação.
+Ferramentas locais, upstream, criação de watchers e gerenciamento MCP também podem ser chamadas diretamente por MCP, sem `bridge_call`. O wrapper permite enviar a chave de idempotência do job e usar um nome recém-descoberto por `bridge_list_tools`, mesmo se o cliente manteve o `tools/list` inicial em cache. A chamada inicial aguarda até 25 segundos enquanto o job estiver `queued` ou `running`; `pending_approval` retorna imediatamente. `bridge_job` pode aguardar também durante a aprovação.
 
 Exemplo de argumentos para `bridge_call`:
 
@@ -89,6 +89,24 @@ Em gravação, `expectedHash: null` significa criar somente se o arquivo não ex
 
 Resultados com `truncated: true` exigem refinar a consulta. Em `local_exec`, executável e argumentos são separados; para um shell, ele precisa ser solicitado explicitamente. No Windows, arquivos `.cmd`/`.bat` exigem um shell explícito. A ferramenta não aceita sobrescrever variáveis de ambiente.
 
+## Gerenciamento de MCPs pelo chat
+
+As três ferramentas têm origem `bridge:mcps` e passam pelo JobManager. São acessíveis por MCP direto, `bridge_call` ou `POST /v1/jobs`. A listagem também exige revisão em `all`; cadastro e reconexão exigem revisão em `mutations` e `all`, e executam automaticamente em `automatic`.
+
+| Ferramenta | Risco | Argumentos e resultado |
+|---|---|---|
+| `bridge_mcp_list` | `read` | `offset?`, `limit?` (padrão/máximo 30); retorna plataforma, versão do Node, conexões com status/revisão, `total` e `nextOffset` |
+| `bridge_mcp_add` | `execute` | `server`, `reason`, `sourceUrl?`; registra uma nova configuração, tenta conectar e retorna estado e até 20 ferramentas descobertas |
+| `bridge_mcp_reconnect` | `execute` | `serverId`, `expectedRevision`, `reason`; confere a revisão atual e tenta reconectar sem editar a configuração |
+
+`server` aceita `id`, `name`, `transport`, `command?`, `args?`, `cwd?`, `env?`, `url?`, `headers?`, `allowedTools?` e `timeoutMs?`, de acordo com o transporte. `enabled: true` e `readOnlyTools: []` são impostos pelo serviço e não devem ser enviados. `reason` aceita 1–1000 caracteres. A referência `sourceUrl` usa HTTPS sem credenciais, query ou fragmento. A URL do upstream também não aceita query/fragmento nem credenciais embutidas no contrato do chat.
+
+Valores de `env` aceitam somente `${NOME}`; headers aceitam `${NOME}` ou `Bearer ${NOME}`. As referências são resolvidas no ambiente da Ponte ao conectar. Não envie segredos literais. A listagem não devolve comandos, argumentos, diretórios, URLs ou valores de credenciais de servidores existentes; a revisão é um HMAC opaco da configuração.
+
+O resultado distingue `registered: true` de `server.status: "connected"`. Uma falha de conexão mantém o cadastro salvo, retorna diagnóstico seguro e marca a ferramenta com `isError: true`. Configuração normalizada idêntica com o mesmo ID retorna `alreadyPresent: true` sem reiniciar; configuração diferente é recusada sem substituir. A reconexão recusa uma revisão desatualizada. Edição e remoção permanecem administrativas.
+
+Depois de conectar, use `bridge_list_tools` com `source: "mcp:ID"` e os nomes completos em `bridge_call`. O guia [MCPs pelo chat](MCPS-PELO-CHAT.md) apresenta schemas, exemplos, fila, cancelamento e diagnóstico. A implementação está em [src/mcp/management.ts](../src/mcp/management.ts).
+
 ## Ferramentas de watchers
 
 | Ferramenta | Argumentos | Aprovação e resposta |
@@ -117,7 +135,7 @@ O UUID acima é ilustrativo e não identifica um trabalho existente. O nome acei
 
 Detalhe, criação, espera e cancelamento informam `monitorDurable: true` e `canWakeClosedConversation: false`. Resultados de executor são marcados como dados não confiáveis. Quando `waiting`, a resposta orienta a próxima espera pelo mesmo ID. A lista retorna `{watchers, total, offset, limit}` sem tokens de callback.
 
-O contrato completo de criação, callback, retenção, replay, expiração e estados está em [Watchers](WATCHERS.md). Não existe evento MCP de conclusão de watcher na v0.6.0; `ponte.job.completed` refere-se a jobs.
+O contrato completo de criação, callback, retenção, replay, expiração e estados está em [Watchers](WATCHERS.md). Não existe evento MCP de conclusão de watcher na v0.7.0; `ponte.job.completed` refere-se a jobs.
 
 ## REST e GPT Actions
 
@@ -141,7 +159,7 @@ Use `Authorization: Bearer <token API>` e, para enviar JSON, `Content-Type: appl
 | `POST /v1/watchers/{watcherId}/wait` | `waitWatcher` | Espera com corpo `{ "waitMs": 25000 }`, ou `{}` para o padrão |
 | `POST /v1/watchers/{watcherId}/cancel` | `cancelWatcher` | Estado do acompanhamento cancelado |
 
-`getJob` REST é uma consulta imediata; não oferece o `waitMs` de `bridge_job`. Para criar watcher por Actions, use `createJob` com `tool: "bridge_watch_create"`, obtenha o resultado da criação e só então use as rotas de watchers.
+`getJob` REST é uma consulta imediata; não oferece o `waitMs` de `bridge_job`. Cadastro, listagem e reconexão de MCPs usam `createJob` com o nome `bridge_mcp_*` correspondente; não acrescentam operações ao OpenAPI. Para criar watcher por Actions, use `createJob` com `tool: "bridge_watch_create"`, obtenha o resultado da criação e só então use as rotas de watchers.
 
 Exemplo do corpo de `createJob`:
 

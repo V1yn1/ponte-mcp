@@ -1,4 +1,4 @@
-# Conectar a Ponte MCP 0.6.0 ao Claude
+# Conectar a Ponte MCP 0.7.0 ao Claude
 
 [Índice da documentação](README.md) · [Instalação e operação](OPERACAO.md) · [API e ferramentas](API.md) · [ChatGPT](CHATGPT.md)
 
@@ -133,6 +133,14 @@ Consulte o mesmo job com esperas limitadas durante o turno ativo, sem repetir a 
 
 Esta integração com Claude usa chamadas MCP, consultas a `bridge_job` e as ferramentas de watcher descritas abaixo. O catálogo de MCP Events da Ponte não demonstra que o Claude cadastrou uma assinatura nem que retomará uma conversa. A retomada por evento depende de suporte e assinatura feitos pelo cliente; não foi validada por este roteiro. As instruções de Events do ChatGPT estão em [MCP-EVENTS.md](MCP-EVENTS.md).
 
+## Adicionar MCPs pelo Claude conectado à Ponte
+
+`bridge_mcp_list`, `bridge_mcp_add` e `bridge_mcp_reconnect` permitem gerenciar o cadastro de upstreams na mesma Ponte, usando a conexão já autorizada do Claude. O chat verifica se a capacidade existe, confirma a configuração oficial para a plataforma e solicita o cadastro com motivo. A política local decide entre revisão em **Execuções** e execução automática; as permissões e confirmações do próprio Claude continuam valendo.
+
+O cadastro aparece em **Conexões MCP** sem reiniciar a Ponte. O resultado informa separadamente configuração salva e conexão estabelecida. IDs existentes não são sobrescritos com outra configuração; credenciais do contrato do chat usam referências de ambiente. A reconexão exige a revisão atual retornada pela listagem.
+
+Mesmo que o cliente mantenha `tools/list` em cache, `bridge_list_tools` com `search: "bridge_mcp"` descobre essas operações para uso por `bridge_call`. O schema atual também aceita `source: "bridge:mcps"`. Depois de conectar o upstream, filtre `source: "mcp:ID"` e use o nome exportado retornado. Não é preciso cadastrar esse upstream separadamente no Claude. Exemplos e limites estão em [MCPs pelo chat](MCPS-PELO-CHAT.md).
+
 ## 5. Acompanhar uma demanda executada pelo Claude
 
 Para uma tarefa longa delegada a outra sessão, use os [watchers nativos da Ponte](WATCHERS.md). **Crie `bridge_watch_create` antes de enviar a demanda**, com `trigger: {"type":"signal","source":"claude-code","runId":"meu-projeto-demanda-001"}`. Resolva uma eventual aprovação e entregue ao executor a URL e o token exclusivos retornados em `callback`, mantendo o segredo em ambiente ou arquivo privado. O [script produtor](../scripts/ponte-watch-notify.mjs) envia o recibo explícito de `succeeded`, `failed` ou `needs_input` para esse `runId`.
@@ -141,13 +149,13 @@ Uma chamada SSH ou `tmux send-keys` concluída comprova somente o envio à sess�
 
 Use `bridge_watch_wait` no mesmo `watcherId`, com espera padrão de **25 segundos**, ou `waitMs` de 0 a **300000**. O cliente pode encerrar a chamada antes desse limite. O watcher `signal` persiste no serviço, inclusive após reinício da Ponte; uma desconexão remove só aquela espera. Não é necessário criar automations ou cron no Claude/ChatGPT, nem repetir a operação original. Volte a consultar ou aguardar o mesmo acompanhamento.
 
-As respostas individuais informam `monitorDurable: true` e `canWakeClosedConversation: false`. O callback vai do executor à Ponte e não é o callback de MCP Events. A 0.6.0 não anuncia um evento de conclusão de watcher. Se um job da Ponte somente cria o watcher ou envia o prompt, `ponte.job.completed` para esse job cobre apenas essa etapa.
+As respostas individuais informam `monitorDurable: true` e `canWakeClosedConversation: false`. O callback vai do executor à Ponte e não é o callback de MCP Events. A 0.7.0 não anuncia um evento de conclusão de watcher. Se um job da Ponte somente cria o watcher ou envia o prompt, `ponte.job.completed` para esse job cobre apenas essa etapa.
 
 O [guia oficial MCP do Claude Code](https://code.claude.com/docs/en/mcp#automatic-backgrounding-of-long-tool-calls) informa que, por padrão, uma chamada da conversa principal ainda em execução após **dois minutos** passa a uma tarefa em segundo plano, com exceções e configuração própria. Essa tarefa do cliente não sobrevive à saída da sessão. O watcher da Ponte e seu prazo são independentes dela; manter o resultado no servidor não garante acordar um chat encerrado. [WATCHERS.md](WATCHERS.md) apresenta o fluxo completo, o wrapper de processo e seus limites.
 
 ## 6. Atualizar o catálogo e reconectar
 
-Atualize e reinicie a Ponte conforme [Instalação e operação](OPERACAO.md), preservando o diretório de estado. Confirme `version: "0.6.0"` em `bridge_status` e os cinco nomes `bridge_watch_*` no catálogo. Para stdio, reinicie completamente o Desktop ou reconecte o servidor em `/mcp` no Claude Code. Para o conector remoto, atualize a conexão na interface disponível e valide a ferramenta em nova conversa.
+Atualize e reinicie a Ponte conforme [Instalação e operação](OPERACAO.md), preservando o diretório de estado. Confirme `version: "0.7.0"` em `bridge_status` e as três ferramentas `bridge_mcp_*`, além dos cinco nomes `bridge_watch_*`, no catálogo. Para stdio, reinicie completamente o Desktop ou reconecte o servidor em `/mcp` no Claude Code. Para o conector remoto, atualize a conexão na interface disponível e valide a ferramenta em nova conversa.
 
 Reiniciar o serviço com a mesma origem HTTPS e o mesmo estado preserva as autorizações OAuth concluídas. Se o login foi interrompido antes de terminar, inicie-o novamente. Uma nova autorização não herda os jobs e watchers da autorização anterior; tente consultar os IDs pela conexão ainda válida antes de substituí-la.
 
@@ -163,7 +171,8 @@ Reiniciar o serviço com a mesma origem HTTPS e o mesmo estado preserva as autor
 | Desktop informa falha de processo | Confira caminhos absolutos, JSON válido, diretório de estado e serviço iniciado. Reinicie completamente o Desktop. |
 | A ferramenta está aguardando revisão | Abra **Execuções**, revise o trabalho e depois consulte o mesmo `jobId`. |
 | A URL pública mudou | Atualize a origem no painel e reconecte; tokens do emissor anterior não são reutilizados. |
-| `bridge_watch_*` não aparece | Confirme a 0.6.0 e recarregue o catálogo; reconecte o stdio ou atualize a conexão remota. |
+| MCP conectado, mas a ferramenta não aparece diretamente | Use `bridge_list_tools` com `source: "mcp:ID"` e chame o nome por `bridge_call`; o catálogo interno já é atualizado. |
+| `bridge_watch_*` ou `bridge_mcp_*` não aparece | Confirme a 0.7.0 e recarregue o catálogo; reconecte o stdio ou atualize a conexão remota. |
 | `claude mcp login` não existe na versão instalada | Use `/mcp` na sessão interativa para autenticar, e confira a documentação correspondente à sua versão do Claude Code. |
 | O watcher está `waiting`, mas o tmux parece parado | Confira o recibo do executor. Inatividade ou fim de resposta não concluem uma tarefa. |
 | O produtor confirmou o sinal, mas não há novo turno | Consulte o watcher; o recebimento pela Ponte não ativa sozinho uma conversa encerrada. |

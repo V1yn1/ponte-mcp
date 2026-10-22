@@ -1,4 +1,4 @@
-# Roblox Studio com Ponte MCP 0.6.0
+# Roblox Studio com Ponte MCP 0.7.0
 
 A Ponte conecta o chat ao servidor MCP integrado ao Roblox Studio. O Studio continua executando no seu computador; a Ponte inicia o processo de comunicação por `stdio`, descobre as ferramentas disponíveis e aplica a política de aprovação do painel.
 
@@ -39,6 +39,12 @@ Aguarde **Conectado** e a quantidade de ferramentas no card. O Studio também mo
 
 Se o identificador `roblox` já existir, o botão **Preset Roblox** reconecta a configuração existente. Use **Editar conexão** para conferir ajustes anteriores.
 
+### Alternativa pelo chat
+
+Um chat já conectado à Ponte 0.7.0 pode usar `bridge_mcp_add` com os valores de comando/argumentos acima, `id`, `name`, `transport: "stdio"`, `timeoutMs`, motivo e a fonte oficial. O contrato do chat impõe ativação e `readOnlyTools: []`; não envie esses campos no pedido. Confira primeiro `bridge_mcp_list` para evitar um cadastro duplicado e identificar a plataforma da Ponte.
+
+Esse cadastro segue a política local e não instala, abre ou habilita o Studio por conta própria. Depois de conectar, pesquise `source: "mcp:roblox"` em `bridge_list_tools` e use os nomes retornados por `bridge_call`. IDs existentes com outra configuração não são substituídos; edição permanece no painel. O guia [MCPs pelo chat](MCPS-PELO-CHAT.md) explica aprovação, credenciais, falhas e reconexão.
+
 ### Alternativa pela CLI
 
 Na pasta da Ponte, com o serviço parado:
@@ -59,7 +65,7 @@ A CLI grava o preset no disco e exige reiniciar o serviço. Ao contrário do bot
 
 ### Linux e outros ambientes
 
-O preset da Ponte 0.6.0 aceita apenas Windows e macOS. Em Linux, inclusive quando a Ponte roda dentro de WSL ou de um contêiner Linux, ele retorna uma mensagem pedindo o computador com o Studio. Para esse fluxo, execute a Ponte no Windows/macOS junto ao Studio e conecte o chat àquela instância da Ponte.
+O preset da Ponte 0.7.0 aceita apenas Windows e macOS. Em Linux, inclusive quando a Ponte roda dentro de WSL ou de um contêiner Linux, ele retorna uma mensagem pedindo o computador com o Studio. Para esse fluxo, execute a Ponte no Windows/macOS junto ao Studio e conecte o chat àquela instância da Ponte.
 
 Um cliente remoto usa a conexão da Ponte descrita em [CHATGPT.md](CHATGPT.md) ou [CLAUDE.md](CLAUDE.md). O endereço público é o da API da Ponte, não uma porta presumida do Studio.
 
@@ -68,7 +74,7 @@ Um cliente remoto usa a conexão da Ponte descrita em [CHATGPT.md](CHATGPT.md) o
 Abra **Ferramentas** e pesquise `roblox`. Pelo chat, a mesma pesquisa pode ser feita com `bridge_list_tools`:
 
 ```json
-{"search":"roblox","limit":50}
+{"source":"mcp:roblox","limit":50}
 ```
 
 Se houver `nextOffset`, continue a consulta com esse valor em `offset`. Confirme a origem `mcp:roblox` e copie o **nome completo devolvido pelo catálogo** para chamar a ferramenta diretamente ou em `bridge_call`.

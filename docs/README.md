@@ -2,7 +2,7 @@
 
 [Voltar ao projeto](../README.md)
 
-Esta é a documentação operacional da **v0.6.0**, revisada em **22 de outubro de 2026**. Os exemplos devem ser adaptados aos caminhos, IDs e à URL pública da sua instalação. O histórico de versões e os testes executados ficam separados das instruções de uso atual.
+Esta é a documentação operacional da **v0.7.0**, revisada em **22 de outubro de 2026**. Os exemplos devem ser adaptados aos caminhos, IDs e à URL pública da sua instalação. O histórico de versões e os testes executados ficam separados das instruções de uso atual.
 
 ## Comece pela sua tarefa
 
@@ -15,7 +15,8 @@ Esta é a documentação operacional da **v0.6.0**, revisada em **22 de outubro 
 | Entender avisos por webhook enviados a um cliente compatível | [MCP Events](MCP-EVENTS.md) |
 | Escolher entre MCP HTTP, stdio e GPT Actions | [Integrações](INTEGRACOES.md) |
 | Consultar nomes de ferramentas, rotas, estados e autenticação | [Referência da API e ferramentas](API.md) |
-| Adicionar Playwright no painel | [Playwright MCP](PLAYWRIGHT.md) |
+| Permitir que o chat cadastre e reconecte MCPs | [MCPs pelo chat](MCPS-PELO-CHAT.md) |
+| Adicionar Playwright pelo chat ou pelo painel | [Playwright MCP](PLAYWRIGHT.md) |
 | Conectar uma sessão do Roblox Studio | [Roblox Studio](ROBLOX.md) |
 | Entender persistência, execução e componentes | [Arquitetura](ARQUITETURA.md) |
 | Entender permissões, tokens e limites de confiança | [Segurança](SEGURANCA.md) |
@@ -36,7 +37,7 @@ Os watchers **não usam agendador do ChatGPT/Claude**. Permanecem no serviço qu
 
 ## Exemplos prontos para adaptar
 
-- [Instruções para o chat](../examples/chat-instructions.txt): descoberta, aprovação, arquivos, execução e acompanhamento nativo.
+- [Instruções para o chat](../examples/chat-instructions.txt): descoberta, cadastro proativo de MCPs, aprovação, arquivos, execução e acompanhamento nativo.
 - [Cliente MCP stdio no Windows](../examples/mcp-client.windows.json): substitua os caminhos pelos da instalação.
 - [Upstream MCP HTTP](../examples/upstream-http.json): cadastro com referência a uma variável de ambiente.
 - [OpenAPI para GPT Actions](../examples/gpt-actions.openapi.json): exemplo com origem fictícia; prefira exportar da sua instalação com a URL correta.
@@ -48,4 +49,4 @@ Os watchers **não usam agendador do ChatGPT/Claude**. Permanecem no serviço qu
 
 Os [planos e desenhos históricos](superpowers/README.md) preservam as decisões de cada entrega. Consulte os guias acima e o código da versão instalada para operar a Ponte; uma hipótese de um desenho antigo não altera o comportamento publicado.
 
-As principais fontes de contrato são [configuração](../src/core/config.ts), [rotas HTTP](../src/http.ts), [fachada MCP](../src/mcp/server.ts), [schemas de watchers](../src/watchers/types.ts) e [gerador OpenAPI](../src/openapi.ts). As referências dos fornecedores ficam nos respectivos guias de integração.
+As principais fontes de contrato são [configuração](../src/core/config.ts), [rotas HTTP](../src/http.ts), [fachada MCP](../src/mcp/server.ts), [gerenciamento de MCPs](../src/mcp/management.ts), [schemas de watchers](../src/watchers/types.ts) e [gerador OpenAPI](../src/openapi.ts). As referências dos fornecedores ficam nos respectivos guias de integração.

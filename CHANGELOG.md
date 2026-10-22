@@ -2,9 +2,21 @@
 
 [Projeto](README.md) · [Documentação](docs/README.md) · [Evidência de validação](docs/VALIDACAO.md)
 
-Este histórico reúne as entregas já implementadas. As notas de cada versão descrevem suas mudanças; os guias em `docs/` descrevem o comportamento atual. A revisão documental de 22 de outubro de 2026 não altera a versão do programa.
+Este histórico reúne as entregas já implementadas. As notas de cada versão descrevem suas mudanças; os guias em `docs/` descrevem o comportamento atual. A revisão exclusivamente documental registrada abaixo manteve o programa na versão de sua etapa.
 
-## Revisão da documentação — 22/10/2026
+## 0.7.0 — MCPs adicionados pelo chat — 22/10/2026
+
+- Ferramentas `bridge_mcp_list`, `bridge_mcp_add` e `bridge_mcp_reconnect` para clientes MCP, stdio e REST/Actions, com a política existente de aprovação.
+- Cadastro com motivo e fonte opcional; prévia legível no painel e execução automática quando esse modo já estiver selecionado.
+- Contrato de chat restrito a novas conexões, referências de ambiente em credenciais e ferramentas externas sem classificação automática como leitura.
+- Proteção contra substituição silenciosa de IDs; cadastro idêntico retorna o estado existente sem reiniciar o servidor.
+- Reconexão vinculada a uma revisão opaca da configuração, com rechecagem de autorização e cancelamento antes de persistir.
+- Fila compartilhada entre alterações de upstreams pelo chat e pelo painel, incluindo cadastro, edição, remoção, reconexão e preset Roblox.
+- Resultados que distinguem configuração persistida de conexão estabelecida e preservam o cadastro quando a conexão falha.
+- Filtro `source` em `bridge_list_tools` e orientação para usar o catálogo atual via `bridge_call` na mesma conversa, inclusive com descoberta inicial em cache.
+- Instruções de proatividade vinculadas à tarefa do usuário e guia próprio de MCPs pelo chat; referência REST permanece com nove operações.
+
+## Histórico: revisão da documentação — 22/10/2026
 
 - Reorganização do README e criação de um índice dos guias.
 - Referências próprias de operação/configuração e API/ferramentas, alinhadas à v0.6.0.

@@ -2,7 +2,7 @@
 
 [Índice da documentação](README.md) · [Referência da API](API.md) · [Operação](OPERACAO.md) · [Segurança](SEGURANCA.md)
 
-Este guia descreve as entradas e os contratos de integração da Ponte MCP **0.6.0**. Os roteiros específicos estão em [CHATGPT.md](CHATGPT.md) e [CLAUDE.md](CLAUDE.md); os testes efetivamente realizados estão em [VALIDACAO.md](VALIDACAO.md). As referências externas foram consultadas em **22 de outubro de 2026**. Disponibilidade e permissões dos clientes dependem da conta, do workspace e do produto utilizado.
+Este guia descreve as entradas e os contratos de integração da Ponte MCP **0.7.0**. Os roteiros específicos estão em [CHATGPT.md](CHATGPT.md) e [CLAUDE.md](CLAUDE.md); os testes efetivamente realizados estão em [VALIDACAO.md](VALIDACAO.md). As referências externas foram consultadas em **22 de outubro de 2026**. Disponibilidade e permissões dos clientes dependem da conta, do workspace e do produto utilizado.
 
 ## Escolha a entrada do cliente
 
@@ -78,7 +78,7 @@ Cada grant OAuth possui sua identidade de jobs, watchers e assinaturas. Renovar 
 
 Mantenha uma origem HTTPS estável. Alterar `publicUrl` invalida as autorizações vinculadas ao emissor anterior e exige novo consentimento. Durante uma atualização, preserve o estado completo, incluindo `secrets.json`, `oauth.json` e `watchers.json`, conforme [OPERACAO.md](OPERACAO.md). Não recrie tokens para atualizar o catálogo.
 
-Depois de atualizar a Ponte, atualize os metadados da conexão no cliente e confirme as cinco ferramentas `bridge_watch_*`. A [documentação de conexão do ChatGPT](https://developers.openai.com/plugins/deploy/connect-chatgpt) orienta usar **Refresh** para MCPs personalizados e testar em uma nova conversa. Uma atualização de ferramentas não exige, por si só, apagar uma conexão OAuth válida. Em caso de `invalid_client`, confira preservação do estado, origem e cadastro antes de recomeçar o fluxo.
+Depois de atualizar a Ponte, atualize os metadados da conexão no cliente e confirme as três ferramentas `bridge_mcp_*` e as cinco `bridge_watch_*`. Os novos MCPs cadastrados durante uma conversa também podem ser descobertos por `bridge_list_tools` e usados por `bridge_call`, sem depender de uma nova listagem inicial do cliente. A [documentação de conexão do ChatGPT](https://developers.openai.com/plugins/deploy/connect-chatgpt) orienta usar **Refresh** para MCPs personalizados e testar em uma nova conversa. Uma atualização de ferramentas não exige, por si só, apagar uma conexão OAuth válida. Em caso de `invalid_client`, confira preservação do estado, origem e cadastro antes de recomeçar o fluxo.
 
 ### Transporte legado e protocolo moderno
 
@@ -88,7 +88,7 @@ Versões legadas seguem o SDK **1.32.1**. Para `2026-07-28`, o adaptador HTTP da
 
 ## Aprovação e espera
 
-A política configurada no painel aplica-se às ferramentas locais, upstreams e `bridge_watch_create`. `mutations` revisa escritas e comandos, `all` revisa todas as ferramentas submetidas ao `JobManager`, e `automatic` libera solicitações válidas. Permissões de projeto, listas permitidas, schemas e hashes continuam sendo verificados.
+A política configurada no painel aplica-se às ferramentas locais, upstreams, `bridge_watch_create` e às três ferramentas `bridge_mcp_*`. A listagem de conexões é `read`; cadastro e reconexão são `execute`. `mutations` revisa escritas e comandos, `all` revisa todas as ferramentas submetidas ao `JobManager`, e `automatic` libera solicitações válidas. Permissões de projeto, listas permitidas, schemas e hashes continuam sendo verificados.
 
 Consultas de catálogo/estado, controles de jobs e `bridge_watch_get/list/wait/cancel` têm caminhos diretos de controle. Eles não ficam aguardando uma nova aprovação de ferramenta. A espera de watcher não ocupa uma das quatro vagas de execução. Consulte [SEGURANCA.md](SEGURANCA.md#política-de-aprovação-e-operações-incertas) para mudanças de política, pausa e cancelamentos.
 
@@ -133,13 +133,13 @@ O guia do túnel informa um prazo absoluto de **120 segundos por requisição**,
 
 Use `/openapi.json` da origem HTTPS da API e configure autenticação API Key/Bearer com o **token API**. O schema é público e não contém o segredo; as operações `/v1/*` exigem autenticação. Access tokens OAuth emitidos para `/mcp` não autenticam a REST.
 
-O OpenAPI 0.6.0 define **nove operações**:
+O OpenAPI 0.7.0 define **nove operações**:
 
 | Operação | Endpoint | Finalidade |
 |---|---|---|
 | `getBridgeStatus` | `GET /v1/status` | Estado da Ponte, projetos e capacidades |
 | `listTools` | `GET /v1/tools` | Catálogo de ferramentas com schemas e risco |
-| `createJob` | `POST /v1/jobs` | Solicitar uma ferramenta, inclusive `bridge_watch_create` |
+| `createJob` | `POST /v1/jobs` | Solicitar uma ferramenta, inclusive `bridge_watch_create` e `bridge_mcp_*` |
 | `getJob` | `GET /v1/jobs/{jobId}` | Consultar estado e resultado da execução |
 | `cancelJob` | `POST /v1/jobs/{jobId}/cancel` | Solicitar cancelamento da execução |
 | `listWatchers` | `GET /v1/watchers` | Listar acompanhamentos da identidade API |
@@ -157,6 +157,14 @@ Se a origem mudar, atualize `publicUrl` e reimporte o schema no cliente. A refer
 
 ## Servidores upstream
 
+### Cadastrar pelo chat ou pelo painel
+
+A versão 0.7.0 expõe `bridge_mcp_list`, `bridge_mcp_add` e `bridge_mcp_reconnect`. Um chat autorizado pode identificar uma capacidade que falta à tarefa, consultar as conexões existentes e solicitar um cadastro com justificativa e configuração confirmada na fonte oficial. Esse fluxo usa a política de aprovação atual, incluindo `automatic`, e mostra uma prévia em **Execuções**. As conexões aparecem no painel **Conexões MCP**.
+
+O chat não substitui IDs existentes com configurações diferentes, não edita `readOnlyTools`, não remove conexões nem altera a política. Env/headers no contrato do chat aceitam somente referências de ambiente; edição e opções administrativas permanecem no painel. O resultado separa cadastro salvo de conexão estabelecida. Para reconectar, use a revisão retornada na listagem; para usar ferramentas novas na mesma conversa, consulte `bridge_list_tools` com `source: "mcp:ID"` e chame o nome retornado por `bridge_call`.
+
+Veja [MCPs pelo chat](MCPS-PELO-CHAT.md) para os campos, exemplos por sistema operacional, falhas e reconexão. As três ferramentas também funcionam em Actions pelo `createJob` já existente; não é preciso acrescentar uma Action administrativa.
+
 ### stdio
 
 Cadastre `command`, `args` e, se necessário, `cwd` e `env`. O executável precisa existir. A Ponte inicia o processo configurado, mas não instala um pacote MCP por conta própria; usar `npx` pode baixar e executar o pacote escolhido. No Windows, scripts `.cmd`/`.bat` exigem configuração de executável compatível, como `cmd.exe`, conforme as instruções do fornecedor.
@@ -171,7 +179,7 @@ Não há login OAuth interativo para upstreams nesta versão. São aceitos servi
 
 ### Catálogos e políticas
 
-O hub pagina `tools/list`, limita o catálogo a **500 ferramentas por servidor** e recusa paginação circular. Nomes exportados usam namespace e hash determinísticos; descubra o nome exato no catálogo, em vez de construí-lo manualmente. A Ponte atualiza definições ao receber notificação de alteração, mas o cliente pode precisar atualizar seus metadados para enxergar a mudança.
+O hub pagina `tools/list`, limita o catálogo a **500 ferramentas por servidor** e recusa paginação circular. Nomes exportados usam namespace e hash determinísticos; descubra o nome exato no catálogo, em vez de construí-lo manualmente. A Ponte atualiza definições ao receber notificação de alteração do upstream. `bridge_list_tools` e `bridge_call` usam o catálogo atual; o cliente pode precisar atualizar seus metadados para mostrar os nomes novos diretamente na interface. A fachada HTTP stateless não anuncia um canal persistente de notificações de catálogo ao chat.
 
 `readOnlyTools` e `allowedTools` usam os **nomes originais do upstream**. `readOnlyTools` identifica as chamadas tratadas como leituras no modo `mutations`; a anotação `readOnlyHint` recebida do servidor não concede essa classificação sozinha. `all` revisa também essas ferramentas e `automatic` libera as ferramentas expostas, mantendo validações e permissões.
 

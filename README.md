@@ -4,9 +4,9 @@
 
 A Ponte é um serviço local com painel em português. Ela permite que clientes compatíveis, como ChatGPT e Claude, trabalhem em projetos autorizados, executem comandos e usem ferramentas de outros servidores MCP, incluindo Roblox Studio e Playwright. Cada solicitação segue as permissões e a política de aprovação definidas no painel.
 
-**Versão atual: 0.6.0.** A novidade são os **watchers nativos**: acompanhamentos persistentes com gatilhos para aguardar o resultado real de uma tarefa externa ou de um trabalho da Ponte. O serviço mantém o acompanhamento; a continuidade da conversa depende dos recursos e limites do cliente.
+**Versão atual: 0.7.0.** O chat agora pode **cadastrar e reconectar servidores MCP pelo próprio catálogo da Ponte**, a pedido do usuário ou quando identificar uma capacidade necessária à tarefa. A solicitação mostra uma prévia e segue a política do painel, inclusive aprovação automática. Os watchers nativos continuam disponíveis para acompanhar a conclusão real de tarefas.
 
-[Documentação completa](docs/README.md) · [Instalar e atualizar](docs/OPERACAO.md) · [ChatGPT](docs/CHATGPT.md) · [Claude](docs/CLAUDE.md) · [Watchers](docs/WATCHERS.md) · [Histórico de versões](CHANGELOG.md)
+[Documentação completa](docs/README.md) · [Instalar e atualizar](docs/OPERACAO.md) · [ChatGPT](docs/CHATGPT.md) · [Claude](docs/CLAUDE.md) · [MCPs pelo chat](docs/MCPS-PELO-CHAT.md) · [Watchers](docs/WATCHERS.md) · [Histórico de versões](CHANGELOG.md)
 
 ## Recursos
 
@@ -15,7 +15,8 @@ A Ponte é um serviço local com painel em português. Ela permite que clientes 
 | Projetos e arquivos | Pastas autorizadas, leitura UTF-8, busca literal, criação de diretórios, gravação e edição com hash e backup |
 | Comandos | Executável e argumentos separados, limites de tempo e saída, cancelamento e permissão por projeto |
 | Aprovação | Revisar alterações e comandos, revisar todas as execuções ou aprovar automaticamente |
-| Agregação MCP | Clientes stdio, Streamable HTTP e SSE legado; descoberta de schemas, namespace e reconexão manual |
+| Agregação MCP | Clientes stdio, Streamable HTTP e SSE legado; descoberta de schemas e namespace |
+| MCPs pelo chat | Listar conexões, cadastrar e reconectar com justificativa, revisão e uso imediato pelo catálogo dinâmico |
 | Chats | MCP HTTP com OAuth, MCP local por stdio e API REST com OpenAPI para GPT Actions |
 | Watchers | Criar, consultar, listar, aguardar e cancelar; gatilhos `signal` e `job`; estado e resultados persistidos |
 | MCP Events | Evento `ponte.job.completed` por trabalho, com inscrição e callback fornecidos por um cliente compatível |
@@ -111,7 +112,7 @@ Em **Visão geral → Você no controle → Política de aprovação**, escolha:
 | Aprovar todas as solicitações | `all` | Todos os trabalhos, inclusive leituras, aguardam revisão |
 | Aprovar automaticamente todas | `automatic` | Libera trabalhos pendentes válidos e os futuros, preservando as permissões e validações |
 
-A política inclui ferramentas locais, ferramentas upstream e `bridge_watch_create`. Consultas de estado/catálogo, acompanhamento de trabalhos e os controles `bridge_watch_get/list/wait/cancel` não criam trabalhos e não passam por essa fila de aprovação. A criação de uma conexão OAuth continua exigindo autorização local.
+A política inclui ferramentas locais, ferramentas upstream, `bridge_watch_create` e as três ferramentas `bridge_mcp_*`. `bridge_mcp_list` é uma leitura submetida à fila; cadastro e reconexão são execuções. Consultas de estado/catálogo, acompanhamento de trabalhos e os controles `bridge_watch_get/list/wait/cancel` não criam trabalhos e não passam por essa fila de aprovação. A criação de uma conexão OAuth continua exigindo autorização local.
 
 A pausa impede novas submissões e o início de trabalhos na fila. Ela não interrompe automaticamente o que já está executando nem apaga watchers. Consulte [Segurança](docs/SEGURANCA.md) para o alcance das permissões.
 
@@ -132,10 +133,19 @@ Na política padrão, confira o diff em **Execuções** e aprove. Depois de `suc
 
 ## Conectar outros MCPs
 
-Abra **Conexões MCP** e cadastre o servidor. A Ponte descobre as ferramentas e seus schemas; use os nomes efetivamente retornados no catálogo.
+Você pode cadastrar pelo painel **Conexões MCP** ou pedir ao chat:
+
+```text
+Adicione o Playwright MCP à minha Ponte para testar a página deste projeto.
+Confira o sistema, se já existe uma conexão e a configuração oficial.
+```
+
+O chat usa `bridge_mcp_list`, solicita `bridge_mcp_add` com configuração e motivo, acompanha o job e confirma o estado real da conexão. Se o modo for `mutations` ou `all`, revise em **Execuções**; em `automatic`, a solicitação válida executa sem nova aprovação local. O cadastro fica no painel e não substitui uma conexão existente com configuração diferente.
+
+Depois de conectar, `bridge_list_tools` com `source: "mcp:playwright"` devolve os nomes e schemas atuais. O chat usa `bridge_call` para chamar essas ferramentas na mesma conversa, mesmo quando o cliente mantém o catálogo inicial em cache. Uma falha pode deixar o cadastro salvo com estado de erro; `bridge_mcp_reconnect` permite tentar novamente após corrigir a causa. O contrato completo está em [MCPs pelo chat](docs/MCPS-PELO-CHAT.md).
 
 - [Roblox Studio](docs/ROBLOX.md): habilitar o servidor integrado, adicionar o preset e selecionar a sessão correta.
-- [Playwright MCP](docs/PLAYWRIGHT.md): preencher os campos do painel, configurar o processo local e testar a conexão.
+- [Playwright MCP](docs/PLAYWRIGHT.md): cadastrar pelo chat ou pelo painel, configurar o processo local e testar a conexão.
 - [Outros upstreams](docs/INTEGRACOES.md): stdio, HTTP e SSE legado, variáveis de ambiente, filtros e tempos limite.
 
 Processos MCP e comandos executam com os privilégios da conta local. As permissões das ferramentas de arquivos da Ponte não transformam esses processos em sandboxes do sistema operacional.
@@ -153,7 +163,7 @@ npm.cmd start
 
 Preserve a pasta `.ponte` inteira, incluindo `secrets.json`, `oauth.json`, `events.json`, `watchers.json` e backups. O watcher usa a chave da instalação; apagar ou recriar as credenciais isoladamente pode impedir a leitura do estado existente. Não execute duas instâncias sobre o mesmo diretório.
 
-Confira **0.6.0** com `bridge_status` ou `doctor` e atualize o catálogo no cliente para encontrar as cinco ferramentas `bridge_watch_*`. Para instalações por ZIP, diretório personalizado, mudança de túnel e recuperação, siga [Operação](docs/OPERACAO.md).
+Confira **0.7.0** com `bridge_status` ou `doctor` e atualize o catálogo no cliente para encontrar `bridge_mcp_list`, `bridge_mcp_add` e `bridge_mcp_reconnect`, além das cinco ferramentas `bridge_watch_*`. Se o cliente ainda mantiver o catálogo anterior, pesquise `search: "bridge_mcp"` em `bridge_list_tools` e chame o nome retornado por `bridge_call`. Na listagem atual, `source: "bridge:mcps"` também seleciona essas ferramentas. Para instalações por ZIP, diretório personalizado, mudança de túnel e recuperação, siga [Operação](docs/OPERACAO.md).
 
 ## Desenvolvimento e evidência
 
@@ -164,9 +174,9 @@ npm run smoke
 npm run dev
 ```
 
-`verify` confere tipos, executa testes e compila. `smoke` usa o programa compilado, estado temporário e listeners locais para verificar OAuth, MCP, aprovação, Events e watcher com sinal autenticado.
+`verify` confere tipos, executa testes e compila. `smoke` usa o programa compilado, estado temporário e listeners locais para verificar OAuth, MCP, aprovação, cadastro de upstream pelo chat, catálogo dinâmico, Events e watcher com sinal autenticado.
 
-A validação registrada da v0.6.0 passou com **237 testes** e smoke. Isso não equivale a validar todos os clientes e sistemas operacionais: o watcher ainda precisa ser conferido com o executor e o cliente reais da instalação. O histórico separa os testes controlados, os testes manuais de conexão e os limites de cada etapa em [Validação](docs/VALIDACAO.md).
+A evidência de cada versão está em [Validação](docs/VALIDACAO.md), separando testes controlados, observações em clientes reais e limites de cada etapa. Esses testes não validam todos os clientes e sistemas operacionais: cadastro de upstream, dependências externas e watchers precisam ser conferidos com o cliente e o executor da instalação.
 
 | Diretório | Responsabilidade |
 |---|---|
@@ -179,6 +189,6 @@ A validação registrada da v0.6.0 passou com **237 testes** e smoke. Isso não 
 
 ## Escopo atual
 
-O proxy agrega **ferramentas** MCP. Não encaminha resources, prompts, sampling, elicitation ou login OAuth interativo de upstreams. Reconexão de upstreams é manual. Não há controle genérico de desktop, serviço Windows instalado ou processo autônomo de planejamento.
+O proxy agrega **ferramentas** MCP. Não encaminha resources, prompts, sampling, elicitation ou login OAuth interativo de upstreams. A reconexão de upstreams é solicitada pelo painel ou pelo chat; não há um ciclo automático de tentativas em segundo plano. Não há controle genérico de desktop, serviço Windows instalado ou processo autônomo de planejamento.
 
 Projetos e políticas são compartilhados pelo administrador. A posse de trabalhos, watchers e assinaturas é verificada por identidade de conexão, mas isso não cria isolamento completo entre usuários. Os limites, estados persistidos e fronteiras de confiança estão em [Arquitetura](docs/ARQUITETURA.md) e [Segurança](docs/SEGURANCA.md).

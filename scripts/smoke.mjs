@@ -4,6 +4,7 @@ import { writeSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -26,6 +27,11 @@ const secrets = [];
 const log = (message) => writeSync(1, message + '\n');
 const hash = (content) => createHash('sha256').update(content).digest('hex');
 const options = () => ({ signal: controller.signal, timeout: 5_000 });
+const mcpFixture = (id) => ({
+  server: { id, name: 'MCP smoke', transport: 'stdio', command: process.execPath,
+    args: ['--import', fileURLToPath(new URL('../tests/fixtures/stdio-streams.mjs', import.meta.url)), fileURLToPath(new URL('../tests/fixtures/upstream.mjs', import.meta.url)), JSON.stringify({ names: ['echo'], label: id })], timeoutMs: 5000 },
+  reason: 'Validar cadastro aprovado e descoberta no build compilado.',
+});
 
 function jsonText(result, index = 0) {
   assert.equal(result.content?.[index]?.type, 'text', 'Resposta MCP deve conter o JSON esperado.');
@@ -130,7 +136,7 @@ try {
   await client.connect(transport, options());
   assert.equal(client.getServerVersion()?.name, 'ponte-mcp', 'Handshake deve identificar o servidor Ponte.');
   const catalog = await client.listTools({}, options());
-  for (const name of ['local_projects', 'local_read_file', 'local_write_file', 'bridge_call', 'bridge_job']) {
+  for (const name of ['local_projects', 'local_read_file', 'local_write_file', 'bridge_call', 'bridge_job', 'bridge_mcp_list', 'bridge_mcp_add', 'bridge_mcp_reconnect']) {
     assert.ok(catalog.tools.some((tool) => tool.name === name), `Ferramenta ausente no catálogo: ${name}.`);
   }
   assert.ok(!catalog.tools.some((tool) => /approve/i.test(tool.name)), 'O chat não deve receber uma ferramenta de aprovação.');
@@ -178,6 +184,32 @@ try {
   assert.equal(await readFile(filename, 'utf8'), updated, 'O arquivo final deve conter a gravação aprovada.');
   assert.equal(await readFile(path.join(temporaryRoot, 'state', 'backups', `${write.backupId}.bak`), 'utf8'), original);
   log('OK: aprovação administrativa, trabalho concluído e conteúdo final/backup verificados.');
+
+  stage = 'cadastrar MCP pelo chat OAuth e usar o catálogo novo na mesma conexão';
+  const mcpRequest = jsonText(await callTool('bridge_call', { tool: 'bridge_mcp_add', arguments: mcpFixture('smoke'), idempotencyKey: 'compiled-mcp-add' }));
+  assert.equal(mcpRequest.status, 'pending_approval');
+  assert.equal(runtime.store.config.upstreams.length, 0);
+  const mcpReview = await adminRequest(`/admin/jobs/${mcpRequest.jobId}`);
+  assert.equal(mcpReview.body.preview.kind, 'mcp_add');
+  assert.equal(mcpReview.body.preview.server.command, process.execPath);
+  assert.equal((await adminRequest(`/admin/jobs/${mcpRequest.jobId}/approve`, 'POST')).status, 200);
+  const mcpRegistered = jsonText(await completed(await callTool('bridge_job', { jobId: mcpRequest.jobId, waitMs: 4000 })), 1);
+  assert.equal(mcpRegistered.registered, true);
+  assert.equal(mcpRegistered.server.status, 'connected');
+  const mcpTools = jsonText(await callTool('bridge_list_tools', { source: 'mcp:smoke' }));
+  assert.equal(mcpTools.total, 1);
+  assert.equal(mcpTools.tools[0].risk, 'execute');
+  assert.ok(!catalog.tools.some(tool => tool.name === mcpTools.tools[0].name));
+  const mcpCall = jsonText(await callTool('bridge_call', { tool: mcpTools.tools[0].name, arguments: { text: 'smoke-atualizado' }, idempotencyKey: 'compiled-mcp-echo' }));
+  assert.equal(mcpCall.status, 'pending_approval');
+  assert.equal((await adminRequest(`/admin/jobs/${mcpCall.jobId}/approve`, 'POST')).status, 200);
+  const mcpAnswer = await completed(await callTool('bridge_job', { jobId: mcpCall.jobId, waitMs: 4000 }));
+  assert.equal(mcpAnswer.content[1].text, 'smoke:smoke-atualizado');
+  const mcpList = jsonText(await completed(await callTool('bridge_mcp_list', {})), 1);
+  assert.equal(mcpList.servers[0].status, 'connected');
+  assert.equal(typeof mcpList.servers[0].revision, 'string');
+  assert.equal(mcpList.servers[0].command, undefined);
+  log('OK: cadastro MCP por OAuth com aprovação, configuração persistida e ferramenta nova invocada sem atualizar tools/list.');
 
   stage = 'ativar aprovação automática e confirmar chamadas OAuth sem revisão individual';
   const queuedDirectory = jsonText(await callTool('local_create_directory', { projectId: 'principal', path: 'automatic' }));
@@ -260,10 +292,16 @@ try {
   assert.notEqual(oauthTokens.refresh_token, oldRefresh, 'A renovação deve rotacionar o refresh token.');
   const current = await adminRequest('/admin/state');
   const grantId = current.body.connection.oauth.grants[0].id;
+  const revokedRegistration = jsonText(await callTool('bridge_mcp_add', mcpFixture('revoked')));
+  assert.equal(revokedRegistration.status, 'pending_approval');
   assert.equal((await adminRequest('/admin/oauth/grants/' + grantId + '/revoke', 'POST')).status, 200);
+  assert.equal((await adminRequest(`/admin/jobs/${revokedRegistration.jobId}/approve`, 'POST')).status, 200);
+  for (let i = 0; i < 100 && ['queued', 'running'].includes(runtime.jobs.get(revokedRegistration.jobId).status); i++) await delay(10);
+  assert.equal(runtime.jobs.get(revokedRegistration.jobId).status, 'failed');
+  assert.ok(!runtime.store.config.upstreams.some(server => server.id === 'revoked'));
   const revoked = await localFetch(issuer + '/mcp', { method: 'POST', headers: { Authorization: 'Bearer ' + oauthTokens.access_token, 'Content-Type': 'application/json' }, body: '{}' });
   assert.equal(revoked.status, 401);
-  log('OK: renovação com rotação e bloqueio do token após revogação local.');
+  log('OK: renovação com rotação, bloqueio do token revogado e cadastro pendente impedido após revogação.');
 } catch (error) {
   failure = error;
 } finally {

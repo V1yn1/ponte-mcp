@@ -1,4 +1,4 @@
-# Playwright MCP com Ponte MCP 0.6.0
+# Playwright MCP com Ponte MCP 0.7.0
 
 A Ponte pode iniciar o servidor oficial `@playwright/mcp` como uma conexão **stdio**. As ferramentas do navegador passam a aparecer no catálogo da Ponte e ficam disponíveis aos clientes já conectados a ela. O navegador executa na máquina da Ponte, mesmo quando o chat está em outro computador.
 
@@ -29,6 +29,14 @@ command -v npx
 O primeiro uso pode baixar o pacote npm e o navegador. A [instalação oficial](https://playwright.dev/mcp/installation) descreve o download automático do navegador. Rede, proxy e requisitos do sistema precisam permitir essa etapa; **Conectado** no card ainda não comprova que o navegador conseguiu abrir.
 
 Os comandos e opções externos deste guia foram conferidos na documentação oficial em **22 de outubro de 2026**. `@latest` acompanha a versão publicada; depois de validar sua instalação, você pode substituir esse sufixo pela versão que efetivamente testou para tornar o ambiente reproduzível.
+
+## Pedir o cadastro pelo chat
+
+Na 0.7.0, um chat já conectado à Ponte pode cadastrar o Playwright por `bridge_mcp_add`. Peça que confira primeiro `bridge_mcp_list`, use o comando adequado ao sistema da Ponte e informe como fonte o repositório oficial abaixo. O [guia de MCPs pelo chat](MCPS-PELO-CHAT.md#exemplo-playwright-no-windows) contém o JSON de cadastro e os ajustes para Linux/macOS.
+
+O cadastro segue a política de aprovação do painel e aparece em **Execuções**. No modo automático, executa sem uma revisão local adicional. A conexão é salva mesmo quando a inicialização falha; confira `server.status`, corrija a causa e reconecte com a revisão retornada em `bridge_mcp_list`. Um ID existente não é substituído por outra configuração.
+
+Depois de conectar, use `bridge_list_tools` com `source: "mcp:playwright"` e invoque o nome retornado por `bridge_call`. Esse caminho funciona sem renovar o catálogo inicial do cliente. Os pré-requisitos e o teste verificável deste guia continuam necessários. Se preferir configurar diretamente, siga o formulário a seguir.
 
 ## 2. Adicionar a conexão no painel
 

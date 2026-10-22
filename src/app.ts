@@ -6,6 +6,7 @@ import { ConfigStore } from './core/config.js';
 import { AuditLog } from './core/audit.js';
 import { JobManager } from './core/jobs.js';
 import { McpHub } from './mcp/hub.js';
+import { McpManagement } from './mcp/management.js';
 import { createLocalTools } from './tools/local.js';
 import { createHttpApps } from './http.js';
 import { catalog } from './mcp/server.js';
@@ -23,6 +24,7 @@ export class Application {
   readonly startedAt = new Date().toISOString();
   readonly audit: AuditLog;
   readonly hub: McpHub;
+  readonly mcpManagement: McpManagement;
   readonly jobs: JobManager;
   readonly apiPrincipal: string;
   events!: EventService;
@@ -38,6 +40,8 @@ export class Application {
     this.hub = new McpHub(store.config.upstreams);
     this.jobs = new JobManager(() => this.getTools(), () => store.config.approvalMode, this.audit);
     this.apiPrincipal = 'api:' + createHash('sha256').update(store.secrets.apiToken).digest('hex');
+    this.mcpManagement = new McpManagement(store, this.hub,
+      principal => principal === this.apiPrincipal || (principal.startsWith('oauth:') && this.oauth.isGrantActive(principal.slice(6))));
   }
   async initializeEvents(post?: WebhookPost): Promise<void> {
     this.events = await EventService.open({
@@ -72,12 +76,13 @@ export class Application {
       throw error;
     }
   }
-  getTools(): ToolDefinition[] { return [...createLocalTools(() => this.store.config, this.store.stateDir), ...(this.watchers ? [createWatcherTool(this.watchers, () => this.store.config.publicUrl ?? this.apiUrl)] : []), ...this.hub.tools()]; }
+  getTools(): ToolDefinition[] { return [...createLocalTools(() => this.store.config, this.store.stateDir), ...(this.watchers ? [createWatcherTool(this.watchers, () => this.store.config.publicUrl ?? this.apiUrl)] : []), ...this.mcpManagement.definitions(), ...this.hub.tools()]; }
   publicStatus() {
     return {
-      name: 'Ponte MCP', version: '0.6.0', paused: this.jobs.paused, approvalMode: this.store.config.approvalMode,
+      name: 'Ponte MCP', version: '0.7.0', paused: this.jobs.paused, approvalMode: this.store.config.approvalMode,
       projects: this.store.config.projects.map(({ id, name, allowWrite, allowExec }) => ({ id, name, allowWrite, allowExec })),
       servers: this.hub.statuses(), toolCount: this.getTools().length,
+      mcpManagement: { supported: true, tools: ['bridge_mcp_list', 'bridge_mcp_add', 'bridge_mcp_reconnect'], approvalPolicy: this.store.config.approvalMode, canReplaceExisting: false, credentials: 'environment_references' },
       events: { supported: Boolean(this.events), protocolVersion: '2026-07-28', event: 'ponte.job.completed', subscriptionRequired: true },
       watchers: { supported: Boolean(this.watchers), triggers: ['signal', 'job'], monitorDurable: true, nativeSchedulerRequired: false, canWakeClosedConversation: false, defaultWaitMs: 25000, maxWaitMs: 300000 },
       note: 'O chat precisa suportar ferramentas. Cotas e custos dos provedores permanecem válidos.',
@@ -89,7 +94,7 @@ export class Application {
     const tools = this.getTools();
     const counts = (status: string) => jobs.filter(job => job.status === status).length;
     return {
-      name: 'Ponte MCP', version: '0.6.0', paused: this.jobs.paused, startedAt: this.startedAt,
+      name: 'Ponte MCP', version: '0.7.0', paused: this.jobs.paused, startedAt: this.startedAt,
       config, servers: this.hub.statuses(),
       jobs: jobs.slice(0, 50).map(({ result: _result, preview: _preview, arguments: _arguments, ...job }) => ({ ...job, arguments: {} })),
       stats: { tools: tools.length, projects: config.projects.length, pending: counts('pending_approval'), running: counts('running') + counts('queued'), succeeded: counts('succeeded'), failed: counts('failed') },
@@ -110,11 +115,13 @@ export class Application {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    const managementClosed = this.mcpManagement.close();
     this.stopJobWatchers?.();
     await this.watchers?.close();
     this.jobs.close();
     this.stopJobEvents?.();
     await this.events?.close();
+    await managementClosed;
     await this.hub.close();
     await Promise.all(this.servers.map(server => new Promise<void>(resolve => {
       server.close(() => resolve()); server.closeAllConnections();

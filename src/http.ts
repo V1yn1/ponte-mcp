@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Application } from './app.js';
 import { projectRoot } from './app.js';
-import { projectSchema, upstreamSchema, publicUrlSchema, robloxPreset } from './core/config.js';
+import { projectSchema, publicUrlSchema } from './core/config.js';
 import { makeOpenApi } from './openapi.js';
 import { makeMcpServer, publicTools, callGateway, SERVER_INSTRUCTIONS } from './mcp/server.js';
 import { handleModernMcp } from './mcp/modern.js';
@@ -206,27 +206,14 @@ export function createHttpApps(runtime: Application): { admin: Express; api: Exp
   });
 
   admin.post('/admin/servers', async (req, res) => {
-    const requestedId = typeof req.body?.id === 'string' ? req.body.id : '';
-    const existing = runtime.store.config.upstreams.find(item => item.id === requestedId);
-    const input = { ...existing, ...req.body };
-    // null explicitly removes a prior restriction; [] deliberately exposes none.
-    if (req.body?.allowedTools === null) delete input.allowedTools;
-    const server = upstreamSchema.parse(input);
-    if (server.id === 'local' || server.id === 'bridge') throw new Error('Este ID é reservado.');
-    if (Object.values(server.env ?? {}).some(value => value.includes('[REDACTED]')) || Object.values(server.headers ?? {}).some(value => value.includes('[REDACTED]'))) throw new Error('Substitua os valores ocultos por referências de ambiente, ou omita env/headers para preservá-los.');
-    const updated = await runtime.store.update(config => ({ ...config, upstreams: [...config.upstreams.filter(item => item.id !== server.id), server] }));
-    await runtime.hub.replaceConfigs(updated.upstreams); res.json({ ok: true });
+    await runtime.mcpManagement.adminUpsert(req.body); res.json({ ok: true });
   });
   admin.delete('/admin/servers/:id', async (req, res) => {
-    const updated = await runtime.store.update(config => ({ ...config, upstreams: config.upstreams.filter(item => item.id !== req.params.id) }));
-    await runtime.hub.replaceConfigs(updated.upstreams); res.json({ ok: true });
+    await runtime.mcpManagement.adminRemove(String(req.params.id)); res.json({ ok: true });
   });
-  admin.post('/admin/servers/:id/reconnect', async (req, res) => { await runtime.hub.reconnect(String(req.params.id)); res.json({ ok: true }); });
+  admin.post('/admin/servers/:id/reconnect', async (req, res) => { await runtime.mcpManagement.adminReconnect(String(req.params.id)); res.json({ ok: true }); });
   admin.post('/admin/roblox', async (_req, res) => {
-    const preset = robloxPreset();
-    if (runtime.store.config.upstreams.some(server => server.id === preset.id)) { await runtime.hub.reconnect(preset.id); res.json({ ok: true }); return; }
-    const updated = await runtime.store.update(config => ({ ...config, upstreams: [...config.upstreams, preset] }));
-    await runtime.hub.replaceConfigs(updated.upstreams); res.json({ ok: true });
+    await runtime.mcpManagement.adminRoblox(); res.json({ ok: true });
   });
   admin.get('/admin/openapi', (_req, res) => { res.json(makeOpenApi(runtime.store.config.publicUrl ?? runtime.apiUrl)); });
 
@@ -270,7 +257,7 @@ export function createHttpApps(runtime: Application): { admin: Express; api: Exp
     const getTools = () => publicTools(runtime, Boolean(runtime.store.config.publicUrl));
     const disconnected = requestSignal(req, res);
     const call = (name: string, args: Record<string, unknown>, signal?: AbortSignal) => callGateway(runtime, name, args, principal, signal ? AbortSignal.any([disconnected, signal]) : disconnected);
-    if (await handleModernMcp(req, res, { getTools, call, events: runtime.events, principal, version: '0.6.0', instructions: SERVER_INSTRUCTIONS })) return;
+    if (await handleModernMcp(req, res, { getTools, call, events: runtime.events, principal, version: '0.7.0', instructions: SERVER_INSTRUCTIONS })) return;
     const server = makeMcpServer(getTools, call);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     try { await server.connect(transport); await transport.handleRequest(req, res, req.body); }
