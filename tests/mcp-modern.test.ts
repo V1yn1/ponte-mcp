@@ -130,6 +130,19 @@ test('unknown tools and malformed tool call parameters cannot execute', async ()
   assert.deepEqual(calls, []);
 });
 
+test('compact discovery keeps cached direct names callable against the complete current registry', async () => {
+  const { deps, calls, tool } = fixture();
+  deps.getTools = () => [];
+  deps.getCallableTools = () => [tool];
+  assert.deepEqual((await invoke(request('tools/list'), deps)).body.result.tools, []);
+  const result = await invoke(request('tools/call', { name: tool.name, arguments: { value: 9 } }), deps);
+  assert.equal(result.status, 200);
+  assert.deepEqual(calls, [['call', tool.name, { value: 9 }]]);
+  deps.getCallableTools = () => [];
+  assert.equal((await invoke(request('tools/call', { name: tool.name }), deps)).status, 400);
+  assert.equal(calls.length, 1, 'a removed tool must not execute from an old discovery snapshot');
+});
+
 test('required modern metadata is validated before execution', async () => {
   const { deps, calls } = fixture();
   for (const value of [undefined, null, [], {}, { ...meta(), 'io.modelcontextprotocol/protocolVersion': 7 }, { ...meta(), 'io.modelcontextprotocol/clientCapabilities': [] }, { ...meta(), 'io.modelcontextprotocol/clientInfo': { name: 'missing-version' } }, { ...meta(), 'io.modelcontextprotocol/logLevel': ['debug'] }]) {

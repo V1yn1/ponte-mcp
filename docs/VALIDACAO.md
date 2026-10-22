@@ -1,8 +1,40 @@
-# Validação das entregas — Ponte MCP 0.8.0
+# Validação das entregas — Ponte MCP 0.9.0
 
 [Índice da documentação](README.md) · [Histórico de versões](../CHANGELOG.md) · [Operação](OPERACAO.md)
 
 Este documento registra a evidência de cada etapa. Os números de testes são os observados na entrega indicada, não uma nova execução feita ao editar a documentação. Registros históricos de erro não descrevem automaticamente o estado atual do produto; a verificação manual posterior de Events está registrada junto do diagnóstico original.
+
+## Execução direta e catálogo compacto — 0.9.0
+
+Verificação em **22 de outubro de 2026**, com Node.js **24.19.0** em Linux. A entrega mantém o executor da Ponte e acrescenta descoberta compacta, consulta exata de schema e gateways JSON. Os testes usam arquivos, listeners, upstreams e autorizações temporários; não executam uma demanda de negócio nem controlam um dot real.
+
+### Evidência observada
+
+| Verificação | Resultado |
+|---|---|
+| `npm run verify` | TypeScript, **315 testes aprovados**, zero falhas/ignorados e build concluído |
+| Gateways | **16 testes novos** cobrem JSON literal e malformado, limite UTF-8, schema do alvo, leitura restrita antes da prévia e dentro das filas, mudanças de risco, idempotência por identidade, aprovação `all`, pausa, cancelamento, catálogo dinâmico e resultados multimídia |
+| Configuração | **2 testes novos** cobrem default `full`, enum restrito e persistência sem trocar credenciais, projetos, aprovação ou estado anterior |
+| Integração HTTP/MCP | **3 testes novos** confirmam perfil compacto com 12 ferramentas, execução por nome antigo em MCP legado/moderno, gravação aprovada em arquivo temporário, replay do mesmo job e uso de upstream cadastrado depois da descoberta inicial, incluindo imagem, erro e conteúdo estruturado |
+| Transporte moderno | Novo teste separa catálogo anunciado do registro atual de ferramentas chamáveis; ferramenta removida não continua acessível pelo cache |
+| Stdio | Casos de espera de 45 segundos e recuperação após falhas foram ampliados para `bridge_read` e `bridge_invoke`, com relógio controlado e sem repetir a execução |
+| `npm run smoke` | O build compilado concluiu OAuth/DCR/PKCE, consentimento, leitura/escrita com aprovação, catálogo compacto e gateways JSON na mesma conexão OAuth, MCP adicionado dinamicamente, Events de job/watcher, sinal nativo, renovação e revogação |
+| Revisão independente | Nenhum achado reproduzível restante. Probe com dois grants OAuth confirmou isolamento de job/replay, aprovação de leitura em `all`, nomes conhecidos em compacto e recusa do token OAuth nas APIs administrativas e `/v1` |
+| Painel | Sintaxe JavaScript e IDs/ARIA conferidos; seletor persiste pelo endpoint administrativo e evita snapshots anteriores à alteração. Sem inspeção visual renderizada nesta entrega |
+| Documentação | **26 arquivos Markdown**, **353 referências locais e âncoras**, **38 blocos JSON** e **13 blocos sh/bash** conferidos; `bash -n` validou sintaxe sem executar os exemplos |
+| OpenAPI | O exemplo publicado corresponde exatamente à exportação da CLI compilada, com nove operações |
+
+Na primeira execução integrada, um teste antigo identificou um campo novo na resposta de alteração da política de aprovação. A resposta foi preservada: `mcpToolExposure` aparece no PATCH somente quando esse campo foi enviado. A verificação completa acima passou após essa correção, sem alterar o teste de compatibilidade.
+
+### Instância conectada e limite do teste no cliente
+
+A consulta real de `bridge_status` nesta revisão respondeu **0.6.0**, aprovação automática e **62 ferramentas**. O catálogo consultado ainda anunciava o antigo máximo de 300000 ms do watcher. Nenhuma operação de escrita foi feita nessa instalação e nenhuma configuração do dot foi alterada. A publicação da 0.9.0 no repositório não atualiza o processo que respondeu a essa chamada.
+
+**Não houve teste da 0.9.0 na conversa principal de um dot.** Não foi comprovado, nessa superfície, que a descoberta tenha sido atualizada, que todas as ferramentas estejam disponíveis ou que o host conclua uma tarefa sem abrir Work/Codex. O [roteiro de dots](DOTS.md#6-roteiro-de-aceitação-no-dot) registra leitura, escrita reversível, upstream, resultado e observação do caminho do cliente como critérios separados.
+
+`directExecution.requiresWorkSession: false` e `requiresCodexSession: false` descrevem a arquitetura do servidor. `clientToolAvailability: "not_observable_by_server"` e `clientMayDelegate: true` deixam explícito o que a Ponte não atesta. O perfil compacto reduz os descritores iniciais; não altera permissões nem desbloqueia ferramentas indisponíveis no host. Não foram criadas tarefas agendadas, automações de chat, sessões Work/Codex ou chamadas a outro modelo para executar os testes de integração.
+
+As garantias de acompanhamento da 0.8.0 continuam válidas: esperar o mesmo ID durante o turno ativo, recuperar após falha de comunicação e receber o resultado real. `canWakeClosedConversation` continua **false**. Os gateways JSON preservam o resultado, mas não acrescentam proxy de recursos remotos, armazenamento ilimitado de payloads ou execução sem os limites da Ponte.
 
 ## Recuperação de esperas e eventos de watchers — 0.8.0
 

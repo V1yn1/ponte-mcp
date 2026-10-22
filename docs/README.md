@@ -2,7 +2,7 @@
 
 [Voltar ao projeto](../README.md)
 
-Esta é a documentação operacional da **v0.8.0**, revisada em **22 de outubro de 2026**. Os exemplos devem ser adaptados aos caminhos, IDs e à URL pública da sua instalação. O histórico de versões e os testes executados ficam separados das instruções de uso atual.
+Esta é a documentação operacional da **v0.9.0**, revisada em **22 de outubro de 2026**. Os exemplos devem ser adaptados aos caminhos, IDs e à URL pública da sua instalação. O histórico de versões e os testes executados ficam separados das instruções de uso atual.
 
 ## Comece pela sua tarefa
 
@@ -10,6 +10,7 @@ Esta é a documentação operacional da **v0.8.0**, revisada em **22 de outubro 
 |---|---|
 | Instalar, iniciar, atualizar ou recuperar a configuração | [Operação e configuração](OPERACAO.md) |
 | Conectar o ChatGPT e resolver OAuth | [Conectar ao ChatGPT](CHATGPT.md) |
+| Usar as ferramentas da Ponte em um dot | [Dots: catálogo, execução e teste no cliente](DOTS.md) |
 | Conectar Claude, Claude Desktop ou Claude Code | [Conectar ao Claude](CLAUDE.md) |
 | Fazer o chat aguardar uma tarefa delegada usando a própria Ponte | [Watchers nativos](WATCHERS.md) |
 | Entender avisos por webhook enviados a um cliente compatível | [MCP Events](MCP-EVENTS.md) |
@@ -23,6 +24,12 @@ Esta é a documentação operacional da **v0.8.0**, revisada em **22 de outubro 
 | Conferir o que foi testado e o que ainda depende da instalação | [Validação](VALIDACAO.md) |
 | Consultar o logotipo e as cores do painel | [Identidade visual](IDENTIDADE-VISUAL.md) |
 
+## Catálogo e execução na 0.9.0
+
+O perfil `full` continua sendo o padrão. O perfil opcional `compact`, em **Conectar IA → Catálogo MCP**, anuncia 12 ferramentas e mantém o catálogo real acessível por `bridge_list_tools`. Use `includeSchemas: false` para pesquisar, `bridge_tool_schema` para obter o contrato e `bridge_read` ou `bridge_invoke` com `argumentsJson` para executar. `bridge_call` preserva argumentos como objeto, e nomes diretos já conhecidos continuam chamáveis.
+
+A Ponte executa os alvos no seu próprio host, com as mesmas permissões e aprovação. `bridge_status.directExecution` informa essa capacidade e deixa explícito que o servidor não observa a disponibilidade das ferramentas no cliente. O [guia de dots](DOTS.md) separa configuração, descoberta e teste real no dot; a execução da 0.9.0 nesse dot permanece não verificada. Consulte [Operação](OPERACAO.md#estado-de-events-e-retorno-a-uma-versão-anterior) antes de um downgrade: versões anteriores não aceitam `mcpToolExposure` persistido.
+
 ## Três conceitos que não devem ser confundidos
 
 | Conceito | Responsabilidade |
@@ -35,11 +42,11 @@ O watcher `signal` é indicado quando o trabalho acontece fora da chamada que o 
 
 Os watchers **não usam agendador do ChatGPT/Claude**. Cada espera usa 25 segundos por padrão e no máximo 45 segundos; ela não renova o prazo total do acompanhamento. Enquanto `waiting`, o chat mantém o turno ativo com novas esperas pelo mesmo ID até terminal ou limite concreto. Após falha de comunicação, consulta esse ID antes de continuar. `needs_input` é terminal e pede intervenção.
 
-O acompanhamento permanece no serviço quando a conexão cai. A 0.8.0 mantém `monitorDurable: true` e `canWakeClosedConversation: false`, inclusive após recebimento HTTP de um evento. O guia de [Watchers](WATCHERS.md) descreve a recuperação, e [Validação](VALIDACAO.md#recuperação-de-esperas-e-eventos-de-watchers--080) distingue o caso externo relatado da retomada de conversa ainda não comprovada.
+O acompanhamento permanece no serviço quando a conexão cai. O contrato mantém `monitorDurable: true` e `canWakeClosedConversation: false`, inclusive após recebimento HTTP de um evento. O guia de [Watchers](WATCHERS.md) descreve a recuperação, e [Validação](VALIDACAO.md#recuperação-de-esperas-e-eventos-de-watchers--080) distingue o caso externo relatado da retomada de conversa ainda não comprovada.
 
 ## Exemplos prontos para adaptar
 
-- [Instruções para o chat](../examples/chat-instructions.txt): descoberta, cadastro proativo de MCPs, aprovação, arquivos, execução e acompanhamento nativo.
+- [Instruções para o chat](../examples/chat-instructions.txt): preferência por execução na Ponte, catálogo compacto, schemas reais, aprovação, arquivos, upstreams e acompanhamento nativo.
 - [Cliente MCP stdio no Windows](../examples/mcp-client.windows.json): substitua os caminhos pelos da instalação.
 - [Upstream MCP HTTP](../examples/upstream-http.json): cadastro com referência a uma variável de ambiente.
 - [OpenAPI para GPT Actions](../examples/gpt-actions.openapi.json): exemplo com origem fictícia; prefira exportar da sua instalação com a URL correta.

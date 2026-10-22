@@ -1,6 +1,6 @@
-# Operação e configuração — Ponte MCP 0.8.0
+# Operação e configuração — Ponte MCP 0.9.0
 
-[Índice da documentação](README.md) · [Integrações](INTEGRACOES.md) · [Segurança](SEGURANCA.md)
+[Índice da documentação](README.md) · [Integrações](INTEGRACOES.md) · [Dots](DOTS.md) · [Segurança](SEGURANCA.md)
 
 ## Pré-requisitos e instalação
 
@@ -65,7 +65,7 @@ Não inicie duas instâncias com o mesmo estado. O diretório contém credenciai
 
 | Item | Conteúdo e persistência |
 |---|---|
-| `config.json` | Portas, URL pública, política, projetos e upstreams |
+| `config.json` | Portas, URL pública, política, perfil do catálogo MCP, projetos e upstreams |
 | `secrets.json` | Tokens distintos de administração e API; a chave API também participa da derivação dos tokens de watchers |
 | `oauth.json` | Clientes OAuth, autorizações e informações de renovação/revogação |
 | `events.json` | Inscrições, destinos e segredos de webhook, fila, resultados de jobs e metadados de watchers retidos por Events |
@@ -115,11 +115,15 @@ node dist/cli.js start --state-dir "C:\Projetos\ponte-mcp-antiga\.ponte"
 
 Atualize também o caminho do executável `dist/cli.js` na configuração de clientes stdio. Uma conexão OAuth já concluída pode continuar válida com a mesma origem e o mesmo estado; pedidos de conexão em andamento devem ser refeitos.
 
-Confira `version: "0.8.0"` em `bridge_status` ou no resultado de `doctor` da instância realmente conectada. Atualize a descoberta no chat: `bridge_watch_wait` deve anunciar máximo de **45000 ms**, e o catálogo Events deve incluir **`ponte.watcher.completed`** junto de `ponte.job.completed`. As três ferramentas `bridge_mcp_*` e as cinco `bridge_watch_*` continuam disponíveis. `bridge_list_tools` e `bridge_call` permitem usar ferramentas do catálogo atual, mas não atualizam a descoberta de Events do cliente. Os guias de [ChatGPT](CHATGPT.md) e [Claude](CLAUDE.md) explicam a atualização.
+Confira `version: "0.9.0"` em `bridge_status` ou no resultado de `doctor` da instância realmente conectada. Atualize a descoberta no chat e confirme `bridge_tool_schema`, `bridge_read` e `bridge_invoke`. `bridge_status.directExecution.toolExposure` informa o perfil: `full` anuncia os alvos individuais; `compact` anuncia 12 controles e mantém os demais no catálogo real. As três ferramentas `bridge_mcp_*` e as cinco `bridge_watch_*` continuam acessíveis dentro das permissões existentes.
 
-Uma espera antiga com `waitMs: 300000` será rejeitada pela 0.8.0, preservando o ID e orientando `bridge_watch_get`; use 25000 ms na próxima espera se o acompanhamento continuar em `waiting`. Isso não recria o watcher nem renova seu `expiresAt`. A versão do repositório ou um build local não confirmam, sozinhos, atualização do serviço instalado.
+`bridge_watch_wait` mantém o máximo de **45000 ms**, e Events continua anunciando **`ponte.watcher.completed`** e `ponte.job.completed`. Descobrir e invocar ferramentas pelo gateway não atualiza a descoberta de Events do cliente. Os guias de [ChatGPT](CHATGPT.md), [Dots](DOTS.md) e [Claude](CLAUDE.md) distinguem catálogo, chamadas e suporte do host.
+
+Uma espera antiga com `waitMs: 300000` é rejeitada desde a 0.8.0, preservando o ID e orientando `bridge_watch_get`; use 25000 ms na próxima espera se o acompanhamento continuar em `waiting`. Isso não recria o watcher nem renova seu `expiresAt`. A versão do repositório ou um build local não confirmam, sozinhos, atualização do serviço instalado.
 
 ### Estado de Events e retorno a uma versão anterior
+
+A 0.9.0 aceita configurações antigas sem `mcpToolExposure` e assume `full` em memória. Abrir a configuração não grava o campo por si só; ao salvar uma atualização, como a seleção do perfil, o campo passa a constar no disco. **O schema estrito da 0.8.0 e de versões anteriores não aceita esse novo campo.** Para um downgrade, restaure o `config.json` do backup anterior à atualização, compatível com a versão de destino, além de conferir o restante do estado. Voltar o seletor para `full` não remove o campo persistido e não resolve essa incompatibilidade.
 
 A 0.8.0 lê os arquivos `events.json` anteriores com `version: 1` e acrescenta `watcherArchives` ao persistir os metadados do novo evento. Essa compatibilidade permite atualizar a instalação; ela não garante a leitura do estado novo por uma versão antiga, cujo schema estrito pode recusar esse campo.
 
@@ -127,7 +131,7 @@ Para voltar a uma versão anterior, pare o serviço e restaure um **backup compl
 
 ### Credenciais e restauração
 
-**Não apague ou recrie `secrets.json` isoladamente para “renovar o token”.** Na v0.8.0, a chave API é usada para validar as credenciais de watchers persistidos. Trocar essa chave sem migrar o estado pode fazer a inicialização recusar `watchers.json`. Esta versão não oferece um comando de rotação coordenada dessas chaves.
+**Não apague ou recrie `secrets.json` isoladamente para “renovar o token”.** Nesta versão, a chave API é usada para validar as credenciais de watchers persistidos. Trocar essa chave sem migrar o estado pode fazer a inicialização recusar `watchers.json`. Esta versão não oferece um comando de rotação coordenada dessas chaves.
 
 Para restaurar uma instalação, pare o serviço e restaure o conjunto completo e coerente de estado a partir da cópia privada. Isso volta os dados ao momento do backup; efeitos já produzidos em arquivos ou sistemas externos não são revertidos por essa restauração. Confira os destinos antes de repetir uma tarefa cujo resultado ficou incerto.
 
@@ -166,10 +170,17 @@ Portas válidas vão de 1024 a 65535 e devem ser diferentes. Para alterar uma in
 | `port`, `apiPort` | Portas distintas de painel/API |
 | `publicUrl` | Opcional; origem HTTPS sem caminho, query, fragmento ou credenciais |
 | `approvalMode` | `mutations`, `all` ou `automatic` |
+| `mcpToolExposure` | `full` por padrão, inclusive em configurações antigas; `compact` anuncia 12 controles e preserva o catálogo real |
 | `projects` | Até 100; ID único, nome, caminho absoluto, `allowWrite` e `allowExec` |
 | `upstreams` | Até 30; IDs únicos e transporte `stdio`, `http` ou `sse` |
 
 IDs de projeto e upstream começam com letra minúscula, seguidos de letras minúsculas, números, `_` ou `-`, até 32 caracteres. Os limites de ferramentas são descritos em [API](API.md); as regras de aprovação ficam em [Segurança](SEGURANCA.md).
+
+### Catálogo MCP para dots e outros clientes
+
+Em **Conectar IA → Catálogo MCP**, escolha `full` ou `compact`. O painel salva `mcpToolExposure` pelo `PATCH /admin/settings` existente. O perfil altera o catálogo anunciado por MCP HTTP e pelo adaptador stdio, sem mudar o endpoint, OAuth, política de aprovação ou permissões. Não é necessário migrar credenciais para testar o perfil compacto.
+
+Depois de salvar, atualize os metadados no cliente e confira o perfil por `bridge_status`. Em `compact`, use `bridge_list_tools` para descobrir todos os alvos registrados e `bridge_tool_schema` para obter seus argumentos, então invoque por `bridge_read`, `bridge_invoke` ou pelo `bridge_call` compatível. Nomes diretos já conhecidos continuam chamáveis. A alteração não força uma conversa aberta a recarregar ferramentas nem controla a delegação do host; o [roteiro para seu dot](DOTS.md) verifica isso separadamente.
 
 | Variável | Onde é usada |
 |---|---|
@@ -187,7 +198,7 @@ Uma falha de conexão não apaga automaticamente o cadastro. Confira comando/end
 
 Credenciais no contrato do chat usam referências `${NOME}` (ou `Bearer ${NOME}` nos headers) resolvidas no ambiente da Ponte. Se precisar disponibilizar uma variável nova a um processo já iniciado, encerre-o e inicie novamente com esse ambiente, preservando o estado. Cadastrar um upstream não instala programas do sistema nem autentica automaticamente uma conta externa.
 
-Depois de conectar, `bridge_list_tools` com `source: "mcp:ID"` retorna as ferramentas atuais para uso por `bridge_call`. Uma atualização de metadados do cliente pode ser necessária para que os nomes também apareçam diretamente na interface, mas não é requisito para a chamada pelo broker.
+Depois de conectar, `bridge_list_tools` com `source: "mcp:ID"` retorna as ferramentas atuais. Use `includeSchemas: false` para obter um resumo, `bridge_tool_schema` para o contrato escolhido e o gateway indicado para executar. `bridge_call` continua aceitando objeto de argumentos. Em `full`, uma atualização de metadados pode ser necessária para anunciar nomes novos diretamente; em `compact`, a descoberta dos alvos é feita pelo catálogo real.
 
 ## URL pública e diagnóstico
 
@@ -203,6 +214,9 @@ Se o domínio do túnel mudar, atualize **Conectar IA → URL pública da API** 
 | `Host não autorizado` | Confira a origem pública salva e o host que o túnel encaminha |
 | HTTP 405 ao abrir `/mcp` | Depois de autenticar, GET é recusado; MCP usa POST. Use `doctor` ou `bridge_status` para testar |
 | Ferramenta antiga ou watcher ausente | Recompile/reinicie, confirme a versão do servidor e atualize a descoberta no cliente |
+| Perfil compacto mostra 12 ferramentas | É o conjunto anunciado esperado; consulte os alvos por `bridge_list_tools`, sem ampliar permissões |
+| `directExecution` aparece, mas o dot não usa o gateway | A resposta comprova capacidade do servidor; siga [Dots](DOTS.md#7-diagnóstico-por-camada) para verificar disponibilidade no host |
+| Versão antiga recusa `mcpToolExposure` ao voltar o código | Restaure o `config.json` compatível do backup anterior, com o serviço parado; não apague o estado |
 | Erro ao carregar watchers após trocar credenciais | Restaure o conjunto coerente de estado; não descarte o arquivo como solução automática |
 | Execução terminou, tarefa externa não | Confira se o job apenas delegou a demanda; use watcher `signal` para a conclusão real |
 | Espera de watcher interrompida ou acima de 45000 ms recusada | Consulte `bridge_watch_get` pelo mesmo ID; retome esperas de 25000 ms somente se continuar `waiting` |

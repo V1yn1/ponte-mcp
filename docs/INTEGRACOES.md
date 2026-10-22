@@ -2,7 +2,7 @@
 
 [Índice da documentação](README.md) · [Referência da API](API.md) · [Operação](OPERACAO.md) · [Segurança](SEGURANCA.md)
 
-Este guia descreve as entradas e os contratos de integração da Ponte MCP **0.8.0**. Os roteiros específicos estão em [CHATGPT.md](CHATGPT.md) e [CLAUDE.md](CLAUDE.md); os testes efetivamente realizados estão em [VALIDACAO.md](VALIDACAO.md). As referências externas foram consultadas em **22 de outubro de 2026**. Disponibilidade e permissões dos clientes dependem da conta, do workspace e do produto utilizado.
+Este guia descreve as entradas e os contratos de integração da Ponte MCP **0.9.0**. Os roteiros específicos estão em [CHATGPT.md](CHATGPT.md) e [CLAUDE.md](CLAUDE.md); os testes efetivamente realizados estão em [VALIDACAO.md](VALIDACAO.md). As referências externas foram consultadas em **22 de outubro de 2026**. Disponibilidade e permissões dos clientes dependem da conta, do workspace e do produto utilizado.
 
 ## Escolha a entrada do cliente
 
@@ -36,7 +36,7 @@ O gatilho `job` serve quando o próprio job da Ponte representa toda a operaçã
 
 Watchers e resultados limitados persistem, mas uma espera HTTP tem prazo próprio. `bridge_watch_wait` usa **25000 ms** por padrão e aceita de 0 a **45000 ms** em todas as interfaces; um valor maior é rejeitado com orientação de `get` pelo mesmo ID, sem ajuste silencioso. `timeoutMs` define o prazo total desde a criação (padrão 1 hora, máximo 7 dias), registrado em `expiresAt`; novas esperas não o renovam. A desconexão encerra somente a espera. `bridge_watch_cancel` encerra apenas o acompanhamento e não interrompe o executor ou o job original. `expired` não prova falha da tarefa externa.
 
-Erros de comunicação podem ocorrer antes dos cabeçalhos ou durante a leitura da resposta. Quando a Ponte consegue devolver a falha, a recuperação estruturada preserva `watcherId` e indica `bridge_watch_get` sem inventar estado. Consulte o mesmo ID antes de voltar a esperar. Autenticação inválida ou registro ausente não autorizam retry cego, nova criação ou reenvio da demanda. `monitorDurable: true` e `canWakeClosedConversation: false` continuam no contrato da 0.8.0.
+Erros de comunicação podem ocorrer antes dos cabeçalhos ou durante a leitura da resposta. Quando a Ponte consegue devolver a falha, a recuperação estruturada preserva `watcherId` e indica `bridge_watch_get` sem inventar estado. Consulte o mesmo ID antes de voltar a esperar. Autenticação inválida ou registro ausente não autorizam retry cego, nova criação ou reenvio da demanda. `monitorDurable: true` e `canWakeClosedConversation: false` continuam no contrato da 0.9.0.
 
 O roteiro completo, o recibo e a recuperação estão em [WATCHERS.md](WATCHERS.md). Os limites e as diferenças entre reinício de watchers `signal` e `job` estão em [ARQUITETURA.md](ARQUITETURA.md#watchers-acompanhamento-nativo-e-durável).
 
@@ -138,7 +138,7 @@ O guia do túnel informa um prazo absoluto de **120 segundos por requisição**,
 
 Use `/openapi.json` da origem HTTPS da API e configure autenticação API Key/Bearer com o **token API**. O schema é público e não contém o segredo; as operações `/v1/*` exigem autenticação. Access tokens OAuth emitidos para `/mcp` não autenticam a REST.
 
-O OpenAPI 0.8.0 define **nove operações**:
+O OpenAPI 0.9.0 define **nove operações**:
 
 | Operação | Endpoint | Finalidade |
 |---|---|---|
@@ -164,7 +164,7 @@ Se a origem mudar, atualize `publicUrl` e reimporte o schema no cliente. A refer
 
 ### Cadastrar pelo chat ou pelo painel
 
-A versão 0.8.0 expõe `bridge_mcp_list`, `bridge_mcp_add` e `bridge_mcp_reconnect`. Um chat autorizado pode identificar uma capacidade que falta à tarefa, consultar as conexões existentes e solicitar um cadastro com justificativa e configuração confirmada na fonte oficial. Esse fluxo usa a política de aprovação atual, incluindo `automatic`, e mostra uma prévia em **Execuções**. As conexões aparecem no painel **Conexões MCP**.
+A versão 0.9.0 expõe `bridge_mcp_list`, `bridge_mcp_add` e `bridge_mcp_reconnect`. Um chat autorizado pode identificar uma capacidade que falta à tarefa, consultar as conexões existentes e solicitar um cadastro com justificativa e configuração confirmada na fonte oficial. Esse fluxo usa a política de aprovação atual, incluindo `automatic`, e mostra uma prévia em **Execuções**. As conexões aparecem no painel **Conexões MCP**.
 
 O chat não substitui IDs existentes com configurações diferentes, não edita `readOnlyTools`, não remove conexões nem altera a política. Env/headers no contrato do chat aceitam somente referências de ambiente; edição e opções administrativas permanecem no painel. O resultado separa cadastro salvo de conexão estabelecida. Para reconectar, use a revisão retornada na listagem; para usar ferramentas novas na mesma conversa, consulte `bridge_list_tools` com `source: "mcp:ID"` e chame o nome retornado por `bridge_call`.
 

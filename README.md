@@ -4,9 +4,9 @@
 
 A Ponte é um serviço local com painel em português. Ela permite que clientes compatíveis, como ChatGPT e Claude, trabalhem em projetos autorizados, executem comandos e usem ferramentas de outros servidores MCP, incluindo Roblox Studio e Playwright. Cada solicitação segue as permissões e a política de aprovação definidas no painel.
 
-**Versão atual: 0.8.0.** Os watchers usam esperas de **25 segundos por padrão e no máximo 45 segundos por chamada**, com recuperação pelo mesmo ID quando a comunicação falha. O novo evento **`ponte.watcher.completed`** permite avisar clientes MCP Events inscritos quando um acompanhamento termina. O resultado continua persistido na Ponte; a retomada de uma conversa encerrada depende do cliente e ainda precisa de comprovação específica.
+**Versão atual: 0.9.0.** O dot pode descobrir e chamar as ferramentas da Ponte por uma fachada estável, com argumentos JSON, consulta de schema e catálogo compacto opcional. O código, os comandos e as chamadas aos MCPs são executados pela Ponte; esse caminho não depende de abrir uma sessão Work ou Codex. A disponibilidade das ferramentas e a decisão de delegar no ChatGPT continuam sob controle do cliente. O [guia de dots](docs/DOTS.md) separa o que foi implementado do que ainda precisa ser validado na conversa real.
 
-[Documentação completa](docs/README.md) · [Instalar e atualizar](docs/OPERACAO.md) · [ChatGPT](docs/CHATGPT.md) · [Claude](docs/CLAUDE.md) · [MCPs pelo chat](docs/MCPS-PELO-CHAT.md) · [Watchers](docs/WATCHERS.md) · [Histórico de versões](CHANGELOG.md)
+[Documentação completa](docs/README.md) · [Instalar e atualizar](docs/OPERACAO.md) · [ChatGPT](docs/CHATGPT.md) · [Dots](docs/DOTS.md) · [Claude](docs/CLAUDE.md) · [MCPs pelo chat](docs/MCPS-PELO-CHAT.md) · [Watchers](docs/WATCHERS.md) · [Histórico de versões](CHANGELOG.md)
 
 ## Recursos
 
@@ -17,6 +17,7 @@ A Ponte é um serviço local com painel em português. Ela permite que clientes 
 | Aprovação | Revisar alterações e comandos, revisar todas as execuções ou aprovar automaticamente |
 | Agregação MCP | Clientes stdio, Streamable HTTP e SSE legado; descoberta de schemas e namespace |
 | MCPs pelo chat | Listar conexões, cadastrar e reconectar com justificativa, revisão e uso imediato pelo catálogo dinâmico |
+| Dots e uso direto | Catálogo compacto com 12 ferramentas estáveis, descoberta sob demanda, invocação JSON e leitura restrita por risco |
 | Chats | MCP HTTP com OAuth, MCP local por stdio e API REST com OpenAPI para GPT Actions |
 | Watchers | Criar, consultar, listar, aguardar e cancelar; gatilhos `signal` e `job`; estado e resultados persistidos |
 | MCP Events | Eventos `ponte.job.completed` por trabalho e `ponte.watcher.completed` por acompanhamento, com inscrição e callback fornecidos por um cliente compatível |
@@ -54,6 +55,7 @@ No macOS/Linux, use `npm` no lugar de `npm.cmd`. O preset do Roblox requer Windo
 | Cliente | Caminho | Guia |
 |---|---|---|
 | ChatGPT com plugin/conector MCP | API pública HTTPS em `/mcp`, OAuth e autorização no painel local | [ChatGPT](docs/CHATGPT.md) |
+| Dot do ChatGPT | Mesma conexão MCP da Ponte; catálogo completo ou compacto e execução no servidor | [Dots](docs/DOTS.md) |
 | Claude com conector remoto | API pública HTTPS em `/mcp`, OAuth e autorização local | [Claude](docs/CLAUDE.md) |
 | Claude Desktop ou outro cliente stdio | Processo local `node dist/cli.js stdio`; serviço da Ponte já iniciado | [Claude](docs/CLAUDE.md) |
 | Claude Code | MCP HTTP ou stdio, conforme o ambiente | [Claude](docs/CLAUDE.md) |
@@ -63,7 +65,21 @@ Para conexões remotas, encaminhe **toda a API da porta 4318** por HTTPS e salve
 
 O token `admin` autentica o painel; o token `api` atende REST/Actions e o adaptador stdio; clientes OAuth recebem suas próprias credenciais. O token exclusivo de um callback de watcher tem outra finalidade. Veja os contratos em [API e ferramentas](docs/API.md).
 
-Após conectar, peça ao chat para consultar `bridge_status` e `local_projects`. A aprovação OAuth confirma a autorização; uma chamada de leitura confirma o uso efetivo das ferramentas.
+Após conectar, peça ao chat para consultar `bridge_status` e usar `bridge_read` com `tool: "local_projects"` e `argumentsJson: "{}"`. A aprovação OAuth confirma a autorização; uma chamada de leitura confirma o uso efetivo das ferramentas.
+
+## Usar as ferramentas diretamente no dot
+
+A Ponte executa as operações no computador onde o serviço está rodando. O dot envia chamadas MCP: não precisa de terminal próprio para ler/editar arquivos, executar um programa autorizado, usar Playwright ou chamar o Roblox Studio.
+
+1. Atualize a Ponte, reinicie o serviço e confirme **0.9.0** em `bridge_status`.
+2. Em **Conectar IA → Catálogo MCP**, escolha **Compacto (dots)** se quiser apresentar somente a fachada estável. O padrão continua **Completo** para instalações existentes; as novas chamadas funcionam nos dois perfis.
+3. Use **Refresh/Scan Tools** na conexão do ChatGPT e abra uma conversa nova com o dot.
+4. Peça a descoberta por `bridge_list_tools` com `includeSchemas: false`, seguida de `bridge_tool_schema` para o nome escolhido. Use `bridge_read` quando o risco retornado for `read`; use `bridge_invoke` nos demais casos. Ambos recebem `tool`, `argumentsJson` e `idempotencyKey` opcional.
+5. Se houver `jobId` pendente, continue com `bridge_job` usando o mesmo ID. Confirme o resultado antes de apresentar a tarefa como concluída.
+
+O painel inclui uma instrução copiável para esse fluxo. O modo compacto mantém as ferramentas locais, watchers, gerenciamento e upstreams no catálogo dinâmico, inclusive servidores adicionados durante a conversa. Os nomes diretos já conhecidos também continuam chamáveis; o perfil controla a descoberta, não a autorização.
+
+A classificação de leitura é conferida no servidor. Um upstream cadastrado pelo chat continua com risco `execute`, mesmo que anuncie `readOnlyHint: true`. A aprovação automática não amplia `allowWrite`, `allowExec` ou o acesso concedido pelo ChatGPT. Veja [Dots](docs/DOTS.md) para exemplos e o roteiro de validação na própria conversa.
 
 ## Acompanhar uma tarefa externa
 
@@ -166,7 +182,7 @@ npm.cmd start
 
 Preserve a pasta `.ponte` inteira, incluindo `secrets.json`, `oauth.json`, `events.json`, `watchers.json` e backups. O watcher usa a chave da instalação; apagar ou recriar as credenciais isoladamente pode impedir a leitura do estado existente. Não execute duas instâncias sobre o mesmo diretório.
 
-Confira **0.8.0** com `bridge_status` ou `doctor` e atualize o catálogo no cliente: `bridge_watch_wait` deve anunciar máximo de **45000 ms**, e Events deve listar **`ponte.watcher.completed`** junto de `ponte.job.completed`. As três ferramentas `bridge_mcp_*` e as cinco `bridge_watch_*` continuam disponíveis. Se o cliente mantiver o catálogo de ferramentas em cache, use `bridge_list_tools` e `bridge_call`; isso não substitui a atualização da descoberta de Events. Para instalações por ZIP, diretório personalizado, mudança de túnel e recuperação, siga [Operação](docs/OPERACAO.md).
+Confira **0.9.0** com `bridge_status` ou `doctor` e atualize o catálogo no cliente. Verifique `bridge_tool_schema`, `bridge_read` e `bridge_invoke`; `bridge_watch_wait` deve anunciar máximo de **45000 ms**, e Events deve listar **`ponte.watcher.completed`** junto de `ponte.job.completed`. As três ferramentas `bridge_mcp_*` e as cinco `bridge_watch_*` continuam disponíveis. Se o cliente mantiver o catálogo de ferramentas em cache, use `bridge_list_tools` e `bridge_call`; isso não substitui a atualização da descoberta de Events. Para instalações por ZIP, diretório personalizado, mudança de túnel e recuperação, siga [Operação](docs/OPERACAO.md).
 
 ## Desenvolvimento e evidência
 

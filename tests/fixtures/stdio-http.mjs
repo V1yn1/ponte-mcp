@@ -60,7 +60,10 @@ globalThis.fetch = async (input, init = {}) => {
       },
     }), { headers: { 'Content-Type': 'application/json' } });
   }
-  const watchArgs = request.name === 'bridge_watch_wait' ? request.arguments : request.name === 'bridge_call' && request.arguments.tool === 'bridge_watch_wait' ? request.arguments.arguments : undefined;
+  const wrappedWatch = request.arguments?.tool === 'bridge_watch_wait';
+  const watchArgs = request.name === 'bridge_watch_wait' ? request.arguments
+    : request.name === 'bridge_call' && wrappedWatch ? request.arguments.arguments
+    : ['bridge_read', 'bridge_invoke'].includes(request.name) && wrappedWatch ? JSON.parse(request.arguments.argumentsJson) : undefined;
   if (request.name === 'bridge_watch_get') return json(result({ watcherId: request.arguments.watcherId, status: 'succeeded', result: { summary: 'Resultado persistido recuperado.' } }));
   if (watchArgs) {
     const scenario = watchArgs.watcherId.startsWith('00000000-0000-4000-8000-') ? Number(watchArgs.watcherId.slice(-3)) : 0;

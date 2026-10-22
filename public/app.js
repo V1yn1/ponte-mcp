@@ -54,6 +54,7 @@
     jobLoading: false, job: null, jobActions: new Set(), publicUrlDirty: false,
     watcherId: null, watcher: null, watcherLoading: false, watcherRevision: 0, watcherActions: new Set(),
     approvalModeSaving: false, approvalModeRevision: 0,
+    mcpToolExposureSaving: false, mcpToolExposureRevision: 0,
     serverEditing: false, confirmResolve: null, navOpen: false, lastSync: null,
     pendingToken: '', sessionGeneration: 0, serverOriginalUrl: '',
     oauthRequestId: null, oauthRequestSnapshot: '', oauthActions: new Set(), eventActions: new Set(), connectionClient: 'chatgpt'
@@ -200,6 +201,10 @@
     app.approvalModeRevision += 1;
     $('#approval-mode').disabled = false;
     $('#approval-mode').removeAttribute('aria-busy');
+    app.mcpToolExposureSaving = false;
+    app.mcpToolExposureRevision += 1;
+    $('#mcp-tool-exposure').disabled = false;
+    $('#mcp-tool-exposure').removeAttribute('aria-busy');
     app.refreshQueued = false;
     app.refreshToolsQueued = false;
     $('#tool-search').value = '';
@@ -264,6 +269,7 @@
     const token = app.token;
     const generation = app.sessionGeneration;
     const approvalModeRevision = app.approvalModeRevision;
+    const mcpToolExposureRevision = app.mcpToolExposureRevision;
     const refreshIcon = $('#refresh-button .icon');
     if (!silent) refreshIcon.classList.add('busy-spin');
     try {
@@ -271,8 +277,8 @@
       const previousServers = JSON.stringify(app.state?.servers?.map(server => [server.id, server.status, server.toolCount]));
       const state = await request('/admin/state');
       if (token !== app.token || generation !== app.sessionGeneration) return;
-      // A snapshot requested before a policy change may also contain an old queue.
-      if (approvalModeRevision !== app.approvalModeRevision) {
+      // A snapshot requested before a setting change may contain outdated state.
+      if (approvalModeRevision !== app.approvalModeRevision || mcpToolExposureRevision !== app.mcpToolExposureRevision) {
         app.refreshQueued = true;
         return;
       }
@@ -358,7 +364,7 @@
     const state = app.state;
     if (!state) return;
     updateConnectionStatus();
-    $('#sidebar-version').textContent = `Ponte MCP · v${state.version || '0.8.0'}`;
+    $('#sidebar-version').textContent = `Ponte MCP · v${state.version || '0.9.0'}`;
     $('#nav-project-count').textContent = number(state.config?.projects?.length);
     $('#nav-pending-count').textContent = number(state.stats?.pending);
     $('#nav-pending-count').hidden = !state.stats?.pending;
@@ -659,7 +665,22 @@
     }
   }
 
+  function renderMcpToolExposure() {
+    const exposure = app.state?.config?.mcpToolExposure || 'full';
+    const select = $('#mcp-tool-exposure');
+    select.disabled = app.mcpToolExposureSaving;
+    select.setAttribute('aria-busy', String(app.mcpToolExposureSaving));
+    if (!app.mcpToolExposureSaving && document.activeElement !== select) select.value = exposure;
+    const description = app.mcpToolExposureSaving
+      ? 'Salvando catálogo MCP…'
+      : exposure === 'compact'
+        ? 'Apresenta ferramentas de descoberta e chamada. O dot consulta o catálogo completo conforme a tarefa.'
+        : 'Lista diretamente as ferramentas locais e dos MCPs conectados.';
+    if ($('#mcp-tool-exposure-help').textContent !== description) $('#mcp-tool-exposure-help').textContent = description;
+  }
+
   function renderConnect() {
+    renderMcpToolExposure();
     const connection = app.state.connection || {};
     const oauth = connection.oauth || {};
     const pending = Array.isArray(oauth.pending) ? oauth.pending : [];
@@ -1315,6 +1336,7 @@
     else if (action === 'copy-claude-url') await copyText(app.state?.connection?.oauth?.resource);
     else if (action === 'copy-claude-code') await copyText($('#claude-code-command').textContent);
     else if (action === 'copy-api-command') await copyText('node dist/cli.js token api');
+    else if (action === 'copy-dot-instruction') await copyText($('#dot-instruction').textContent);
   });
 
   document.addEventListener('submit', async event => {
@@ -1378,6 +1400,32 @@
         select.disabled = false;
         select.value = app.state?.config?.approvalMode || 'mutations';
         renderState();
+        await refresh();
+      }
+    }
+  });
+
+  $('#mcp-tool-exposure').addEventListener('change', async event => {
+    const select = event.target;
+    if (!app.token || app.mcpToolExposureSaving) return;
+    const mcpToolExposure = select.value;
+    const generation = app.sessionGeneration;
+    app.mcpToolExposureSaving = true;
+    app.mcpToolExposureRevision += 1;
+    renderMcpToolExposure();
+    try {
+      const result = await request('/admin/settings', { method: 'PATCH', body: { mcpToolExposure } });
+      if (generation !== app.sessionGeneration) return;
+      app.state.config.mcpToolExposure = result.mcpToolExposure || mcpToolExposure;
+      toast('Catálogo MCP salvo. Use Refresh/Scan Tools no cliente para atualizar as ferramentas da Ponte.');
+    } catch (error) {
+      if (generation === app.sessionGeneration) handleError(error);
+    } finally {
+      if (generation === app.sessionGeneration) {
+        app.mcpToolExposureSaving = false;
+        app.mcpToolExposureRevision += 1;
+        select.value = app.state?.config?.mcpToolExposure || 'full';
+        renderMcpToolExposure();
         await refresh();
       }
     }

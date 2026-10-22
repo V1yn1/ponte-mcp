@@ -227,6 +227,31 @@ try {
   assert.equal(automaticWrite.status, 'succeeded');
   assert.equal(automaticWrite.approval, 'automatic');
   assert.equal(await readFile(path.join(workspace, 'automatic', 'result.txt'), 'utf8'), 'Modo automático confirmado.');
+
+  stage = 'usar o catálogo compacto e gateways JSON pela mesma conexão OAuth';
+  assert.equal((await adminRequest('/admin/settings', 'PATCH', runtime.store.secrets.adminToken, { mcpToolExposure: 'compact' })).status, 200);
+  const compact = await client.listTools({}, options());
+  assert.equal(compact.tools.length, 12);
+  assert.ok(!compact.tools.some(tool => tool.name === 'local_read_file'));
+  const direct = jsonText(await callTool('bridge_status', {})).directExecution;
+  assert.equal(direct.toolExposure, 'compact');
+  assert.equal(direct.requiresWorkSession, false);
+  assert.equal(direct.requiresCodexSession, false);
+  assert.equal(direct.clientToolAvailability, 'not_observable_by_server');
+  const summary = jsonText(await callTool('bridge_list_tools', { source: 'mcp:smoke', includeSchemas: false }));
+  assert.equal(summary.tools[0].inputSchema, undefined);
+  assert.equal(jsonText(await callTool('bridge_tool_schema', { tool: summary.tools[0].name })).invocation.tool, 'bridge_invoke');
+  const nativeRead = await completed(await callTool('bridge_read', { tool: 'local_read_file', argumentsJson: JSON.stringify({ projectId: 'principal', path: 'automatic/result.txt' }) }));
+  assert.equal(jsonText(nativeRead, 1).content, 'Modo automático confirmado.');
+  const blockedRead = await client.callTool({ name: 'bridge_read', arguments: { tool: summary.tools[0].name, argumentsJson: '{}' } }, undefined, options());
+  assert.equal(blockedRead.isError, true, 'an upstream execute tool cannot enter the read-only gateway');
+  const directArgs = { tool: summary.tools[0].name, argumentsJson: JSON.stringify({ text: 'dot-direto' }), idempotencyKey: 'compiled-dot-json' };
+  const directCall = await completed(await callTool('bridge_invoke', directArgs));
+  assert.equal(directCall.content[1].text, 'smoke:dot-direto');
+  assert.equal(jsonText(await callTool('bridge_invoke', directArgs)).jobId, jsonText(directCall).jobId);
+  assert.equal(jsonText(await callTool('local_projects', {})).status, 'succeeded', 'cached direct tool names remain callable');
+  log('OK: catálogo compacto com 12 ferramentas, descoberta e schema sob demanda, JSON direto, leitura restrita e idempotência pela conexão OAuth.');
+
   assert.equal((await adminRequest('/admin/settings', 'PATCH', runtime.store.secrets.adminToken, { approvalMode: 'mutations' })).status, 200);
   const manualAgain = jsonText(await callTool('local_create_directory', { projectId: 'principal', path: 'manual-again' }));
   assert.equal(manualAgain.status, 'pending_approval');

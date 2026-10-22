@@ -29,6 +29,7 @@ export interface AppConfig {
   apiPort: number;
   publicUrl?: string;
   approvalMode: 'mutations' | 'all' | 'automatic';
+  mcpToolExposure?: 'full' | 'compact';
   projects: ProjectConfig[];
   upstreams: UpstreamConfig[];
 }

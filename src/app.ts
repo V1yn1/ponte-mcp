@@ -88,9 +88,17 @@ export class Application {
   getTools(): ToolDefinition[] { return [...createLocalTools(() => this.store.config, this.store.stateDir), ...(this.watchers ? [createWatcherTool(this.watchers, () => this.store.config.publicUrl ?? this.apiUrl)] : []), ...this.mcpManagement.definitions(), ...this.hub.tools()]; }
   publicStatus() {
     return {
-      name: 'Ponte MCP', version: '0.8.0', paused: this.jobs.paused, approvalMode: this.store.config.approvalMode,
+      name: 'Ponte MCP', version: '0.9.0', paused: this.jobs.paused, approvalMode: this.store.config.approvalMode,
       projects: this.store.config.projects.map(({ id, name, allowWrite, allowExec }) => ({ id, name, allowWrite, allowExec })),
       servers: this.hub.statuses(), toolCount: this.getTools().length,
+      directExecution: {
+        supported: true, executionLocation: 'ponte_host', requiresWorkSession: false, requiresCodexSession: false,
+        toolExposure: this.store.config.mcpToolExposure ?? 'full',
+        catalogTool: 'bridge_list_tools', schemaTool: 'bridge_tool_schema', readTool: 'bridge_read', invokeTool: 'bridge_invoke',
+        argumentEncoding: 'json_object_string', dynamicCatalog: true,
+        clientToolAvailability: 'not_observable_by_server', hostPermissionsApply: true, clientMayDelegate: true,
+        refreshClientAfterUpdate: true,
+      },
       mcpManagement: { supported: true, tools: ['bridge_mcp_list', 'bridge_mcp_add', 'bridge_mcp_reconnect'], approvalPolicy: this.store.config.approvalMode, canReplaceExisting: false, credentials: 'environment_references' },
       events: { supported: Boolean(this.events), protocolVersion: '2026-07-28', event: 'ponte.job.completed', events: ['ponte.job.completed', 'ponte.watcher.completed'], subscriptionRequired: true, deliveryDoesNotProveContinuation: true },
       watchers: { supported: Boolean(this.watchers), triggers: ['signal', 'job'], monitorDurable: true, nativeSchedulerRequired: false, canWakeClosedConversation: false, defaultWaitMs: WATCH_DEFAULT_WAIT_MS, maxWaitMs: WATCH_MAX_WAIT_MS },
@@ -103,7 +111,7 @@ export class Application {
     const tools = this.getTools();
     const counts = (status: string) => jobs.filter(job => job.status === status).length;
     return {
-      name: 'Ponte MCP', version: '0.8.0', paused: this.jobs.paused, startedAt: this.startedAt,
+      name: 'Ponte MCP', version: '0.9.0', paused: this.jobs.paused, startedAt: this.startedAt,
       config, servers: this.hub.statuses(),
       jobs: jobs.slice(0, 50).map(({ result: _result, preview: _preview, arguments: _arguments, ...job }) => ({ ...job, arguments: {} })),
       stats: { tools: tools.length, projects: config.projects.length, pending: counts('pending_approval'), running: counts('running') + counts('queued'), succeeded: counts('succeeded'), failed: counts('failed') },

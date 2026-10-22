@@ -11,6 +11,8 @@ const legacyVersions = new Set(SUPPORTED_PROTOCOL_VERSIONS);
 
 export interface ModernMcpDependencies {
   getTools(): Tool[] | Promise<Tool[]>;
+  /** Discovery profiles do not revoke access to names a client already knows. */
+  getCallableTools?(): Tool[] | Promise<Tool[]>;
   call(name: string, args: Record<string, unknown>): Promise<CallToolResult>;
   events: {
     observeRequest?(method: string): { accepted(): void; rejected(error: unknown): void } | undefined;
@@ -137,8 +139,8 @@ function headerMirrors(schema: unknown): Mirror[] {
   return mirrors;
 }
 
-async function availableTools(deps: ModernMcpDependencies): Promise<Array<{ tool: Tool; mirrors: Mirror[] }>> {
-  const tools = await deps.getTools();
+async function availableTools(deps: ModernMcpDependencies, callable = false): Promise<Array<{ tool: Tool; mirrors: Mirror[] }>> {
+  const tools = await (callable && deps.getCallableTools ? deps.getCallableTools() : deps.getTools());
   return tools.flatMap(tool => {
     try { return [{ tool, mirrors: headerMirrors(tool.inputSchema) }]; }
     catch { return []; } // A malformed upstream definition must not advertise an unusable mirrored header.
@@ -193,7 +195,7 @@ export async function handleModernMcp(req: Request, res: Response, deps: ModernM
     } else if (method === 'tools/call') {
       if (typeof params.name !== 'string' || !params.name || (params.arguments !== undefined && !object(params.arguments))) invalid('Nome e argumentos da ferramenta inválidos.');
       if (decodeHeader(req.headers['mcp-name']) !== params.name) mismatch('Mcp-Name ausente ou divergente do nome da ferramenta.');
-      const entry = (await availableTools(deps)).find(item => item.tool.name === params.name);
+      const entry = (await availableTools(deps, true)).find(item => item.tool.name === params.name);
       if (!entry) invalid('Ferramenta desconhecida ou indisponível.');
       const args = (params.arguments ?? {}) as Record<string, unknown>;
       validateMirrors(req, entry.mirrors, args);

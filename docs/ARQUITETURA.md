@@ -1,6 +1,6 @@
-# Arquitetura da Ponte MCP 0.8.0
+# Arquitetura da Ponte MCP 0.9.0
 
-[Índice da documentação](README.md) · [Referência da API](API.md) · [Segurança](SEGURANCA.md)
+[Índice da documentação](README.md) · [Referência da API](API.md) · [Dots](DOTS.md) · [Segurança](SEGURANCA.md)
 
 A Ponte é um serviço local de um único proprietário. Ela reúne ferramentas de arquivos, execução de comandos, servidores MCP externos, aprovação de trabalhos e acompanhamento durável de tarefas. O cliente de chat fornece o modelo e decide como conduzir a conversa; a Ponte não inclui um modelo nem altera cotas ou custos dos fornecedores.
 
@@ -25,7 +25,7 @@ flowchart TD
     Watch -->|"conclusão de watcher inscrito"| Events
 ```
 
-A autenticação identifica a conexão antes do despacho. As ferramentas locais, as ferramentas de upstreams, `bridge_watch_create` e as três `bridge_mcp_*` passam pelo `JobManager`. Os controles `bridge_status`, `bridge_list_tools`, `bridge_job`, `bridge_cancel` e `bridge_watch_get/list/wait/cancel` têm caminhos próprios; consultar ou aguardar um watcher não cria um trabalho nem ocupa uma vaga de execução. Os métodos de protocolo `events/*` também são tratados diretamente pelo serviço de Events.
+A autenticação identifica a conexão antes do despacho. As ferramentas locais, as ferramentas de upstreams, `bridge_watch_create` e as três `bridge_mcp_*` passam pelo `JobManager`, inclusive quando chamadas por `bridge_read`, `bridge_invoke` ou `bridge_call`. Os controles `bridge_status`, `bridge_list_tools`, `bridge_tool_schema`, `bridge_job`, `bridge_cancel` e `bridge_watch_get/list/wait/cancel` têm caminhos próprios; consultar ou aguardar um watcher não cria um trabalho nem ocupa uma vaga de execução. Os métodos de protocolo `events/*` também são tratados diretamente pelo serviço de Events.
 
 | Componente | Responsabilidade | Implementação |
 |---|---|---|
@@ -57,6 +57,18 @@ A fachada MCP usa **POST com respostas JSON, sem sessão persistente de transpor
 O adaptador moderno anuncia `tools` e `events` e implementa `server/discover`, `tools/list`, `tools/call`, `events/list`, `events/subscribe` e `events/unsubscribe`. Os resultados modernos incluem `resultType: "complete"`. Resources, prompts, sampling e tarefas do protocolo não são anunciados. O adaptador stdio e os clientes upstream continuam no SDK v1; Events está disponível pela fachada HTTP moderna. A ausência de sessão HTTP não elimina o estado da aplicação em disco ou na memória.
 
 O modo `stdio` é um adaptador do serviço já iniciado: lê o estado local, autentica-se com o token API e encaminha catálogo e chamadas para `/v1/mcp/tools` e `/v1/mcp/call`. Ele não inicia uma segunda instância independente da Ponte. A REST de Actions usa um OpenAPI com **nove operações**, cinco para status/catálogo/jobs e quatro para controles de watchers. A criação do watcher usa a operação existente `createJob`, com `tool: "bridge_watch_create"`; as três ferramentas `bridge_mcp_*` também usam `createJob`. Não há novas operações de administração no OpenAPI. Consulte [API.md](API.md) e [INTEGRACOES.md](INTEGRACOES.md).
+
+## Catálogo anunciado e execução pelo gateway
+
+Na 0.9.0, `mcpToolExposure` separa a exposição inicial de descritores do catálogo real. O padrão `full` mantém as ferramentas individuais anunciadas. O perfil opcional `compact` anuncia oito ferramentas gerais (`bridge_status`, `bridge_list_tools`, `bridge_tool_schema`, `bridge_read`, `bridge_invoke`, `bridge_call`, `bridge_job`, `bridge_cancel`) e os quatro controles de watchers: **12 descritores**. A seleção fica em **Conectar IA → Catálogo MCP**, usa o `PATCH /admin/settings` existente e persiste em `config.json`.
+
+O catálogo real continua reunindo as definições de `Application` e os controles de watchers. `bridge_list_tools` consulta esse catálogo nos dois perfis, com `includeSchemas: true` por padrão e opção de resumo sem schemas. `bridge_tool_schema` resolve o nome exato e devolve o descritor atual diretamente, acrescido da orientação `invocation`. O perfil não muda a resolução de nomes conhecidos, os limites de autorização ou as ferramentas permitidas do upstream. Uma chamada direta conhecida continua válida em `compact`.
+
+`bridge_read` e `bridge_invoke` decodificam `argumentsJson` como objeto JSON e encaminham ao mesmo fluxo de despacho de `bridge_call`, que mantém `arguments` como objeto. A string JSON e o corpo HTTP continuam limitados a 1 MiB. Para alvos executáveis, o `JobManager` aplica o schema final, a política de aprovação, as permissões e a assinatura da definição. Os controles de watchers conservam seu caminho direto e validam seus próprios argumentos.
+
+`bridge_read` exige risco `read` e preserva essa restrição durante a fila: a mudança de uma definição não autoriza escrita ou execução por uma solicitação de leitura. `bridge_invoke` tem anotações conservadoras porque encaminha também mutações e comandos; o risco real do alvo continua determinando o tratamento pelo `JobManager`. O resultado conserva o envelope MCP e seus blocos, inclusive imagens e dados estruturados, dentro dos limites existentes.
+
+Não há uma API exclusiva para dots, uma configuração `defer_loading` ou um executor Work/Codex dentro desse caminho. `bridge_status.directExecution` declara execução em `ponte_host`, ausência de dependência dessas sessões e os controles do gateway. Também declara que a disponibilidade no cliente não é observável pelo servidor e que o cliente pode delegar. Essa separação importa porque a [documentação de dots](https://learn.chatgpt.com/docs/dots/computers-and-apps) condiciona plugins a conta, permissões e ambiente, e a [documentação de tarefas](https://learn.chatgpt.com/docs/dots/tasks-and-memory) permite outras threads. O guia [Dots](DOTS.md) define a verificação no cliente.
 
 ## Jobs: aprovação, execução e espera
 
@@ -92,7 +104,7 @@ As operações de upstream do chat e as rotas administrativas de cadastro/ediç�
 
 Uma conexão lenta pode consumir o prazo de jobs de gerenciamento que aguardam essa fila. O timeout máximo de 120 segundos do JobManager continua valendo; checagens antes da gravação impedem que um job já cancelado enquanto aguardava inicie seu cadastro posteriormente. O fechamento do serviço bloqueia novas mutações, aguarda a fila e só depois encerra definitivamente o hub.
 
-O catálogo consulta `hub.tools()` a cada chamada. `bridge_list_tools` aceita filtro por `source`, e `bridge_call` encontra a definição atual quando executa. Assim, um cliente com o `tools/list` inicial em cache pode cadastrar um servidor, consultar `source: "mcp:ID"` e usar seus nomes atuais na mesma conversa. A fachada HTTP permanece stateless; não anuncia notificações de catálogo por um canal persistente. O guia [MCPs pelo chat](MCPS-PELO-CHAT.md) detalha o uso e os limites.
+O catálogo consulta `hub.tools()` a cada chamada. `bridge_list_tools` aceita filtro por `source`; `bridge_tool_schema` e os gateways resolvem a definição atual. Assim, um cliente com o `tools/list` inicial em cache ou com o perfil compacto pode cadastrar um servidor, consultar `source: "mcp:ID"` e usar seus nomes atuais na mesma conversa. A fachada HTTP permanece stateless; não anuncia notificações de catálogo por um canal persistente. O guia [MCPs pelo chat](MCPS-PELO-CHAT.md) detalha o uso e os limites.
 
 ## Watchers: acompanhamento nativo e durável
 
@@ -153,7 +165,7 @@ O diretório padrão é `.ponte` na instalação, substituível por `--state-dir
 
 | Estado | Persistência | Consequência operacional |
 |---|---|---|
-| `config.json` | Projetos, upstreams, portas, origem e política de aprovação | Reutilizar mantém a configuração |
+| `config.json` | Projetos, upstreams, portas, origem, política de aprovação e perfil do catálogo MCP | Reutilizar mantém a configuração; `mcpToolExposure` exige cuidado ao voltar para uma versão anterior |
 | `secrets.json` | Tokens administrativo/API; token API também é a chave dos sinais | Preservar junto do estado de watchers |
 | `oauth.json` | Clientes, grants e hashes de tokens | Reutilizar mantém conexões OAuth ainda válidas |
 | `watchers.json` | Acompanhamentos e resultados limitados | Sobrevive à chamada e ao reinício; não reinicia executores |

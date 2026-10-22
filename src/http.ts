@@ -174,10 +174,11 @@ export function createHttpApps(runtime: Application): { admin: Express; api: Exp
     runtime.jobs.setPaused(paused); res.json({ ok: true, paused });
   });
   admin.patch('/admin/settings', async (req, res) => {
-    const settings = z.object({ approvalMode: z.enum(['mutations', 'all', 'automatic']).optional(), publicUrl: z.union([publicUrlSchema, z.literal(''), z.null()]).optional() }).strict().parse(req.body);
+    const settings = z.object({ approvalMode: z.enum(['mutations', 'all', 'automatic']).optional(), mcpToolExposure: z.enum(['full', 'compact']).optional(), publicUrl: z.union([publicUrlSchema, z.literal(''), z.null()]).optional() }).strict().parse(req.body);
     let changedOrigin = false;
     await runtime.store.update(config => {
       if (settings.approvalMode) config.approvalMode = settings.approvalMode;
+      if (settings.mcpToolExposure) config.mcpToolExposure = settings.mcpToolExposure;
       if (settings.publicUrl !== undefined) {
         const nextOrigin = settings.publicUrl ? new URL(settings.publicUrl).origin : undefined;
         changedOrigin = nextOrigin !== config.publicUrl;
@@ -188,7 +189,9 @@ export function createHttpApps(runtime: Application): { admin: Express; api: Exp
     });
     if (changedOrigin) await runtime.oauth.publicUrlChanged();
     const approvals = settings.approvalMode !== undefined ? runtime.jobs.reconcileApprovalMode() : undefined;
-    res.json({ ok: true, approvalMode: runtime.store.config.approvalMode, ...(approvals ? { approvals } : {}) });
+    res.json({ ok: true, approvalMode: runtime.store.config.approvalMode,
+      ...(settings.mcpToolExposure !== undefined ? { mcpToolExposure: runtime.store.config.mcpToolExposure ?? 'full' } : {}),
+      ...(approvals ? { approvals } : {}) });
   });
 
   admin.post('/admin/projects', async (req, res) => {
@@ -256,7 +259,7 @@ export function createHttpApps(runtime: Application): { admin: Express; api: Exp
     res.json(watcherResult(await runtime.watchers.wait(runtime.apiPrincipal, watcherId, params.data.waitMs, requestSignal(req, res))));
   });
   api.post('/v1/watchers/:id/cancel', async (req, res) => { res.json(watcherResult(await runtime.watchers.cancel(runtime.apiPrincipal, z.string().uuid().parse(req.params.id)))); });
-  api.get('/v1/mcp/tools', (_req, res) => { res.json({ tools: publicTools(runtime) }); });
+  api.get('/v1/mcp/tools', (_req, res) => { res.json({ tools: publicTools(runtime, false, runtime.store.config.mcpToolExposure ?? 'full') }); });
   api.post('/v1/mcp/call', async (req, res) => {
     const value = z.object({ name: z.string().min(1).max(128), arguments: z.record(z.unknown()).default({}) }).strict().parse(req.body);
     res.json(await callGateway(runtime, value.name, value.arguments, runtime.apiPrincipal, requestSignal(req, res)));
@@ -265,10 +268,11 @@ export function createHttpApps(runtime: Application): { admin: Express; api: Exp
     const grantId = req.auth?.extra?.grantId;
     if (req.auth && typeof grantId !== 'string') { res.status(401).json({ error: 'Identidade da conexão indisponível.' }); return; }
     const principal = typeof grantId === 'string' ? 'oauth:' + grantId : runtime.apiPrincipal;
-    const getTools = () => publicTools(runtime, Boolean(runtime.store.config.publicUrl));
+    const getTools = () => publicTools(runtime, Boolean(runtime.store.config.publicUrl), runtime.store.config.mcpToolExposure ?? 'full');
+    const getCallableTools = () => publicTools(runtime, Boolean(runtime.store.config.publicUrl));
     const disconnected = requestSignal(req, res);
     const call = (name: string, args: Record<string, unknown>, signal?: AbortSignal) => callGateway(runtime, name, args, principal, signal ? AbortSignal.any([disconnected, signal]) : disconnected);
-    if (await handleModernMcp(req, res, { getTools, call, events: runtime.events, principal, version: '0.8.0', instructions: SERVER_INSTRUCTIONS })) return;
+    if (await handleModernMcp(req, res, { getTools, getCallableTools, call, events: runtime.events, principal, version: '0.9.0', instructions: SERVER_INSTRUCTIONS })) return;
     const server = makeMcpServer(getTools, call);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     try { await server.connect(transport); await transport.handleRequest(req, res, req.body); }

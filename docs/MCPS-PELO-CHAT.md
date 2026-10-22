@@ -1,4 +1,4 @@
-# Adicionar MCPs pelo chat — Ponte MCP 0.8.0
+# Adicionar MCPs pelo chat — Ponte MCP 0.9.0
 
 [Índice da documentação](README.md) · [API e ferramentas](API.md) · [Integrações](INTEGRACOES.md) · [Segurança](SEGURANCA.md)
 
@@ -6,9 +6,11 @@ A Ponte permite que um cliente autorizado **cadastre e conecte outro servidor MC
 
 O fluxo registra um processo stdio ou um endereço MCP HTTP/SSE, tenta conectar e descobre suas ferramentas. Não é necessário reiniciar a Ponte para aplicar um cadastro. Ela não inclui um catálogo público de pacotes, um instalador de programas do sistema ou login OAuth interativo dos servidores externos. O comando configurado pode baixar dependências, como acontece ao usar `npx`; a origem, os requisitos e a finalidade precisam ser conhecidos antes da solicitação.
 
+No perfil **Compacto (dots)**, os três nomes de gerenciamento são descobertos por `bridge_list_tools` com `source: "bridge:mcps"`. Consulte `bridge_tool_schema` e chame `bridge_read` para a listagem ou `bridge_invoke` para cadastro/reconexão, enviando `tool` e `argumentsJson` (string do objeto mostrado nos exemplos). `bridge_call` continua disponível com `arguments` como objeto. O perfil e os novos gateways estão descritos em [Dots](DOTS.md); não exigem sessão Work/Codex para executar na Ponte.
+
 ## Pedir em linguagem natural
 
-Depois de atualizar a Ponte para **0.8.0**, confirme `bridge_status` e habilite sua conexão no chat. Um pedido possível é:
+Depois de atualizar a Ponte para **0.9.0**, confirme `bridge_status` e habilite sua conexão no chat. Um pedido possível é:
 
 ```text
 Adicione o Playwright MCP à minha Ponte e use-o para testar a página do projeto.

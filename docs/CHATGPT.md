@@ -1,16 +1,17 @@
-# Conectar a Ponte MCP 0.8.0 ao ChatGPT
+# Conectar a Ponte MCP 0.9.0 ao ChatGPT
 
-[Índice da documentação](README.md) · [Instalação e operação](OPERACAO.md) · [API e ferramentas](API.md) · [Claude](CLAUDE.md)
+[Índice da documentação](README.md) · [Instalação e operação](OPERACAO.md) · [API e ferramentas](API.md) · [Dots](DOTS.md) · [Claude](CLAUDE.md)
 
-A Ponte oferece OAuth para a conexão MCP do ChatGPT, watchers para acompanhar tarefas externas e MCP Events para entregar avisos de jobs e watchers ao cliente. O usuário autoriza a conexão no painel do próprio computador e pode revogá-la depois. O ChatGPT não recebe a credencial de administração.
+A Ponte oferece OAuth para a conexão MCP do ChatGPT, descoberta dinâmica de ferramentas, execução por gateway, watchers e MCP Events. A 0.9.0 acrescenta um perfil compacto opcional para o catálogo inicial. O usuário autoriza a conexão no painel do próprio computador e pode revogá-la depois. O ChatGPT não recebe a credencial de administração.
 
 | Necessidade | Recurso da Ponte | Limite principal |
 |---|---|---|
+| Usar o catálogo da Ponte em um dot | `bridge_list_tools`, `bridge_tool_schema`, `bridge_read` e `bridge_invoke` | O host precisa disponibilizar o plugin e suas ferramentas; veja [Dots](DOTS.md) |
 | Chamar ferramentas e conferir uma execução | MCP e `bridge_job` | A espera ocorre durante uma chamada ativa |
 | Saber quando o executor terminou uma tarefa externa | Watcher `signal` e `bridge_watch_wait` | O executor precisa enviar o recibo; o watcher não desperta um chat encerrado |
 | Receber um aviso quando um job ou watcher terminar | `ponte.job.completed` ou `ponte.watcher.completed` por MCP Events | O cliente precisa oferecer Events, criar a assinatura e processar o aviso; recebimento HTTP não prova continuação |
 
-Este roteiro corresponde à **0.8.0**. As instruções externas foram conferidas em **22 de outubro de 2026**. [Validação](VALIDACAO.md#recuperação-de-esperas-e-eventos-de-watchers--080) separa o relato de uma tarefa externa concluída, a recuperação real do mesmo watcher, os testes locais e o limite da descoberta no cliente instalado. A conexão consultada ainda anunciou a versão 0.6.0 e somente o evento de job; a retomada após um evento de watcher continua sem comprovação real. As permissões da conta e do workspace permanecem requisitos externos à Ponte.
+Este roteiro corresponde à **0.9.0**. As instruções externas foram conferidas em **22 de outubro de 2026**. A chamada real consultada nessa data ainda anunciou `version: "0.6.0"`, `approvalMode: "automatic"` e `toolCount: 62`; não comprova a atualização do serviço nem execução da 0.9.0 no dot. O [registro histórico da 0.8.0](VALIDACAO.md#recuperação-de-esperas-e-eventos-de-watchers--080) distingue a recuperação de watcher da retomada de conversa ainda não comprovada. As permissões da conta e do workspace permanecem requisitos externos à Ponte.
 
 ## 1. Preparar a API HTTPS
 
@@ -32,7 +33,7 @@ ngrok http 4318
 
 Use a origem HTTPS exibida pelo ngrok como **URL pública da API** no painel e acrescente `/mcp` somente no endereço cadastrado no ChatGPT. Se o ngrok apresentar seu aviso de visita ao abrir a página, prossiga para o site e mantenha a página de autorização aberta.
 
-A correção introduzida na versão **0.2.1**, mantida na 0.8.0, preserva os cookies da própria origem ao consultar a decisão e envia o cabeçalho `ngrok-skip-browser-warning` nessa consulta, conforme a [documentação oficial do ngrok](https://ngrok.com/docs/pricing-limits/free-plan-limits#removing-the-interstitial-page). Isso evita que a página intermediária do túnel seja interpretada como o status OAuth. A página também informa quando recebe HTML, erro HTTP, dados inválidos ou falha de rede.
+A correção introduzida na versão **0.2.1**, mantida na 0.9.0, preserva os cookies da própria origem ao consultar a decisão e envia o cabeçalho `ngrok-skip-browser-warning` nessa consulta, conforme a [documentação oficial do ngrok](https://ngrok.com/docs/pricing-limits/free-plan-limits#removing-the-interstitial-page). Isso evita que a página intermediária do túnel seja interpretada como o status OAuth. A página também informa quando recebe HTML, erro HTTP, dados inválidos ou falha de rede.
 
 Antes da correção da 0.2.1, a consulta descartava os cookies e escondia essas falhas atrás de “Aguardando a Ponte responder”. Esse comportamento pode impedir a página de perceber uma aprovação que já ocorreu no painel.
 
@@ -84,13 +85,24 @@ O pedido expira em 10 minutos. Caso expire, inicie a conexão novamente no ChatG
 Conclua **Create as a plugin** no ChatGPT, confira as ferramentas descobertas e instale o plugin. Abra uma conversa, use `@` para selecionar a Ponte e envie:
 
 ```text
-Use a Ponte MCP para consultar bridge_status e depois local_projects.
+Use a Ponte MCP para consultar bridge_status e depois chamar
+local_projects por bridge_read com argumentsJson igual a "{}".
 Mostre apenas os projetos retornados pelas ferramentas.
 ```
 
 O teste está concluído quando o ChatGPT executa a ferramenta e devolve os dados da sua ponte. Uma página de consentimento aprovada, sozinha, não demonstra que a chamada MCP funcionou. Consultar ou cancelar um trabalho exige a mesma autorização OAuth que o criou; o painel administrativo consegue acompanhar todas as execuções. Uma conexão nova não herda os trabalhos da autorização anterior.
 
 Na política padrão, solicite a criação de um arquivo de teste em um projeto autorizado. A chamada retorna `pending_approval`; revise o trabalho em **Execuções** no painel e aprove. O chat pode aguardar o mesmo trabalho com `bridge_job` e `waitMs: 25000`, conforme a seção abaixo. No modo automático, a chamada já segue para execução. Considere a operação concluída somente quando o resultado confirmar o sucesso.
+
+### Usar em um dot
+
+A [documentação de dots](https://learn.chatgpt.com/docs/dots/computers-and-apps) permite o uso de plugins compatíveis instalados e habilitados, sujeito à conta, às permissões e ao ambiente. Na Ponte, o fluxo é consultar o catálogo, obter o schema do alvo e chamá-lo por `bridge_read` ou `bridge_invoke`. O mesmo `/mcp` e a mesma autorização OAuth atendem esse fluxo.
+
+Em **Conectar IA → Catálogo MCP**, `full` mantém todos os descritores anunciados e é o padrão. A opção `compact` anuncia 12: oito ferramentas gerais e quatro controles de watchers. O catálogo real continua acessível por `bridge_list_tools`, inclusive para criação de watchers, gerenciamento MCP, ferramentas locais e upstreams. Nomes diretos já conhecidos continuam chamáveis; o perfil não concede nem remove permissões.
+
+Depois de trocar o perfil, use **Refresh/Atualizar** na conexão e confira `bridge_status.directExecution.toolExposure`. Os campos `requiresWorkSession: false` e `requiresCodexSession: false` descrevem a execução no servidor. O mesmo objeto informa `clientToolAvailability: "not_observable_by_server"` e `clientMayDelegate: true`: não é uma prova de disponibilidade no dot nem uma garantia sobre delegação do ChatGPT.
+
+O guia [Usar a Ponte com dots](DOTS.md) contém a instrução copiável, edição com hash, chamadas de upstream por schema real e o teste de aceitação no dot. A execução da 0.9.0 nesse cliente permanece **não verificada** até esse roteiro produzir evidência.
 
 ### Aprovar automaticamente e aguardar o resultado
 
@@ -110,29 +122,29 @@ Essa espera funciona durante o turno ativo e **não reabre uma conversa encerrad
 
 ## Adicionar MCPs à Ponte durante a conversa
 
-A versão 0.8.0 oferece `bridge_mcp_list`, `bridge_mcp_add` e `bridge_mcp_reconnect`. Você pode pedir “adicione o Playwright à Ponte para testar este projeto”. O chat também pode identificar uma capacidade necessária ao pedido, conferir as conexões existentes e propor um cadastro com configuração oficial e motivo concreto. A aprovação segue a política já escolhida no painel: revisão em `mutations`/`all`, execução em `automatic`.
+A Ponte oferece `bridge_mcp_list`, `bridge_mcp_add` e `bridge_mcp_reconnect`. Você pode pedir “adicione o Playwright à Ponte para testar este projeto”. O chat também pode identificar uma capacidade necessária ao pedido, conferir as conexões existentes e propor um cadastro com configuração oficial e motivo concreto. A aprovação segue a política já escolhida no painel: revisão em `mutations`/`all`, execução em `automatic`.
 
 A solicitação aparece em **Execuções**; depois de aprovada, o servidor é salvo em **Conexões MCP** e a Ponte tenta conectá-lo. `registered: true` confirma o cadastro; somente `server.status: "connected"` confirma a conexão. Uma falha mantém o cadastro para correção. O chat não substitui IDs existentes com outra configuração, não altera a política nem obtém credenciais administrativas.
 
-Se o ChatGPT ainda mantiver a listagem inicial em cache, peça `bridge_list_tools` com `search: "bridge_mcp"` para descobrir o gerenciamento e chame-o por `bridge_call`. O schema atual também aceita `source: "bridge:mcps"` para selecionar essa origem. Após adicionar, use `source: "mcp:ID"` para encontrar as ferramentas do novo servidor e invocá-las pelo mesmo wrapper. Atualizar metadados permite que o cliente também exponha os nomes diretamente, mas não é necessário para esse caminho dinâmico. O guia [MCPs pelo chat](MCPS-PELO-CHAT.md) contém o contrato e exemplos.
+Se o ChatGPT mantiver a listagem inicial em cache ou usar o perfil compacto, peça `bridge_list_tools` com `source: "bridge:mcps"` e `includeSchemas: false`. Obtenha o contrato escolhido por `bridge_tool_schema`; use `bridge_read` para a listagem e `bridge_invoke` para cadastro/reconexão, com `argumentsJson` conforme o schema. Depois, consulte `source: "mcp:ID"`, substituindo `ID` pelo servidor real, e invoque o nome retornado. `bridge_call` continua aceitando `arguments` como objeto. O guia [MCPs pelo chat](MCPS-PELO-CHAT.md) contém os contratos de gerenciamento preservados nesta versão.
 
 ## 6. Acompanhar tarefas externas na própria Ponte
 
-A versão **0.8.0** expõe `bridge_watch_create`, `bridge_watch_get`, `bridge_watch_list`, `bridge_watch_wait` e `bridge_watch_cancel`. Depois de atualizar a instalação, abra a conexão em **Plugins**, selecione **Refresh/Atualizar**, confira esses nomes e comece uma nova conversa. A criação passa pela fila e pela política de aprovação; get, list, wait e cancel são controles diretos e não ocupam essa fila.
+O fluxo de watchers da **0.8.0** usa `bridge_watch_create`, `bridge_watch_get`, `bridge_watch_list`, `bridge_watch_wait` e `bridge_watch_cancel` e permanece na 0.9.0. Depois de atualizar, use **Plugins → Refresh/Atualizar**. Em `compact`, a criação fica no catálogo real para chamada por `bridge_invoke`; os quatro controles permanecem anunciados diretamente. A criação passa pela fila e pela política de aprovação; get, list, wait e cancel não ocupam essa fila.
 
 Para uma demanda delegada ao Claude em tmux, crie um watcher `signal` antes do envio, configure o produtor com `callback.url`, `callback.token` e o mesmo `runId`, envie a demanda uma única vez e chame `bridge_watch_wait`. O retorno do comando que enviou teclas não comprova conclusão do trabalho. O executor deve sinalizar `succeeded`, `failed` ou `needs_input` quando houver resultado real.
 
 Use o watcher nativo, sem criar agendamento no ChatGPT ou Claude. Cada espera usa **25000 ms** por padrão e no máximo **45000 ms**. Ao retornar `waiting`, mantenha o turno ativo e repita a espera de 25000 ms pelo mesmo ID até terminal ou limite concreto do cliente. `timeoutMs` define o prazo total desde a criação (padrão 1 hora, máximo 7 dias), registrado em `expiresAt`; as esperas não o renovam.
 
-Se ocorrer timeout, desconexão ou falha de comunicação, consulte `bridge_watch_get` com o mesmo `watcherId` antes de voltar a esperar. A 0.8.0 fornece recuperação estruturada quando consegue devolver o erro, sem inventar um estado. `waitMs` acima de 45000 também é rejeitado com essa orientação, sem ajuste silencioso. Erros de autenticação ou registro não encontrado pedem conferir a identidade e o ID, sem retry cego, recriação ou reenvio da tarefa.
+Se ocorrer timeout, desconexão ou falha de comunicação, consulte `bridge_watch_get` com o mesmo `watcherId` antes de voltar a esperar. A Ponte fornece recuperação estruturada quando consegue devolver o erro, sem inventar um estado. `waitMs` acima de 45000 também é rejeitado com essa orientação, sem ajuste silencioso. Erros de autenticação ou registro não encontrado pedem conferir a identidade e o ID, sem retry cego, recriação ou reenvio da tarefa.
 
 Informe `succeeded` ou `failed` ao usuário com a evidência pertinente. `needs_input` é terminal: apresente a pendência e peça intervenção, sem continuar o loop; uma nova etapa explicitamente autorizada usa outro watcher. `expired` informa que o prazo acabou, sem provar falha do executor. O painel **Acompanhamentos** mostra os resultados. Consulte [Watchers](WATCHERS.md) para o roteiro completo.
 
-Nesse caso, o callback recebe dados **do executor para a Ponte**. Em MCP Events, a Ponte envia dados para um callback fornecido pelo cliente. A 0.8.0 anuncia `ponte.watcher.completed` para o estado terminal do acompanhamento. Assinar o `jobId` de `bridge_watch_create` acompanha somente a criação, e assinar o job de envio ao tmux acompanha somente o envio. `monitorDurable: true` e `canWakeClosedConversation: false` permanecem no contrato, inclusive após uma entrega de Events aceita por HTTP.
+Nesse caso, o callback recebe dados **do executor para a Ponte**. Em MCP Events, a Ponte envia dados para um callback fornecido pelo cliente. Desde a 0.8.0, a Ponte anuncia `ponte.watcher.completed` para o estado terminal do acompanhamento. Assinar o `jobId` de `bridge_watch_create` acompanha somente a criação, e assinar o job de envio ao tmux acompanha somente o envio. `monitorDurable: true` e `canWakeClosedConversation: false` permanecem no contrato, inclusive após uma entrega de Events aceita por HTTP.
 
 ## 7. Receber um aviso e continuar a tarefa
 
-Na 0.8.0, a Ponte anuncia dois eventos com filtros obrigatórios:
+Desde a 0.8.0, a Ponte anuncia dois eventos com filtros obrigatórios:
 
 | Evento | Argumentos de inscrição | Consulta após o aviso |
 |---|---|---|
@@ -145,7 +157,7 @@ Segundo a [documentação de MCP Events da OpenAI](https://developers.openai.com
 
 No ChatGPT, a inscrição e a entrega usam o mecanismo do host de tarefas acionadas por eventos. Esse fluxo opcional entrega o aviso por webhook; o watcher, o recibo do executor e o prazo total continuam na Ponte. Não substitua o acompanhamento nativo por tarefas com horário ou polling do chat.
 
-1. Atualize a instalação, reinicie a Ponte e confirme **0.8.0** no painel.
+1. Atualize a instalação, reinicie a Ponte e confirme **0.9.0** no painel.
 2. Na conexão da Ponte em **Plugins**, selecione **Refresh/Atualizar**. Confira as ferramentas e os dois eventos, incluindo **`ponte.watcher.completed`**. Uma instalação que ainda anuncia só o evento de job não prova suporte ao novo evento.
 3. Abra uma **nova conversa Work** compatível e selecione a Ponte com `@`, para usar o catálogo atualizado.
 4. Para uma tarefa externa, crie e configure o watcher conforme a seção anterior; guarde seu `watcherId`. Para uma ferramenta da Ponte, use o `jobId` retornado pela própria execução.
@@ -165,7 +177,7 @@ watcher para recuperar esta etapa.
 
 Cada assinatura cobre somente o registro indicado. Para um job, use `ponte.job.completed` com `jobId` e consulte `bridge_job` após o aviso. Uma nova etapa autorizada com outro registro exige sua própria assinatura; consultas de status não geram outras assinaturas. Não copie callbacks nem segredos para o chat ou para o painel: esses campos pertencem à integração entre os dois serviços.
 
-**Encerrar aviso** cancela a inscrição, sem cancelar o job ou watcher. **Recebido pelo cliente** registra uma resposta HTTP 2xx; o processamento pelo ChatGPT é assíncrono, e a entrega não confirma uma resposta da conversa. Sem uma assinatura ativa, continue as esperas de 25000 ms do watcher durante o turno ativo ou consulte o mesmo ID ao retornar. A 0.8.0 mantém `canWakeClosedConversation: false` até haver teste efetivo dessa retomada no cliente.
+**Encerrar aviso** cancela a inscrição, sem cancelar o job ou watcher. **Recebido pelo cliente** registra uma resposta HTTP 2xx; o processamento pelo ChatGPT é assíncrono, e a entrega não confirma uma resposta da conversa. Sem uma assinatura ativa, continue as esperas de 25000 ms do watcher durante o turno ativo ou consulte o mesmo ID ao retornar. A 0.9.0 mantém `canWakeClosedConversation: false` até haver teste efetivo dessa retomada no cliente.
 
 Assinaturas e entregas pendentes persistem entre reinícios. Resultados dos trabalhos acompanhados também são retidos por prazo limitado para consulta pela mesma conexão; operações interrompidas não são reenviadas. O contrato, os limites e o tratamento de falhas estão em [MCP-EVENTS.md](MCP-EVENTS.md).
 
@@ -185,9 +197,9 @@ Ao vencer o prazo de renovação, conecte novamente pelo ChatGPT e autorize no p
 
 Pedidos aguardando decisão e códigos OAuth ainda não trocados ficam em memória. Se o serviço reiniciar durante a autorização, recomece esse fluxo no ChatGPT. Conexões já concluídas usam o estado persistido em `oauth.json`.
 
-Para atualizar uma instalação clonada do GitHub, siga [Instalação e operação](OPERACAO.md). Preserve o mesmo diretório de estado e confira **0.8.0** no painel. Projetos, política de aprovação e conexões OAuth já concluídas persistem; não recrie uma conexão que continua funcionando. Se havia um pedido de autorização ainda em andamento quando a Ponte reiniciou, inicie somente esse fluxo novamente e compare o novo código nas duas telas.
+Para atualizar uma instalação clonada do GitHub, siga [Instalação e operação](OPERACAO.md). Preserve o mesmo diretório de estado e confira **0.9.0** no painel. Projetos, política de aprovação e conexões OAuth já concluídas persistem; não recrie uma conexão que continua funcionando. Se havia um pedido de autorização ainda em andamento quando a Ponte reiniciou, inicie somente esse fluxo novamente e compare o novo código nas duas telas.
 
-Abra a conexão da Ponte em **Plugins → Refresh/Atualizar**, confira `bridge_mcp_list/add/reconnect`, o máximo de 45000 ms no schema de `bridge_watch_wait` e os eventos `ponte.job.completed` e `ponte.watcher.completed`. Teste uma chamada em nova conversa. Atualizar metadados não exige nova autorização OAuth enquanto a conexão permanecer válida. Ao mudar a origem HTTPS, atualize `publicUrl` e configure a conexão para a nova URL: emissor, recurso e destino dos tokens dependem desse endereço. As assinaturas vinculadas à autorização da origem anterior deixam de entregar e precisam ser recriadas pela nova conexão.
+Abra a conexão da Ponte em **Plugins → Refresh/Atualizar** e confira `bridge_tool_schema`, `bridge_read` e `bridge_invoke`. Em `full`, os nomes de gerenciamento e criação de watchers aparecem diretamente; em `compact`, descubra-os por `bridge_list_tools`. Confira também o máximo de 45000 ms em `bridge_watch_wait` e os eventos `ponte.job.completed` e `ponte.watcher.completed`. Teste em nova conversa e, para dots, no cliente pretendido. Atualizar metadados não exige novo OAuth enquanto a autorização permanecer válida. Ao mudar a origem HTTPS, atualize `publicUrl` e configure a conexão para a nova URL: emissor, recurso e tokens dependem desse endereço. As assinaturas da origem anterior deixam de entregar e precisam ser recriadas pela nova conexão.
 
 ## Resolver problemas
 
@@ -200,7 +212,7 @@ Abra a conexão da Ponte em **Plugins → Refresh/Atualizar**, confira `bridge_m
 | A autorização pede uma senha/token da Ponte | Use o login apenas no painel local; confirme que abriu a origem configurada e o fluxo descrito neste guia |
 | O pedido não aparece no painel | Verifique se navegador, túnel e painel apontam para a mesma instância e o mesmo diretório de estado |
 | Código de verificação expirou ou não coincide | Rejeite o pedido incorreto e inicie uma nova autorização |
-| A aprovação ocorreu, mas a página continua em “Carregando…” ou “Aguardando a Ponte responder” | Atualize para 0.8.0, que inclui a correção da 0.2.1, e recomece o pedido OAuth que ficou incompleto; confira o código nas duas telas antes de aprovar |
+| A aprovação ocorreu, mas a página continua em “Carregando…” ou “Aguardando a Ponte responder” | Atualize para 0.9.0, que inclui a correção da 0.2.1, e recomece o pedido OAuth que ficou incompleto; confira o código nas duas telas antes de aprovar |
 | A página informa que o túnel devolveu uma página inesperada | A consulta recebeu uma página intermediária, em vez do JSON da Ponte; confira o ngrok, o encaminhamento para a API 4318 e a URL pública configurada |
 | A página informa um erro HTTP | Confira o número exibido e se a API e o túnel continuam ativos; a tela tenta consultar novamente enquanto o pedido estiver válido |
 | A página informa falha de rede ou demora na resposta | Confira a conexão, o processo da Ponte e o túnel; se o serviço reiniciou, recomece a autorização no ChatGPT |
@@ -208,9 +220,11 @@ Abra a conexão da Ponte em **Plugins → Refresh/Atualizar**, confira `bridge_m
 | `invalid_client` após reiniciar | Confira se o processo usa o mesmo `.ponte/oauth.json`; não recrie o estado entre reinícios |
 | Token recusado após mudar a URL | O token está vinculado ao recurso e emissor anteriores; conecte de novo usando a nova origem |
 | Uma escrita está pendente | Confira `approvalMode` em `bridge_status`; em `mutations` ou `all`, aprove o trabalho em **Execuções** e consulte o mesmo `jobId` |
-| O chat terminou a resposta antes da aprovação | Para avisos futuros, use Work compatível e confirme uma assinatura em **Avisos de conclusão**; sem assinatura, peça a consulta do mesmo `jobId` |
-| MCP cadastrado, mas as ferramentas novas não aparecem no cliente | Use `bridge_list_tools` com `source: "mcp:ID"` e `bridge_call`; confira o status da conexão e, para nomes diretos na interface, atualize os metadados |
-| Ferramentas antigas, `waitMs` ausente ou evento não listado | Use Refresh/Atualizar na conexão e abra nova conversa; confirme a versão 0.8.0 e a origem da Ponte |
+| O chat terminou a resposta antes da aprovação | Consulte o mesmo `jobId`; para avisos futuros, confirme suporte a Events e uma assinatura em **Avisos de conclusão** no cliente compatível |
+| MCP cadastrado, mas as ferramentas novas não aparecem no cliente | Consulte `bridge_list_tools` e `bridge_tool_schema`, depois use o gateway; em `compact`, a ausência de nomes individuais no catálogo inicial é esperada |
+| A conexão mostra somente 12 ferramentas | Confira `directExecution.toolExposure`; em `compact`, use o catálogo real para descobrir os alvos |
+| Dot propõe uma sessão Work/Codex | Confira se o gateway está disponível na conversa; siga o [diagnóstico por camada](DOTS.md#7-diagnóstico-por-camada) e registre a limitação concreta |
+| Ferramentas antigas, `waitMs` ausente ou evento não listado | Use Refresh/Atualizar na conexão e abra nova conversa; confirme a versão 0.9.0 e a origem da Ponte |
 | Não aparece nenhuma execução em **Avisos de conclusão** | Ainda não há assinatura ativa; confira o modo Work/Cloud e peça acompanhamento de um `jobId` criado pela mesma conexão |
 | O aviso foi recebido, mas o ChatGPT não continuou | Confirme as instruções da conversa e o suporte do cliente; o status de entrega não comprova a execução de um novo turno |
 | O aviso aparece como **Falha na entrega** | Veja o erro e as tentativas no painel; confira a conexão de saída da Ponte e consulte o resultado pelo mesmo `jobId` |
@@ -227,3 +241,6 @@ Para clientes e modos alternativos, incluindo stdio, Actions e Secure MCP Tunnel
 - [Conectar e testar um MCP](https://developers.openai.com/plugins/deploy/connect-chatgpt)
 - [Metadados e erros de ferramentas](https://developers.openai.com/plugins/reference)
 - [MCP Events: disponibilidade, descoberta e entrega](https://developers.openai.com/plugins/build/mcp-events)
+- [Dots: computadores, apps e permissões](https://learn.chatgpt.com/docs/dots/computers-and-apps)
+- [Dots: tarefas e delegação](https://learn.chatgpt.com/docs/dots/tasks-and-memory)
+- [Dots: controle de ações](https://learn.chatgpt.com/docs/dots/controls)

@@ -178,6 +178,24 @@
             <div id="oauth-requests-list"></div>
           </section>
 
+          <section class="panel connect-card mcp-catalog-panel" aria-labelledby="mcp-catalog-title">
+            <div class="mcp-catalog-layout">
+              <div class="mcp-catalog-summary">
+                <div class="step-heading"><span class="soft-icon"><svg class="icon"><use href="#i-tool"/></svg></span><div><span class="section-kicker">USO DIRETO NO DOT</span><h2 id="mcp-catalog-title">Ferramentas no próprio dot</h2></div></div>
+                <p>Habilite a Ponte nas ferramentas do dot, selecione <strong>Compacto (dots)</strong> e copie a instrução abaixo. O dot descobre e chama as ferramentas conforme a tarefa.</p>
+              </div>
+              <div class="mcp-catalog-controls">
+                <label for="mcp-tool-exposure">Catálogo MCP</label>
+                <select id="mcp-tool-exposure" aria-describedby="mcp-tool-exposure-help mcp-tool-exposure-refresh"><option value="full">Completo</option><option value="compact">Compacto (dots)</option></select>
+                <p id="mcp-tool-exposure-help" class="field-help" role="status" aria-live="polite">Lista diretamente as ferramentas locais e dos MCPs conectados.</p>
+                <p id="mcp-tool-exposure-refresh" class="field-help">Após trocar o perfil, use <strong>Refresh/Scan Tools</strong> no cliente para atualizar as ferramentas da Ponte.</p>
+              </div>
+            </div>
+            <p class="field-help mcp-catalog-note">O perfil vale para todos os clientes MCP desta Ponte. No modo compacto, o catálogo completo continua disponível por descoberta; permissões e aprovações seguem a configuração do painel.</p>
+            <div class="code-header"><span>Instrução para colar no dot</span><button class="icon-button" type="button" data-action="copy-dot-instruction" aria-label="Copiar instrução para o dot"><svg class="icon"><use href="#i-copy"/></svg></button></div>
+            <pre id="dot-instruction" class="code-block dot-instruction">Use a Ponte diretamente neste dot para concluir minha tarefa. Descubra ferramentas com bridge_list_tools e consulte seus parâmetros com bridge_tool_schema usando tool. Chame bridge_read quando o risco informado for read; nos demais casos, use bridge_invoke, enviando tool e argumentsJson como string JSON dos argumentos. Use idempotencyKey única por operação e preserve a chave ao repetir a mesma solicitação. Se receber jobId, acompanhe com bridge_job sem reenviar e informe quando houver aprovação pendente no painel. Verifique o resultado antes de concluir. Use esse caminho sem abrir Work ou Codex quando as ferramentas estiverem disponíveis e autorizadas aqui. Se faltar acesso, informe a ferramenta e a restrição observada.</pre>
+          </section>
+
           <div class="connect-grid native-connect-grid">
             <section class="panel connect-card public-url-card"><div class="step-heading"><span class="step-number">01</span><div><span class="section-kicker">PREPARE O ENDPOINT</span><h2>URL pública da API</h2></div></div><p>Crie um túnel HTTPS para a API da Ponte e salve a origem pública abaixo. Essa URL será usada na descoberta e na autorização OAuth.</p><form id="public-url-form"><label for="public-url">Origem pública HTTPS</label><div class="input-action"><input id="public-url" name="publicUrl" type="url" placeholder="https://sua-ponte.exemplo.com" autocomplete="off" aria-describedby="public-url-help"><button class="button button-primary" type="submit">Salvar</button></div><p id="public-url-help" class="field-help">Use apenas a origem, sem /mcp. Salvar a URL não cria um túnel nem publica o serviço.</p></form><div class="notice notice-subtle tunnel-notice"><svg class="icon"><use href="#i-shield"/></svg><span id="tunnel-help">Exponha apenas a API na porta 4318. O painel da porta 4317 permanece local.</span></div><p class="field-help">Mantenha a Ponte e o túnel em execução enquanto usar a conexão. Se a origem mudar, salve a nova URL e reconecte o cliente.</p></section>
 

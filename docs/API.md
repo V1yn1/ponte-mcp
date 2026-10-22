@@ -1,6 +1,6 @@
-# Referência da API e ferramentas — Ponte MCP 0.8.0
+# Referência da API e ferramentas — Ponte MCP 0.9.0
 
-[Índice da documentação](README.md) · [Integrações](INTEGRACOES.md) · [Watchers](WATCHERS.md)
+[Índice da documentação](README.md) · [Integrações](INTEGRACOES.md) · [Dots](DOTS.md) · [Watchers](WATCHERS.md)
 
 Esta referência descreve a implementação atual. O schema devolvido pelo catálogo da sua instalação é a fonte dos argumentos aceitos, especialmente para ferramentas de servidores MCP externos. As rotas são definidas em [src/http.ts](../src/http.ts), as ferramentas da fachada em [src/mcp/server.ts](../src/mcp/server.ts) e o schema Actions em [src/openapi.ts](../src/openapi.ts).
 
@@ -26,12 +26,15 @@ O MCP HTTP é stateless e usa POST. Um GET autenticado em `/mcp` retorna 405; is
 
 | Chamada | Conteúdo |
 |---|---|
-| MCP `tools/list` | Cinco ferramentas gerais da fachada, cinco de watchers, três de gerenciamento MCP, ferramentas locais e upstream |
-| `bridge_list_tools` | Ferramentas locais/upstream, `bridge_watch_create`, três `bridge_mcp_*` e os quatro controles de watchers; paginação, pesquisa e filtro por origem |
+| MCP `tools/list`, perfil `full` | Oito ferramentas gerais da fachada, cinco de watchers, três de gerenciamento MCP, ferramentas locais e upstream |
+| MCP `tools/list`, perfil `compact` | Oito ferramentas gerais da fachada e quatro controles de watchers: 12 descritores |
+| `bridge_list_tools` | Catálogo real de ferramentas locais/upstream, `bridge_watch_create`, três `bridge_mcp_*` e quatro controles de watchers, nos dois perfis; paginação, pesquisa e filtro por origem |
 | `GET /v1/tools` | Ferramentas que podem virar jobs, incluindo `bridge_watch_create` e as três `bridge_mcp_*`; não inclui os quatro controles diretos de watchers |
-| `GET /v1/mcp/tools` | Catálogo MCP completo usado pelo adaptador stdio |
+| `GET /v1/mcp/tools` | Catálogo MCP anunciado conforme `full` ou `compact`, usado pelo adaptador stdio |
 
-`bridge_list_tools` aceita `search`, `source`, `offset` e `limit` (padrão 25, máximo 50). A rota REST aceita os mesmos filtros, com `limit` padrão 20 e máximo 50. `source` seleciona uma origem exata. Ambas devolvem `total`, `tools` e `nextOffset`.
+`mcpToolExposure` escolhe o perfil em **Conectar IA → Catálogo MCP**, persistido pelo `PATCH /admin/settings`. `full` é o padrão, inclusive para configurações anteriores sem esse campo. `compact` reduz os descritores anunciados; não filtra o catálogo real nem controla acesso. Nomes diretos já conhecidos continuam chamáveis nos dois perfis. O endpoint `/mcp`, OAuth, a política de aprovação e as permissões permanecem os mesmos.
+
+`bridge_list_tools` aceita `search`, `source`, `offset`, `limit` (padrão 25, máximo 50) e `includeSchemas` (padrão `true`). Use `includeSchemas: false` para pesquisar com descritores resumidos e `bridge_tool_schema` para obter o contrato completo do alvo escolhido. A rota REST `/v1/tools` mantém `search`, `source`, `offset` e `limit`, com padrão 20 e máximo 50; `includeSchemas` pertence à ferramenta MCP. `source` seleciona uma origem exata. Ambas as listagens devolvem `total`, `tools` e `nextOffset`.
 
 As origens são `local`, `bridge:watchers`, `bridge:mcps` e `mcp:ID_DO_SERVIDOR`. O nome exportado de uma ferramenta upstream contém um namespace e pode incluir um hash. Nunca deduza esse nome a partir de um exemplo; descubra-o e use o `inputSchema` recebido.
 
@@ -39,13 +42,38 @@ As origens são `local`, `bridge:watchers`, `bridge:mcps` e `mcp:ID_DO_SERVIDOR`
 
 | Ferramenta | Argumentos | Comportamento |
 |---|---|---|
-| `bridge_status` | `{}` | Estado, versão, projetos, upstreams e política |
-| `bridge_list_tools` | `search?`, `source?`, `offset?`, `limit?` | Catálogo paginado com schemas, risco e origem |
+| `bridge_status` | `{}` | Estado, versão, projetos, upstreams, política e contrato `directExecution` do servidor |
+| `bridge_list_tools` | `search?`, `source?`, `offset?`, `limit?`, `includeSchemas?` | Catálogo real paginado; schemas incluídos por padrão |
+| `bridge_tool_schema` | `tool` | Descritor atual do alvo e orientação `invocation`; não executa a ferramenta |
+| `bridge_read` | `tool`, `argumentsJson`, `idempotencyKey?` | Chamar somente um alvo de risco `read`, com argumentos em string JSON |
+| `bridge_invoke` | `tool`, `argumentsJson`, `idempotencyKey?` | Chamar um alvo do catálogo real, com argumentos em string JSON e as permissões existentes |
 | `bridge_call` | `tool`, `arguments`, `idempotencyKey?` | Chamar um nome descoberto; ferramentas comuns criam jobs; controles de watchers seguem a rota direta |
 | `bridge_job` | `jobId`, `waitMs?` | Consultar o mesmo job; espera de 0–25000 ms, padrão 0 |
 | `bridge_cancel` | `jobId` | Solicitar cancelamento do job; não desfaz efeitos já ocorridos |
 
-Ferramentas locais, upstream, criação de watchers e gerenciamento MCP também podem ser chamadas diretamente por MCP, sem `bridge_call`. O wrapper permite enviar a chave de idempotência do job e usar um nome recém-descoberto por `bridge_list_tools`, mesmo se o cliente manteve o `tools/list` inicial em cache. A chamada inicial aguarda até 25 segundos enquanto o job estiver `queued` ou `running`; `pending_approval` retorna imediatamente. `bridge_job` pode aguardar também durante a aprovação.
+O perfil compacto anuncia essas oito ferramentas e `bridge_watch_get`, `bridge_watch_list`, `bridge_watch_wait` e `bridge_watch_cancel`. `bridge_watch_create` continua no catálogo real e pode ser chamado pelo gateway. Ferramentas locais, upstream, criação de watchers e gerenciamento MCP também aceitam seus nomes diretos quando o cliente já os conhece. Os wrappers permitem enviar a chave de idempotência e usar nomes recém-descobertos mesmo com `tools/list` em cache.
+
+### Schema do alvo e argumentos JSON
+
+`bridge_tool_schema` devolve o descritor diretamente: `name`, `title`, `description`, `inputSchema`, `risk` e `source`, acrescido de `invocation`. Não há um objeto externo `tool` envolvendo esse descritor. Em `invocation`, `tool` indica `bridge_read` ou `bridge_invoke`, `target` contém o nome exato do alvo e `argumentsJson` descreve a string obrigatória de argumentos. Esse retorno não preenche argumentos da tarefa nem é uma chamada pronta para executar.
+
+`bridge_read` e `bridge_invoke` exigem que `argumentsJson` contenha um **objeto JSON válido**, como `"{}"` para um alvo cujo schema aceite objeto vazio. Arrays, `null`, valores escalares e JSON inválido são recusados. A string tem limite de **1 MiB**, e o envelope HTTP completo também precisa caber no limite de 1 MiB. Depois de decodificar, o `JobManager` valida os argumentos contra o schema atual do alvo antes de aceitar o job. Os controles diretos de watchers mantêm sua validação própria.
+
+`bridge_read` recusa alvos de risco `write` ou `execute`. A restrição permanece enquanto o job aguarda: uma mudança de classificação não transforma uma leitura pendente em autorização para escrever. `bridge_invoke` anuncia anotações conservadoras para comportar alvos com efeitos externos; a classificação e a aprovação da operação efetiva continuam sendo as do alvo. `bridge_call` preserva seu contrato com `arguments` como objeto.
+
+Exemplo de argumentos para `bridge_read`, após confirmar projeto e arquivo reais:
+
+```json
+{
+  "tool": "local_read_file",
+  "argumentsJson": "{\"projectId\":\"principal\",\"path\":\"README.md\"}",
+  "idempotencyKey": "ler-readme-001"
+}
+```
+
+Use o `inputSchema` retornado por `bridge_tool_schema` para construir chamadas de upstreams. A string JSON simplifica o schema do gateway, mas não relaxa a validação dos argumentos nem dispensa os identificadores exigidos pelo alvo. O guia [Dots](DOTS.md) mostra edição com `expectedHash` e descoberta sem nomes de upstream inventados.
+
+A chamada inicial aguarda até 25 segundos enquanto o job estiver `queued` ou `running`; `pending_approval` retorna imediatamente. `bridge_job` pode aguardar também durante a aprovação. A aprovação `all` continua abrangendo leituras submetidas ao `JobManager`, inclusive por `bridge_read`.
 
 Exemplo de argumentos para `bridge_call`:
 
@@ -58,6 +86,14 @@ Exemplo de argumentos para `bridge_call`:
 ```
 
 A resposta é um `CallToolResult` MCP. Seu primeiro bloco de texto contém o estado com `jobId`, `status` e a ferramenta. Os blocos seguintes contêm o resultado da ferramenta, quando disponível, incluindo conteúdo não textual. Não presuma que todo resultado é um único objeto JSON plano. O `isError` e o estado terminal devem ser considerados ao interpretar o retorno.
+
+Os gateways preservam os blocos de conteúdo e dados do resultado, inclusive imagens, dentro dos limites existentes. Não convertem o resultado completo em uma única string nem aumentam cotas, tamanho de resposta ou prazo de execução.
+
+### O que `directExecution` confirma
+
+Em `bridge_status`, `directExecution` descreve a capacidade da **Ponte**: `supported: true`, `executionLocation: "ponte_host"`, `requiresWorkSession: false`, `requiresCodexSession: false`, `toolExposure`, os nomes dos controles de catálogo/schema/leitura/invocação, `argumentEncoding: "json_object_string"` e `dynamicCatalog: true`. A própria resposta limita a afirmação com `clientToolAvailability: "not_observable_by_server"`, `hostPermissionsApply: true`, `clientMayDelegate: true` e `refreshClientAfterUpdate: true`.
+
+Esses campos significam que a execução no servidor não exige criar uma sessão Work ou Codex. Não comprovam que um cliente específico carregou o plugin, disponibilizou cada ferramenta ao dot ou executou a tarefa sem delegação. [Dots](DOTS.md) separa esses testes. “Todas as ferramentas” designa as ferramentas registradas e autorizadas na Ponte, não ferramentas internas de outros plugins da conta.
 
 ## Ferramentas locais
 
@@ -133,7 +169,7 @@ ou, com um `jobId` real da mesma identidade:
 
 O UUID acima é ilustrativo e não identifica um trabalho existente. O nome aceita 1–160 caracteres; `source` e `runId`, 1–128, com restrições adicionais para controles/espaços em `runId`. `timeoutMs` define o prazo total do watcher: de 1000 a 604800000 ms (sete dias), com padrão 3600000 ms (uma hora). `expiresAt` registra seu vencimento. `waitMs` limita somente uma chamada; consultar, esperar novamente ou recuperar a criação idempotente não renova esse prazo total.
 
-Detalhe, criação, espera e cancelamento informam `monitorDurable: true` e `canWakeClosedConversation: false`. Esses valores permanecem na 0.8.0, inclusive após entrega de Events. Resultados de executor são marcados como dados não confiáveis. Quando `waiting`, a resposta orienta a próxima espera de 25000 ms pelo mesmo ID; o chat continua durante o turno ativo até terminal ou limite concreto do cliente. A lista retorna `{watchers, total, offset, limit}` sem tokens de callback.
+Detalhe, criação, espera e cancelamento informam `monitorDurable: true` e `canWakeClosedConversation: false`. Esses valores permanecem na 0.9.0, inclusive após entrega de Events. Resultados de executor são marcados como dados não confiáveis. Quando `waiting`, a resposta orienta a próxima espera de 25000 ms pelo mesmo ID; o chat continua durante o turno ativo até terminal ou limite concreto do cliente. A lista retorna `{watchers, total, offset, limit}` sem tokens de callback.
 
 Falhas de comunicação tratadas pela Ponte retornam recuperação estruturada para `bridge_watch_get` com o mesmo `watcherId`, sem fabricar estado do acompanhamento. Isso inclui interrupção antes dos cabeçalhos, durante a leitura do corpo e HTTP 503 no adaptador stdio. Consulte o estado antes de retomar a espera. Erros de autenticação ou registro não encontrado exigem conferir autorização/ID; não autorizam retry cego, criação de outro watcher ou reenvio da tarefa. O [roteiro de recuperação](WATCHERS.md#recuperar-uma-espera-interrompida) detalha cada resultado.
 
@@ -208,4 +244,4 @@ As chaves de job e criação de watcher aceitam letras, números, `.`, `_`, `:` 
 
 `POST /hooks/watchers/{watcherId}/signal` recebe a conclusão do executor, com token exclusivo e corpo `{eventId, runId, status, summary, exitCode?, evidence?}`. `status` aceita `succeeded`, `failed` e `needs_input`. O serviço salva o resultado antes de confirmar sucesso. Detalhes de 400/401/409/413/429/503 e tentativas estão em [Watchers](WATCHERS.md).
 
-No sentido oposto, MCP Events envia um evento da Ponte para o cliente. `events/list`, `events/subscribe` e `events/unsubscribe` são métodos do protocolo em `/mcp`, não ferramentas para `bridge_call`, rotas de sinal ou operações do OpenAPI. A 0.8.0 publica `ponte.job.completed` com `arguments: {jobId}` e `ponte.watcher.completed` com `arguments: {watcherId}`. Ambos exigem inscrição do cliente, escopo à identidade proprietária e webhook verificado/assinado. O evento de watcher contém somente `watcherId`, `status`, `createdAt` e `updatedAt`; resultado e credencial de sinal ficam fora do aviso. Veja [MCP Events](MCP-EVENTS.md).
+No sentido oposto, MCP Events envia um evento da Ponte para o cliente. `events/list`, `events/subscribe` e `events/unsubscribe` são métodos do protocolo em `/mcp`, não ferramentas para `bridge_call`, rotas de sinal ou operações do OpenAPI. Desde a 0.8.0, a Ponte publica `ponte.job.completed` com `arguments: {jobId}` e `ponte.watcher.completed` com `arguments: {watcherId}`. Ambos exigem inscrição do cliente, escopo à identidade proprietária e webhook verificado/assinado. O evento de watcher contém somente `watcherId`, `status`, `createdAt` e `updatedAt`; resultado e credencial de sinal ficam fora do aviso. Veja [MCP Events](MCP-EVENTS.md).

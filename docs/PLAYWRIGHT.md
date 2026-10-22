@@ -1,4 +1,4 @@
-# Playwright MCP com Ponte MCP 0.8.0
+# Playwright MCP com Ponte MCP 0.9.0
 
 A Ponte pode iniciar o servidor oficial `@playwright/mcp` como uma conexão **stdio**. As ferramentas do navegador passam a aparecer no catálogo da Ponte e ficam disponíveis aos clientes já conectados a ela. O navegador executa na máquina da Ponte, mesmo quando o chat está em outro computador.
 
@@ -32,7 +32,7 @@ Os comandos e opções externos deste guia foram conferidos na documentação of
 
 ## Pedir o cadastro pelo chat
 
-Na 0.8.0, um chat já conectado à Ponte pode cadastrar o Playwright por `bridge_mcp_add`. Peça que confira primeiro `bridge_mcp_list`, use o comando adequado ao sistema da Ponte e informe como fonte o repositório oficial abaixo. O [guia de MCPs pelo chat](MCPS-PELO-CHAT.md#exemplo-playwright-no-windows) contém o JSON de cadastro e os ajustes para Linux/macOS.
+Na 0.9.0, um chat já conectado à Ponte pode cadastrar o Playwright por `bridge_mcp_add`. Peça que confira primeiro `bridge_mcp_list`, use o comando adequado ao sistema da Ponte e informe como fonte o repositório oficial abaixo. O [guia de MCPs pelo chat](MCPS-PELO-CHAT.md#exemplo-playwright-no-windows) contém o JSON de cadastro e os ajustes para Linux/macOS.
 
 O cadastro segue a política de aprovação do painel e aparece em **Execuções**. No modo automático, executa sem uma revisão local adicional. A conexão é salva mesmo quando a inicialização falha; confira `server.status`, corrija a causa e reconecte com a revisão retornada em `bridge_mcp_list`. Um ID existente não é substituído por outra configuração.
 

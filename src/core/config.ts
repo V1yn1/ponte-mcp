@@ -55,6 +55,7 @@ const configSchema = z.object({
   apiPort: z.number().int().min(1024).max(65535),
   publicUrl: publicUrlSchema.optional(),
   approvalMode: z.enum(['mutations', 'all', 'automatic']),
+  mcpToolExposure: z.enum(['full', 'compact']).default('full'),
   projects: z.array(projectSchema).max(100),
   upstreams: z.array(upstreamSchema).max(30),
 }).strict().superRefine((config, ctx) => {

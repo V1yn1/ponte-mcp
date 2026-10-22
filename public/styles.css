@@ -414,3 +414,13 @@ input:focus,select:focus,textarea:focus{box-shadow:0 0 0 3px #3863f41a}
 .mcp-preview-note+.mcp-preview-note{margin-top:7px}
 .mcp-result-notice{margin-top:15px}
 @media(max-width:620px){.mcp-chat-intro,.mcp-pending-notice{flex-wrap:wrap}.mcp-chat-intro>div,.mcp-pending-notice>span{flex-basis:calc(100% - 30px)}.mcp-chat-intro>.text-link,.mcp-pending-notice>.text-link{margin-left:27px}.mcp-preview{padding:15px}.mcp-preview-fields,.mcp-preview-references dl{grid-template-columns:1fr}.mcp-preview-fields dt{font-size:10px}.mcp-preview-fields dd{font-size:12px}}
+
+.mcp-catalog-panel{margin-bottom:22px}
+.mcp-catalog-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,.75fr);gap:24px;align-items:start}
+.mcp-catalog-summary>p{font-size:13px;line-height:1.8;color:var(--muted);max-width:65ch}
+.mcp-catalog-controls>label{margin-top:0}
+.mcp-catalog-controls>select{font-size:13px}
+.mcp-catalog-controls>.field-help{font-size:12px;line-height:1.75}
+.mcp-catalog-panel>.mcp-catalog-note{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+.mcp-catalog-panel>.dot-instruction{font-family:var(--sans);font-size:13px;line-height:1.8}
+@media(max-width:720px){.mcp-catalog-layout{grid-template-columns:1fr;gap:20px}.mcp-catalog-controls>select{font-size:16px}}

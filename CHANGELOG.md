@@ -4,6 +4,21 @@
 
 Este histórico reúne as entregas já implementadas. As notas de cada versão descrevem suas mudanças; os guias em `docs/` descrevem o comportamento atual. A revisão exclusivamente documental registrada abaixo manteve o programa na versão de sua etapa.
 
+## 0.9.0 — Ferramentas diretamente no dot — 22/10/2026
+
+- `bridge_read` e `bridge_invoke` aceitam `tool`, `argumentsJson` e `idempotencyKey`, mantendo o schema original, a identidade, a fila, a aprovação e as permissões da operação. O JSON é dado: não é avaliado como script.
+- O gateway de leitura verifica o risco dentro da fila, antes da prévia/execução, e recusa ferramentas de escrita/execução, inclusive em corridas de configuração e reaproveitamento de chave de uma mutação.
+- `bridge_tool_schema` retorna o contrato exato de uma ferramenta descoberta e indica qual gateway usar, sem inventar os argumentos da chamada.
+- `bridge_list_tools` aceita `includeSchemas: false` para descoberta resumida. Descrições longas nesse resumo são limitadas a 500 caracteres e sinalizadas; schemas completos continuam disponíveis sem truncamento na consulta individual.
+- `mcpToolExposure: full|compact` em **Conectar IA → Catálogo MCP**. O perfil compacto anuncia 12 ferramentas estáveis e mantém o catálogo dinâmico completo; o padrão `full` preserva instalações anteriores. O endpoint e a autorização OAuth permanecem os mesmos.
+- Separação entre ferramentas anunciadas e resolução de chamadas no MCP moderno: um nome direto válido conhecido antes da troca de perfil continua utilizável. Uma ferramenta removida continua indisponível.
+- Instruções passam a priorizar descoberta e execução pela própria Ponte, sem depender de sessões Work/Codex. `bridge_status.directExecution` descreve essa capacidade do servidor e informa que ele não observa a disponibilidade de ferramentas no dot nem controla a delegação interna do cliente.
+- Jobs pendentes incluem `nextCall` para consulta do mesmo ID. Os gateways preservam conteúdo multimídia, dados estruturados e erros do upstream.
+- O adaptador stdio reconhece watchers pelos novos gateways JSON e mantém o prazo de até 45 segundos mais margem de transporte, com recuperação do mesmo watcher após interrupção.
+- Guia próprio para dots, instrução copiável no painel e documentação atualizada com instalação, descoberta, limites e roteiro de validação real. Os testes controlados não são apresentados como execução em um dot real.
+
+A evidência está em [Validação](docs/VALIDACAO.md#execução-direta-e-catálogo-compacto--090). Atualizar o GitHub não instala a versão no computador nem atualiza automaticamente os metadados do ChatGPT.
+
 ## 0.8.0 — Recuperação de esperas e eventos de watchers — 22/10/2026
 
 - `bridge_watch_wait` usa 25000 ms por padrão e aceita no máximo 45000 ms no serviço, MCP direto, `bridge_call`, stdio e REST/Actions. Valores maiores são rejeitados com o mesmo ID e orientação `nextCall` para `bridge_watch_get`, sem ajuste silencioso.

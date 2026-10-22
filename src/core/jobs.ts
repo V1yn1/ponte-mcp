@@ -9,6 +9,7 @@ const TERMINAL = new Set(['succeeded', 'failed', 'rejected', 'cancelled', 'expir
 const APPROVAL_TTL = 15 * 60 * 1000;
 const MAX_JOBS = 200;
 const MAX_RESULT = 4 * 1024 * 1024;
+const READ_ONLY_ERROR = 'A chamada aceita somente ferramentas classificadas como leitura.';
 
 function approvalRequired(mode: AppConfig['approvalMode'], risk: Job['risk']): boolean {
   return mode !== 'automatic' && (mode === 'all' || risk !== 'read');
@@ -23,7 +24,8 @@ export function signature(definition: ToolDefinition): string {
   return createHash('sha256').update(stableJson({ tool: definition.tool, risk: definition.risk, source: definition.source, fingerprint: definition.fingerprint })).digest('hex');
 }
 
-interface InternalJob { job: Job; signature: string; owner?: string; controller?: AbortController; }
+export interface JobSubmissionOptions { readOnly?: true }
+interface InternalJob { job: Job; signature: string; owner?: string; readOnly?: true; controller?: AbortController; }
 export class JobManager {
   private readonly records = new Map<string, InternalJob>();
   private readonly keys = new Map<string, { digest: string; id: string }>();
@@ -40,31 +42,41 @@ export class JobManager {
 
   constructor(private readonly getTools: () => ToolDefinition[], private readonly approvalMode: () => AppConfig['approvalMode'], private readonly audit?: AuditLog) {}
 
-  async submit(name: string, args: Record<string, unknown>, idempotencyKey?: string, owner?: string): Promise<Job> {
+  async submit(name: string, args: Record<string, unknown>, idempotencyKey?: string, owner?: string, options: JobSubmissionOptions = {}): Promise<Job> {
     let result!: Job;
-    const task = this.submissionChain.then(async () => { result = await this.submitOne(name, args, idempotencyKey, owner); });
+    // Capture this constraint before another submission's asynchronous preview.
+    const constraints: JobSubmissionOptions = options.readOnly === true ? { readOnly: true } : {};
+    const task = this.submissionChain.then(async () => { result = await this.submitOne(name, args, idempotencyKey, owner, constraints); });
     this.submissionChain = task.catch(() => {});
     await task;
     return result;
   }
 
-  private async submitOne(name: string, args: Record<string, unknown>, key?: string, owner?: string): Promise<Job> {
+  private async submitOne(name: string, args: Record<string, unknown>, key?: string, owner?: string, options: JobSubmissionOptions = {}): Promise<Job> {
     if (this.closed) throw new Error('O serviço está encerrando.');
     if (key !== undefined && (!/^[A-Za-z0-9._:-]{1,128}$/.test(key))) throw new Error('Chave de idempotência inválida.');
     if (owner !== undefined && (typeof owner !== 'string' || owner.length === 0 || owner.length > 256 || owner.includes('\0'))) throw new Error('Origem da solicitação inválida.');
     if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('arguments precisa ser um objeto JSON.');
     if (Buffer.byteLength(JSON.stringify(args)) > 1024 * 1024) throw new Error('Argumentos excedem 1 MiB.');
+    // Enforce read-only inside the serialized queue, before preview or replay.
+    let definition = options.readOnly ? this.getTools().find(item => item.tool.name === name) : undefined;
+    if (options.readOnly) {
+      if (!definition) throw new Error('Ferramenta indisponível. Atualize o catálogo.');
+      if (definition.risk !== 'read') throw new Error(READ_ONLY_ERROR);
+    }
     const digest = createHash('sha256').update(stableJson({ name, args })).digest('hex');
     const scopedKey = key ? `${owner ?? ''}\0${key}` : undefined;
     if (scopedKey && this.keys.has(scopedKey)) {
       const prior = this.keys.get(scopedKey)!;
       if (prior.digest !== digest) throw new Error('Chave de idempotência já usada com outros argumentos.');
-      return this.get(prior.id);
+      const job = this.get(prior.id);
+      if (options.readOnly && job.risk !== 'read') throw new Error(READ_ONLY_ERROR);
+      return job;
     }
     if (this.paused) throw new Error('Execuções pausadas no painel local.');
     this.expire(); this.prune();
     if (this.records.size >= MAX_JOBS) throw new Error('Fila cheia. Conclua ou cancele trabalhos pendentes.');
-    const definition = this.getTools().find(item => item.tool.name === name);
+    definition ??= this.getTools().find(item => item.tool.name === name);
     if (!definition) throw new Error('Ferramenta indisponível. Atualize o catálogo.');
     const toolSignature = signature(definition);
     let validate = this.validators.get(toolSignature);
@@ -83,6 +95,11 @@ export class JobManager {
     if (!validate(frozen)) throw new Error('Argumentos inválidos: ' + this.ajv.errorsText(validate.errors, { dataVar: 'arguments' }));
     const preview = definition.preview ? await definition.preview(structuredClone(frozen)) : undefined;
     if (this.closed || this.paused) throw new Error('Execuções pausadas ou serviço encerrando.');
+    if (options.readOnly) {
+      const current = this.getTools().find(item => item.tool.name === name);
+      if (!current || current.risk !== 'read') throw new Error(READ_ONLY_ERROR);
+      if (signature(current) !== toolSignature) throw new Error('A ferramenta foi alterada durante a prévia. Atualize o catálogo.');
+    }
     const now = new Date().toISOString();
     const mode = this.approvalMode();
     const job: Job = {
@@ -91,7 +108,7 @@ export class JobManager {
       ...(mode === 'automatic' ? { approval: 'automatic' as const } : {}),
       createdAt: now, updatedAt: now, arguments: frozen, ...(preview !== undefined ? { preview } : {}),
     };
-    this.records.set(job.id, { job, signature: toolSignature, ...(owner ? { owner } : {}) });
+    this.records.set(job.id, { job, signature: toolSignature, ...(owner ? { owner } : {}), ...(options.readOnly ? { readOnly: true } : {}) });
     if (scopedKey) this.keys.set(scopedKey, { digest, id: job.id });
     this.audit?.record(job);
     this.drain();
@@ -215,6 +232,7 @@ export class JobManager {
     try {
       const current = this.getTools().find(item => item.tool.name === record.job.tool);
       if (!current || signature(current) !== record.signature) throw new Error('A ferramenta ou sua configuração mudou antes da execução.');
+      if (record.readOnly && current.risk !== 'read') throw new Error(READ_ONLY_ERROR);
       const abort = new Promise<never>((_resolve, reject) => {
         controller.signal.addEventListener('abort', () => reject(controller.signal.reason ?? new Error('Execução interrompida.')), { once: true });
       });

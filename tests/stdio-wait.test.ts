@@ -31,6 +31,10 @@ function data(result: CallToolResult) {
   return JSON.parse(first!.type === 'text' ? first!.text : '{}');
 }
 function state(result: CallToolResult) { assert.equal(result.isError, false); return data(result); }
+function waitRequest(name: string, args: Record<string, unknown>) {
+  return { name, arguments: name === 'bridge_call' ? { tool: 'bridge_watch_wait', arguments: args }
+    : ['bridge_read', 'bridge_invoke'].includes(name) ? { tool: 'bridge_watch_wait', argumentsJson: JSON.stringify(args) } : args };
+}
 function recovery(result: CallToolResult, watcherId: string, reason: string) {
   assert.equal(result.isError, true);
   const value = data(result);
@@ -81,6 +85,8 @@ test('stdio proxy budgets the 45-second server wait plus transport margin under 
   for (const request of [
     { name: 'bridge_watch_wait', arguments: { watcherId, waitMs: 45000 } },
     { name: 'bridge_call', arguments: { tool: 'bridge_watch_wait', arguments: { watcherId, waitMs: 45000 } } },
+    waitRequest('bridge_read', { watcherId, waitMs: 45000 }),
+    waitRequest('bridge_invoke', { watcherId, waitMs: 45000 }),
     { name: 'bridge_watch_wait', arguments: { watcherId } },
   ]) {
     const result = state(await client.callTool(request));
@@ -93,12 +99,13 @@ test('stdio proxy budgets the 45-second server wait plus transport margin under 
 test('stdio rejects stale 300-second requests before sending HTTP and recovers the same watcher', async t => {
   const client = await proxy(t);
   const watcherId = '66267440-c208-4214-99cb-72ae188b7c5c';
-  for (const name of ['bridge_watch_wait', 'bridge_call']) {
+  for (const name of ['bridge_watch_wait', 'bridge_call', 'bridge_read', 'bridge_invoke']) {
     const args = { watcherId, waitMs: 300000 };
-    recovery(await client.callTool({ name, arguments: name === 'bridge_call' ? { tool: 'bridge_watch_wait', arguments: args } : args }), watcherId, 'wait_limit_exceeded');
+    recovery(await client.callTool(waitRequest(name, args)), watcherId, 'wait_limit_exceeded');
   }
   const counts = state(await client.callTool({ name: 'fixture_stats', arguments: {} }));
   assert.equal(counts.bridge_watch_wait ?? 0, 0); assert.equal(counts.bridge_call ?? 0, 0); assert.equal(counts.bridge_watch_create ?? 0, 0);
+  assert.equal(counts.bridge_read ?? 0, 0); assert.equal(counts.bridge_invoke ?? 0, 0);
 });
 
 for (const [scenario, suffix, reason] of [
@@ -111,14 +118,14 @@ for (const [scenario, suffix, reason] of [
   test(`stdio watcher recovery survives ${scenario} without resubmission`, async t => {
     const client = await proxy(t);
     const watcherId = '00000000-0000-4000-8000-000000000' + suffix;
-    for (const name of ['bridge_watch_wait', 'bridge_call']) {
+    for (const name of ['bridge_watch_wait', 'bridge_call', 'bridge_read', 'bridge_invoke']) {
       const args = { watcherId, waitMs: 45000 };
-      const response = recovery(await client.callTool({ name, arguments: name === 'bridge_call' ? { tool: 'bridge_watch_wait', arguments: args } : args }), watcherId, reason!);
+      const response = recovery(await client.callTool(waitRequest(name, args)), watcherId, reason!);
       const recovered = state(await client.callTool({ name: response.nextCall.tool, arguments: response.nextCall.arguments }));
       assert.equal(recovered.watcherId, watcherId); assert.equal(recovered.status, 'succeeded');
     }
     const counts = state(await client.callTool({ name: 'fixture_stats', arguments: {} }));
-    assert.equal(counts.bridge_watch_wait, 1); assert.equal(counts.bridge_call, 1); assert.equal(counts.bridge_watch_get, 2);
+    assert.equal(counts.bridge_watch_wait, 1); assert.equal(counts.bridge_call, 1); assert.equal(counts.bridge_read, 1); assert.equal(counts.bridge_invoke, 1); assert.equal(counts.bridge_watch_get, 4);
     assert.equal(counts.bridge_watch_create ?? 0, 0);
   });
 }

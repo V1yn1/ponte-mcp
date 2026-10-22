@@ -1,4 +1,4 @@
-# Limites de confiança da Ponte MCP 0.8.0
+# Limites de confiança da Ponte MCP 0.9.0
 
 [Índice da documentação](README.md) · [Arquitetura](ARQUITETURA.md) · [Operação e backups](OPERACAO.md)
 
@@ -42,7 +42,7 @@ Watchers e Events verificam a validade do grant, incluindo prazo, recurso, scope
 
 **Preserve `secrets.json` durante atualizações e restaurações.** Além de autenticar clientes, o token API é a chave estável usada para derivar credenciais de sinais. O serviço confere os hashes de todos os watchers `signal` persistidos ao abrir o estado, inclusive registros terminais. Recriar o token API mantendo o `watchers.json` antigo faz essa verificação falhar e pode impedir a inicialização.
 
-A versão 0.8.0 não oferece um comando de rotação que migre coordenadamente essas chaves e identidades. Por isso, apagar `secrets.json` e executar `init` não é um procedimento de atualização nem de recuperação de watchers. Uma rotação planejada precisa considerar os acompanhamentos, as identidades API de jobs/Events e a reconfiguração de clientes. Trocar tokens legados também não revoga, por si só, os grants de `oauth.json`. Em caso de credencial comprometida, interrompa o acesso afetado e trate cada autorização antes de restaurar o serviço; não publique arquivos de estado para pedir diagnóstico.
+A versão 0.9.0 não oferece um comando de rotação que migre coordenadamente essas chaves e identidades. Por isso, apagar `secrets.json` e executar `init` não é um procedimento de atualização nem de recuperação de watchers. Uma rotação planejada precisa considerar os acompanhamentos, as identidades API de jobs/Events e a reconfiguração de clientes. Trocar tokens legados também não revoga, por si só, os grants de `oauth.json`. Em caso de credencial comprometida, interrompa o acesso afetado e trate cada autorização antes de restaurar o serviço; não publique arquivos de estado para pedir diagnóstico.
 
 Ao atualizar ou mover a instalação, preserve o diretório de estado e passe `--state-dir` com seu caminho absoluto. Perder `oauth.json` interrompe a reutilização dos clientes e tokens registrados. Backups desse arquivo contêm estado de autorização sensível e devem receber a mesma proteção do original.
 
