@@ -1,4 +1,4 @@
-# Limites de confiança da Ponte MCP 0.9.0
+# Limites de confiança da Ponte MCP 0.10.0
 
 [Índice da documentação](README.md) · [Arquitetura](ARQUITETURA.md) · [Operação e backups](OPERACAO.md)
 
@@ -8,7 +8,7 @@ Este documento explica o que os controles do aplicativo fazem. Eles não substit
 
 - O painel e suas rotas `/admin/*` escutam em `127.0.0.1:4317`, por padrão.
 - A API, OAuth, MCP e os callbacks de watchers escutam em `127.0.0.1:4318`, por padrão. As portas são configuráveis; o vínculo a loopback permanece.
-- Administração e API REST usam tokens distintos, gerados aleatoriamente com 32 bytes. `/mcp` também aceita access tokens OAuth.
+- Administração e API REST usam tokens distintos, gerados aleatoriamente com 32 bytes. `/mcp` aceita o token API ou access tokens OAuth, inclusive quando a origem pública está configurada; o token administrativo não autentica essas chamadas.
 - Tokens API e OAuth não mudam a política de aprovação, não aprovam manualmente trabalhos e não alteram projetos. Eles podem solicitar cadastro e reconexão pelos contratos restritos `bridge_mcp_add` e `bridge_mcp_reconnect`, sujeitos à política de ferramentas; edição e remoção de servidores continuam administrativas. A criação de watchers também segue essa política; seus controles diretos verificam autorização e propriedade.
 - O callback `/hooks/watchers/:watcherId/signal` exige uma credencial exclusiva daquele acompanhamento. Ele não usa os tokens administrativo/API nem o access token OAuth.
 - O painel mantém o token administrativo apenas em `sessionStorage` da aba. Credenciais administrativas, tokens API, access/refresh tokens e tokens de sinal são enviados nos campos de autenticação adequados, sem inclusão na URL.
@@ -42,9 +42,23 @@ Watchers e Events verificam a validade do grant, incluindo prazo, recurso, scope
 
 **Preserve `secrets.json` durante atualizações e restaurações.** Além de autenticar clientes, o token API é a chave estável usada para derivar credenciais de sinais. O serviço confere os hashes de todos os watchers `signal` persistidos ao abrir o estado, inclusive registros terminais. Recriar o token API mantendo o `watchers.json` antigo faz essa verificação falhar e pode impedir a inicialização.
 
-A versão 0.9.0 não oferece um comando de rotação que migre coordenadamente essas chaves e identidades. Por isso, apagar `secrets.json` e executar `init` não é um procedimento de atualização nem de recuperação de watchers. Uma rotação planejada precisa considerar os acompanhamentos, as identidades API de jobs/Events e a reconfiguração de clientes. Trocar tokens legados também não revoga, por si só, os grants de `oauth.json`. Em caso de credencial comprometida, interrompa o acesso afetado e trate cada autorização antes de restaurar o serviço; não publique arquivos de estado para pedir diagnóstico.
+A versão 0.10.0 não oferece um comando de rotação que migre coordenadamente essas chaves e identidades. Por isso, apagar `secrets.json` e executar `init` não é um procedimento de atualização nem de recuperação de watchers. Uma rotação planejada precisa considerar os acompanhamentos, as identidades API de jobs/Events e a reconfiguração de clientes. Trocar tokens legados também não revoga, por si só, os grants de `oauth.json`. Em caso de credencial comprometida, interrompa o acesso afetado e trate cada autorização antes de restaurar o serviço; não publique arquivos de estado para pedir diagnóstico.
 
 Ao atualizar ou mover a instalação, preserve o diretório de estado e passe `--state-dir` com seu caminho absoluto. Perder `oauth.json` interrompe a reutilização dos clientes e tokens registrados. Backups desse arquivo contêm estado de autorização sensível e devem receber a mesma proteção do original.
+
+## Perfis exportados e APIs de modelos
+
+Os perfis Gemini/Grok são produzidos pelo mesmo gerador no painel autenticado e em `export-client`. Eles contêm caminhos da instalação e configurações de conexão, sem valores de tokens; os modelos de requisição API contêm marcadores explícitos. O comando para obter o token utiliza o Node, a CLI e o estado reais, mas o gerador não o executa. `--output` cria um arquivo novo com modo `0600` onde suportado e recusa sobrescrever um destino existente. A configuração do cliente deve ser mesclada pelo usuário, preservando outras entradas.
+
+As credenciais têm finalidades distintas: a chave Google/xAI autentica a requisição ao modelo; `PONTE_API_TOKEN` é enviado ao provedor no descritor Remote MCP para autenticar suas chamadas à Ponte. **Use exclusivamente o token API, nunca o administrativo.** Proteja essas variáveis no ambiente do exemplo e não as inclua no repositório, em configurações compartilhadas ou em mensagens de chat. Os apps conectados por OAuth usam tokens próprios, sem precisar receber o token API estático.
+
+Todos os clientes com o mesmo token API — REST, stdio e APIs de modelos — compartilham a identidade dos registros. Revogar um grant OAuth de Gemini/Grok não revoga esse token API. O servidor mantém as mesmas permissões de projetos, política de aprovação e restrições de upstreams nos dois caminhos. A adoção de outro fornecedor não cria isolamento por usuário ou por projeto.
+
+Os exemplos permitem apenas `bridge_status` por padrão. `--tools` habilita as 12 ferramentas centrais, incluindo `bridge_invoke` e `bridge_call`. Esses gateways podem solicitar qualquer alvo autorizado do catálogo: `allowed_tools` no provedor limita os nomes MCP anunciados, mas não constitui uma lista de alvos internos permitidos. Para limitar ações efetivas, configure projetos, `allowWrite`, `allowExec`, `allowedTools` dos upstreams e a política da Ponte. Confirmações adicionais do cliente, como a confirmação de escrita do Gemini Apps, continuam independentes. O perfil Gemini CLI preserva `trust: false`.
+
+JSON/TOML e os comandos exportados fazem o escape dos valores para seu respectivo formato. Os perfis recusam caminhos que o cliente expandiria como variáveis, evitando transformar um caminho literal em outro comando ou diretório. A validação dos endpoints exige HTTPS e recusa credenciais, fragmentos e endereços literais locais/privados; não realiza DNS nem certifica a disponibilidade ou a confiança no domínio. As verificações de callbacks de Events, descritas adiante, são um fluxo diferente.
+
+Os exemplos de API não repetem automaticamente uma requisição, inclusive depois de timeout. Erros de comunicação não provam ausência de efeitos na Ponte: consulte o mesmo job ou watcher antes de reenviar. A saída bem-sucedida pode conter dados do projeto retornados ao modelo; trate-a como informação privada. O contrato e os roteiros estão em [Gemini](GEMINI.md), [Grok](GROK.md) e [src/clients/profiles.ts](../src/clients/profiles.ts).
 
 ## Arquivos
 
@@ -104,7 +118,7 @@ A criação retorna o token somente à identidade proprietária, no resultado do
 
 Cancelar o watcher encerra somente a observação. Um sinal novo posterior é recusado; o job original ou o executor pode continuar. A pausa global não impede o recibo de um acompanhamento já existente. Revogação ou vencimento do grant impede novos sinais e acesso por aquela identidade, mesmo que alguém ainda possua a credencial de callback.
 
-Watchers `signal` sobrevivem ao reinício quando o estado e o segredo da instância são preservados. Watchers `job` não tornam jobs duráveis: um job indisponível após reiniciar leva a `interrupted`; se houver cópia em Events, o watcher pode refletir o estado recuperado, inclusive `cancelled`. Nenhuma tarefa é reenviada. Uma desconexão encerra apenas a espera corrente, e o cliente recupera o mesmo `watcherId` com `get` ou `list`. O watcher não reabre uma conversa encerrada e não exige agendamento no ChatGPT/Claude.
+Watchers `signal` sobrevivem ao reinício quando o estado e o segredo da instância são preservados. Watchers `job` não tornam jobs duráveis: um job indisponível após reiniciar leva a `interrupted`; se houver cópia em Events, o watcher pode refletir o estado recuperado, inclusive `cancelled`. Nenhuma tarefa é reenviada. Uma desconexão encerra apenas a espera corrente, e o cliente recupera o mesmo `watcherId` com `get` ou `list`. O watcher não reabre uma conversa encerrada e não exige agendamento no cliente.
 
 As regras estão em [src/watchers/service.ts](../src/watchers/service.ts), [src/watchers/tools.ts](../src/watchers/tools.ts) e [src/http.ts](../src/http.ts). O roteiro operacional está em [WATCHERS.md](WATCHERS.md).
 
@@ -144,4 +158,4 @@ Timeouts de comunicação não autorizam recriar watchers ou reenviar tarefas. C
 
 Proteja o diretório de estado completo e seus backups. Os segredos e resultados não devem entrar no repositório, em um ZIP de distribuição, em capturas de tela ou na conversa. Consulte [OPERACAO.md](OPERACAO.md) para preservar o conjunto ao atualizar.
 
-Esta é uma aplicação pessoal. Não foi submetida a auditoria externa de segurança nem projetada como plataforma pública multiusuário. Testes de protocolo e segurança locais não comprovam, sozinhos, a integração na conta do usuário; consulte [VALIDACAO.md](VALIDACAO.md) e o [roteiro do ChatGPT](CHATGPT.md).
+Esta é uma aplicação pessoal. Não foi submetida a auditoria externa de segurança nem projetada como plataforma pública multiusuário. Testes de protocolo e segurança locais não comprovam, sozinhos, a integração na conta do usuário. A v0.10.0 não inclui login ou execução em contas reais Gemini/Grok. Consulte [Validação](VALIDACAO.md) e os roteiros de [ChatGPT](CHATGPT.md), [Claude](CLAUDE.md), [Gemini](GEMINI.md) e [Grok](GROK.md).

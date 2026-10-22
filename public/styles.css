@@ -275,10 +275,22 @@ input:focus,select:focus,textarea:focus{box-shadow:0 0 0 3px #3863f41a}
 .step-heading>.badge{margin-top:4px;font-size:10px;margin-left:0;white-space:normal;line-height:1.5}
 .step-number{background:var(--accent-soft);border-color:var(--accent-border);color:var(--accent-ink);font-size:12px}
 .client-setup-card{border-color:#d5def9}
-.client-tabs{display:flex;gap:5px;padding:5px;background:#f0f3fa;border:1px solid var(--line);border-radius:10px;margin-bottom:24px}
+.client-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;padding:5px;background:#f0f3fa;border:1px solid var(--line);border-radius:10px;margin-bottom:24px}
 .client-tab{flex:1;min-width:0;min-height:40px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--muted);font:600 13px/1.4 var(--sans);padding:9px 14px;transition:background .15s,color .15s}
 .client-tab:hover{background:#e7edff;color:#304b99}
 .client-tab[aria-selected=true]{background:#fff;border-color:#dce3f5;color:var(--accent-ink);box-shadow:0 2px 5px #171c2a06}
+.client-profiles-section{margin-bottom:24px}
+.client-profile-grid{align-items:start}
+.client-profile-card{min-width:0}
+.client-profile-card .step-heading{flex-wrap:wrap}
+.client-profile-card h3{margin:0;font-size:18px;line-height:1.4;overflow-wrap:anywhere}
+.client-profile-card .code-block{max-height:290px;overflow:auto}
+.client-profile-details{margin-top:18px;min-width:0}
+.client-profile-details>summary{cursor:pointer;font-weight:600;color:var(--ink);padding:10px 0}
+.client-profile-command{white-space:pre-wrap;overflow-wrap:anywhere}
+.client-availability-note{align-items:flex-start}
+.client-panel>.documentation-link+.documentation-link{margin-top:12px}
+@media(max-width:480px){.client-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.client-profile-card h3{font-size:17px}}
 .client-panel:focus-visible{outline-offset:7px;border-radius:5px}
 .client-panel .notice{font-size:12px;margin-top:0}
 .client-panel .endpoint-row code{font-size:13px;color:var(--accent-ink)}

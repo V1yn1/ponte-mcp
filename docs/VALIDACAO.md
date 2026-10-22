@@ -1,8 +1,42 @@
-# Validação das entregas — Ponte MCP 0.9.0
+# Validação das entregas — Ponte MCP 0.10.0
 
 [Índice da documentação](README.md) · [Histórico de versões](../CHANGELOG.md) · [Operação](OPERACAO.md)
 
 Este documento registra a evidência de cada etapa. Os números de testes são os observados na entrega indicada, não uma nova execução feita ao editar a documentação. Registros históricos de erro não descrevem automaticamente o estado atual do produto; a verificação manual posterior de Events está registrada junto do diagnóstico original.
+
+## Gemini e Grok — 0.10.0
+
+Verificação em **22 de outubro de 2026**, com Node.js **24.19.0** em Linux. A entrega acrescenta perfis, comandos, exemplos de API e orientação no painel para Gemini e Grok. OAuth, autorização de ferramentas e identidade de jobs/watchers conservam os controles da Ponte. Os testes usam estado, projetos, credenciais sintéticas e portas temporárias.
+
+### Verificações executadas
+
+| Verificação | Resultado observado |
+|---|---|
+| `npm run verify` | TypeScript, **344 testes aprovados**, zero falhas/ignorados e compilação concluída |
+| Perfis e CLI | 17 testes de geração e validação, mais três de exportação: JSON/TOML, comandos literais, diretório de estado correto, ausência de credenciais, URL remota e recusa de sobrescrever arquivo existente |
+| Exemplos de API | Seis testes executam os scripts com somente `fetch` substituído: separação dos tokens, status por padrão, `--tools`, recusa de redirecionamento, ocultação de segredos refletidos e nenhuma repetição após erro de comunicação |
+| Estado administrativo e HTTP MCP | Três testes cobrem os seis perfis, atualização da origem, autenticação e uso das URLs/headers gerados por ambos os construtores contra a Ponte real, com túnel local controlado |
+| Aprovação e recuperação | Cada perfil de API executou gravação após aprovação, recuperação do mesmo job por idempotência, watcher interrompido e recuperado após reconexão e sinais reais de `succeeded`, `failed` e `needs_input`, sem recriar o acompanhamento |
+| `npm run smoke` | Build compilado passou por OAuth/DCR/PKCE, leitura/escrita e backup, upstream adicionado pelo MCP, gateways compactos, perfil stdio gerado, Events assinados de job/watcher, callback nativo, renovação e revogação |
+| Painel em Chromium | **120 verificações passaram**, zero falhas, em 1440 × 1000 e 390 × 844: quatro abas, teclado, perfis locais/remotos, origem alterada/removida, cópia com dados atuais, ausência de segredos no DOM e ausência de overflow horizontal |
+| Revisão visual | 12 capturas revisadas; cards, configurações e títulos legíveis em desktop e celular, sem sobreposição ou erro JavaScript observado |
+| Revisão independente | Três achados corrigidos: segredo reproduzido em resposta Grok 200, interpolação em hostname remoto e prazo do comando Grok diferente do TOML. Testes de regressão confirmaram as correções de saída e destino |
+| Sintaxe e artefatos | JavaScript do painel, smoke e exemplos conferidos; OpenAPI regenerado pela CLI compilada com versão 0.10.0; `git diff --check` sem erros |
+| Documentação | Referências locais e âncoras dos 28 documentos Markdown conferidas; blocos JSON/TOML analisados; blocos sh/bash passaram por `bash -n`; nove operações OpenAPI coincidem com a exportação da CLI |
+
+A suíte anterior tinha 315 testes. Os 29 novos testes acima somam-se a ela; não representam 29 contas ou produtos externos testados. O parser Python `tomllib` também conferiu configurações Grok geradas para caminhos Linux e Windows, com espaços, Unicode, apóstrofos e barras. Os testes de comandos POSIX executam os argumentos em shell; os comandos PowerShell foram conferidos estruturalmente, sem execução em Windows.
+
+O teste do painel interceptou `navigator.clipboard.writeText` em contexto isolado e comparou o conteúdo com o estado atual da Ponte. Não testou o clipboard do sistema operacional. As capturas foram feitas antes da atualização do rótulo de versão e do esclarecimento final do timeout Grok; o código dos controles de conexão é o mesmo. O smoke stdio usa um preload exclusivamente de teste para preservar os descritores de entrada/saída do runtime gerenciado; executa a CLI compilada com os caminhos e argumentos de estado do perfil gerado.
+
+### Limites da evidência
+
+**Não houve login em conta real Gemini/Grok, instalação dos CLIs desses fornecedores, chamada paga às APIs Google/xAI, validação regional, implantação Enterprise ou atualização do serviço no computador do usuário.** Os dados gerados seguem os contratos oficiais citados nos guias [Gemini](GEMINI.md) e [Grok](GROK.md). No teste HTTP, um cliente MCP do SDK usou esses dados para chamar a Ponte; isso não simula nem comprova a decisão de um modelo de escolher ou continuar usando ferramentas.
+
+Gemini Apps depende da disponibilidade publicada pelo Google: na data consultada, usuário adulto nos EUA, conta pessoal, inglês e Keep Activity ligado. Os perfis não removem essa restrição, cotas, confirmações do cliente ou políticas organizacionais. O fluxo Gemini Enterprise é documentado como configuração administrativa a validar no ambiente correspondente.
+
+Os exemplos de API fazem uma requisição com limite HTTP de 120 segundos. Eles não são um serviço permanente de acompanhamento. A espera nativa continua em 25 segundos por padrão, máximo de 45 segundos por chamada, sem alterar o prazo total do watcher. A validação confirmou persistência e recuperação pelo mesmo ID, mantendo **`monitorDurable: true`** e **`canWakeClosedConversation: false`**. Não há teste que comprove retomada de conversa encerrada em Gemini ou Grok.
+
+Nenhuma ferramenta de agendamento do ChatGPT, Claude, Gemini ou Grok foi usada nesses testes. Recebimento de webhook, resposta HTTP 200 e saída textual de um modelo não são usados como prova isolada da conclusão de uma tarefa externa.
 
 ## Execução direta e catálogo compacto — 0.9.0
 

@@ -1,4 +1,4 @@
-# Referência da API e ferramentas — Ponte MCP 0.9.0
+# Referência da API e ferramentas — Ponte MCP 0.10.0
 
 [Índice da documentação](README.md) · [Integrações](INTEGRACOES.md) · [Dots](DOTS.md) · [Watchers](WATCHERS.md)
 
@@ -21,6 +21,14 @@ Os controles de Host e Origin ainda se aplicam às rotas públicas. Para acesso 
 Tokens OAuth representam uma autorização específica; clientes REST/stdio que compartilham o token API compartilham a mesma identidade. Um cliente não consulta ou cancela um job/watcher de outra identidade apenas por conhecer seu ID. Jobs e watchers criados pelo painel usam a identidade API da instalação, compartilhada com esses clientes, e não a identidade de um grant OAuth. A autenticação do painel continua exigindo o token administrativo.
 
 O MCP HTTP é stateless e usa POST. Um GET autenticado em `/mcp` retorna 405; isso não indica falha de instalação. O adaptador moderno oferece o subconjunto implementado do protocolo `2026-07-28`; clientes legados são atendidos pelo SDK. [MCP Events](MCP-EVENTS.md) documenta os cabeçalhos e métodos modernos.
+
+## Perfis de conexão para Gemini e Grok
+
+O estado administrativo `GET /admin/state` inclui `connection.clientProfiles` e `connection.apiTokenCommand`. São informações locais para montar o painel: os seis perfis contêm formato, conteúdo, disponibilidade, comando de cadastro quando aplicável e link oficial. Um perfil indisponível contém o motivo e não oferece um comando executável. O comando para consultar a credencial aponta para o `--state-dir` real, mas não inclui seu valor.
+
+Esses campos não fazem parte de `bridge_status` nem de `GET /v1/status`; exportações não revelam o token API ou administrativo. `export-client` usa o mesmo gerador e escreve somente em um arquivo novo quando `--output` é informado. Os guias [Gemini](GEMINI.md) e [Grok](GROK.md) descrevem os formatos de cada cliente, os modelos de requisição `{url, body}` e a distinção entre chave do provedor e credencial MCP.
+
+As APIs de modelos não criam uma autorização nova na Ponte quando usam o token API existente. Elas compartilham a identidade desse token com os demais clientes que o recebem. A allowlist das 12 ferramentas centrais inclui gateways capazes de alcançar o catálogo real; ela não constitui uma lista de alvos locais permitidos. As permissões, aprovações e a autorização do usuário continuam determinando o escopo das operações.
 
 ## Catálogos e descoberta
 
@@ -169,7 +177,7 @@ ou, com um `jobId` real da mesma identidade:
 
 O UUID acima é ilustrativo e não identifica um trabalho existente. O nome aceita 1–160 caracteres; `source` e `runId`, 1–128, com restrições adicionais para controles/espaços em `runId`. `timeoutMs` define o prazo total do watcher: de 1000 a 604800000 ms (sete dias), com padrão 3600000 ms (uma hora). `expiresAt` registra seu vencimento. `waitMs` limita somente uma chamada; consultar, esperar novamente ou recuperar a criação idempotente não renova esse prazo total.
 
-Detalhe, criação, espera e cancelamento informam `monitorDurable: true` e `canWakeClosedConversation: false`. Esses valores permanecem na 0.9.0, inclusive após entrega de Events. Resultados de executor são marcados como dados não confiáveis. Quando `waiting`, a resposta orienta a próxima espera de 25000 ms pelo mesmo ID; o chat continua durante o turno ativo até terminal ou limite concreto do cliente. A lista retorna `{watchers, total, offset, limit}` sem tokens de callback.
+Detalhe, criação, espera e cancelamento informam `monitorDurable: true` e `canWakeClosedConversation: false`. Esses valores permanecem na 0.10.0, inclusive após entrega de Events. Resultados de executor são marcados como dados não confiáveis. Quando `waiting`, a resposta orienta a próxima espera de 25000 ms pelo mesmo ID; o chat continua durante o turno ativo até terminal ou limite concreto do cliente. A lista retorna `{watchers, total, offset, limit}` sem tokens de callback.
 
 Falhas de comunicação tratadas pela Ponte retornam recuperação estruturada para `bridge_watch_get` com o mesmo `watcherId`, sem fabricar estado do acompanhamento. Isso inclui interrupção antes dos cabeçalhos, durante a leitura do corpo e HTTP 503 no adaptador stdio. Consulte o estado antes de retomar a espera. Erros de autenticação ou registro não encontrado exigem conferir autorização/ID; não autorizam retry cego, criação de outro watcher ou reenvio da tarefa. O [roteiro de recuperação](WATCHERS.md#recuperar-uma-espera-interrompida) detalha cada resultado.
 

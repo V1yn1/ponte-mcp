@@ -27,7 +27,7 @@ export function watcherRecovery(watcherId: unknown, reason: WatcherRecoveryReaso
     watcherId: parsed.data, monitorDurable: true, canWakeClosedConversation: false,
     recovery: { reason, retryable: true, defaultWaitMs: WATCH_DEFAULT_WAIT_MS, maxWaitMs: WATCH_MAX_WAIT_MS },
     nextStep: (reason === 'wait_limit_exceeded' ? `waitMs aceita no máximo ${WATCH_MAX_WAIT_MS} ms por chamada; não repita a espera acima desse limite. ` : 'A chamada não confirmou o estado atual da tarefa. ') +
-      `Consulte bridge_watch_get com este mesmo watcherId. Se retornar waiting, continue bridge_watch_wait com waitMs:${WATCH_DEFAULT_WAIT_MS} até resultado terminal ou limite concreto do cliente ou expiresAt. O cliente pode ter um limite menor por chamada. Não crie outro watcher nem reenvie a tarefa por esta falha. Não use agendamentos do ChatGPT/Claude.`,
+      `Consulte bridge_watch_get com este mesmo watcherId. Se retornar waiting, continue bridge_watch_wait com waitMs:${WATCH_DEFAULT_WAIT_MS} até resultado terminal ou limite concreto do cliente ou expiresAt. O cliente pode ter um limite menor por chamada. Não crie outro watcher nem reenvie a tarefa por esta falha. Não use agendamentos do cliente.`,
     nextCall: { tool: 'bridge_watch_get', arguments: { watcherId: parsed.data } },
   };
 }

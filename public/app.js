@@ -16,7 +16,7 @@
     tools: { title: 'Ferramentas', eyebrow: 'EXPLORE E EXPERIMENTE', description: 'Inspecione parâmetros e envie solicitações com contexto.' },
     jobs: { title: 'Execuções', eyebrow: 'CADA AÇÃO, VISÍVEL', description: 'Revise solicitações e acompanhe o resultado de cada execução.' },
     watchers: { title: 'Acompanhamentos', eyebrow: 'AGUARDE A CONCLUSÃO REAL', description: 'Acompanhe sinais de tarefas externas e estados finais de execuções da Ponte.' },
-    connect: { title: 'Conectar IA', eyebrow: 'SEU CHAT, SUAS FERRAMENTAS', description: 'Conecte ChatGPT ou Claude, revise autorizações e controle o acesso ao seu ambiente.' }
+    connect: { title: 'Conectar IA', eyebrow: 'SEU CHAT, SUAS FERRAMENTAS', description: 'Conecte ChatGPT, Claude, Gemini ou Grok, revise autorizações e controle o acesso ao seu ambiente.' }
   };
   const statuses = {
     pending_approval: ['Aguardando aprovação', 'warning', 'clock'],
@@ -364,7 +364,7 @@
     const state = app.state;
     if (!state) return;
     updateConnectionStatus();
-    $('#sidebar-version').textContent = `Ponte MCP · v${state.version || '0.9.0'}`;
+    $('#sidebar-version').textContent = `Ponte MCP · v${state.version || '0.10.0'}`;
     $('#nav-project-count').textContent = number(state.config?.projects?.length);
     $('#nav-pending-count').textContent = number(state.stats?.pending);
     $('#nav-pending-count').hidden = !state.stats?.pending;
@@ -703,6 +703,15 @@
     $('#claude-code-command').textContent = claudeCommand?.command || 'Configure a URL pública para gerar o comando.';
     $('#claude-code-shell').textContent = claudeCommand ? `Comando · ${claudeCommand.shell}` : 'Comando de conexão';
     $('#copy-claude-code').disabled = !enabled;
+    for (const client of ['gemini', 'grok']) {
+      $(`#${client}-mcp-url`).textContent = enabled ? oauth.resource : 'Configure a URL pública primeiro';
+      $(`#copy-${client}-url`).disabled = !enabled;
+      $(`#${client}-oauth-status`).textContent = enabled ? 'OAuth disponível' : 'Configure a URL';
+      $(`#${client}-oauth-status`).className = `badge badge-${enabled ? 'success' : 'neutral'}`;
+    }
+    $('#api-token-command').textContent = connection.apiTokenCommand?.text || 'Consulte o comando token api no terminal da instalação.';
+    $('[data-action="copy-api-command"]').disabled = !connection.apiTokenCommand?.text;
+    renderClientProfiles();
     $('#oauth-status').textContent = enabled ? 'OAuth disponível' : 'Configure a URL';
     $('#oauth-status').className = `badge badge-${enabled ? 'success' : 'neutral'}`;
     replaceMarkup($('#oauth-setup-note'), `${icon(enabled ? 'check' : 'info')}<span>${enabled ? 'A URL está configurada. Adicione o servidor no ChatGPT para iniciar a autorização.' : 'Salve a URL pública HTTPS para habilitar o OAuth.'}</span>`);
@@ -723,6 +732,49 @@
       : emptyState('shield', 'Nenhum cliente autorizado.', 'Ao concluir o OAuth, a conexão aparecerá aqui. Você poderá revogar o acesso quando quiser.', '', true));
     renderEvents();
     if ($('#oauth-dialog').open) renderOAuthReview();
+  }
+
+  function renderClientProfiles() {
+    const client = app.connectionClient;
+    const section = $('#client-profiles');
+    const selected = client === 'gemini' || client === 'grok';
+    section.hidden = !selected;
+    if (!selected) return;
+    const name = client === 'gemini' ? 'Gemini' : 'Grok';
+    const cli = client === 'gemini' ? 'Gemini CLI' : 'Grok Build';
+    const connection = app.state?.connection || {};
+    const ids = client === 'gemini' ? ['gemini-cli-stdio', 'gemini-cli-http', 'gemini-api'] : ['grok-build-stdio', 'grok-build-http', 'grok-api'];
+    const profiles = Array.isArray(connection.clientProfiles) ? connection.clientProfiles : [];
+    $('#client-profiles-title').textContent = `${cli} e API ${name}`;
+    const guide = `https://github.com/V1yn1/ponte-mcp/blob/main/docs/${client.toUpperCase()}.md`;
+    const cards = ids.map(id => {
+      const profile = profiles.find(item => item.id === id);
+      const isApi = id.endsWith('-api');
+      const local = id.endsWith('-stdio');
+      const title = isApi ? `API ${name}` : `${cli} · ${local ? 'local' : 'remoto'}`;
+      const description = isApi
+        ? 'O exemplo consulta apenas bridge_status por padrão. Use suas credenciais por variáveis de ambiente; chamadas à API seguem a cobrança do provedor.'
+        : local ? `Mescle a configuração no ${client === 'gemini' ? 'settings.json do Gemini' : 'config.toml do Grok'}. Mantenha a Ponte em execução neste computador.`
+        : 'Conecte por HTTPS e autorize o OAuth neste painel. O comando abaixo adiciona a conexão no terminal do cliente.';
+      const available = Boolean(profile?.available);
+      let content = `<p>${escape(description)}</p>`;
+      if (available) {
+        if (profile.command?.text) content += `<div class="code-header"><span>Comando · ${escape(profile.command.shell)}</span><button type="button" class="icon-button" data-action="copy-client-command" data-profile="${id}" aria-label="Copiar comando ${escape(title)}">${icon('copy')}</button></div><pre class="code-block client-profile-command">${escape(profile.command.text)}</pre>`;
+        content += `<details class="client-profile-details"${isApi ? '' : ' open'}><summary>${isApi ? 'Modelo de requisição da API' : `Configuração ${escape(profile.format.toUpperCase())}`}</summary><div class="code-header"><span>${isApi ? 'Endpoint e corpo · substitua os marcadores' : 'Mescle com as entradas existentes'}</span><button type="button" class="icon-button" data-action="copy-client-profile" data-profile="${id}" aria-label="Copiar configuração ${escape(title)}">${icon('copy')}</button></div><pre class="code-block">${escape(profile.content)}</pre></details>`;
+        if (isApi) content += `<p class="field-help">Execute <code>node examples/${client}-api.mjs</code> após configurar as variáveis do guia. A opção <code>--tools</code> habilita os gateways e o acompanhamento; ela mantém as permissões e aprovações da Ponte.</p>`;
+        else content += `<p class="field-help">${client === 'gemini' ? 'Use /mcp para conferir a conexão e /mcp auth ponte para autenticar o HTTP. O perfil e o comando definem 60 segundos por chamada.' : 'Use /mcps para autenticar ou atualizar e grok mcp doctor ponte --json para diagnóstico. O TOML define 60 segundos por chamada; o comando de cadastro usa o padrão do Grok até você mesclar essa configuração.'} Cada espera da Ponte continua limitada a 45 segundos.</p>`;
+      } else {
+        content += `<div class="notice notice-subtle">${icon('info')}<span>${escape(profile?.reason || 'Atualize o serviço da Ponte para gerar este perfil. Os modos remotos exigem uma URL HTTPS pública configurada.')}</span></div>`;
+      }
+      return `<article class="panel connect-card client-profile-card"><div class="step-heading"><span class="soft-icon">${icon(isApi ? 'code' : 'terminal')}</span><div><span class="section-kicker">${isApi ? 'INTEGRAÇÃO POR API' : local ? 'LOCAL · STDIO' : 'HTTP · OAUTH'}</span><h3>${escape(title)}</h3></div>${badge(local ? 'Sem túnel' : 'HTTPS público', 'neutral')}</div>${content}<a class="text-link documentation-link" href="${guide}" target="_blank" rel="noopener noreferrer">Abrir guia de instalação${icon('external')}</a></article>`;
+    }).join('');
+    const list = $('#client-profile-list');
+    const expanded = new Map($$('details', list).map(details => [details.closest('.client-profile-card')?.querySelector('h3')?.textContent, details.open]));
+    replaceMarkup(list, cards);
+    $$('details', list).forEach(details => {
+      const title = details.closest('.client-profile-card')?.querySelector('h3')?.textContent;
+      if (expanded.has(title)) details.open = expanded.get(title);
+    });
   }
 
   function renderEvents() {
@@ -1249,7 +1301,7 @@
   }
 
   function selectConnectionClient(client, focus = false) {
-    if (!['chatgpt', 'claude'].includes(client)) return;
+    if (!['chatgpt', 'claude', 'gemini', 'grok'].includes(client)) return;
     app.connectionClient = client;
     $$('.client-tab').forEach(tab => {
       const selected = tab.dataset.client === client;
@@ -1259,6 +1311,7 @@
       if (panel) panel.hidden = !selected;
       if (selected && focus) tab.focus();
     });
+    renderClientProfiles();
   }
 
   function navigate(view, focus = true) {
@@ -1334,8 +1387,13 @@
     else if (action === 'copy-endpoint') await copyText(app.state?.connection?.[button.dataset.key]);
     else if (action === 'copy-chatgpt-url') await copyText(app.state?.connection?.oauth?.resource);
     else if (action === 'copy-claude-url') await copyText(app.state?.connection?.oauth?.resource);
+    else if (action === 'copy-gemini-url' || action === 'copy-grok-url') await copyText(app.state?.connection?.oauth?.resource);
     else if (action === 'copy-claude-code') await copyText($('#claude-code-command').textContent);
-    else if (action === 'copy-api-command') await copyText('node dist/cli.js token api');
+    else if (action === 'copy-api-command') await copyText(app.state?.connection?.apiTokenCommand?.text);
+    else if (action === 'copy-client-profile' || action === 'copy-client-command') {
+      const profile = app.state?.connection?.clientProfiles?.find(item => item.id === button.dataset.profile);
+      if (profile?.available) await copyText(action === 'copy-client-profile' ? profile.content : profile.command?.text);
+    }
     else if (action === 'copy-dot-instruction') await copyText($('#dot-instruction').textContent);
   });
 

@@ -2,11 +2,13 @@
 
 **Ferramentas do seu computador e dos seus servidores MCP em uma única conexão para o chat.**
 
-A Ponte é um serviço local com painel em português. Ela permite que clientes compatíveis, como ChatGPT e Claude, trabalhem em projetos autorizados, executem comandos e usem ferramentas de outros servidores MCP, incluindo Roblox Studio e Playwright. Cada solicitação segue as permissões e a política de aprovação definidas no painel.
+A Ponte é um serviço local com painel em português. Ela permite que clientes compatíveis de ChatGPT, Claude, Gemini e Grok trabalhem em projetos autorizados, executem comandos e usem ferramentas de outros servidores MCP, incluindo Roblox Studio e Playwright. Cada solicitação segue as permissões e a política de aprovação definidas no painel.
 
-**Versão atual: 0.9.0.** O dot pode descobrir e chamar as ferramentas da Ponte por uma fachada estável, com argumentos JSON, consulta de schema e catálogo compacto opcional. O código, os comandos e as chamadas aos MCPs são executados pela Ponte; esse caminho não depende de abrir uma sessão Work ou Codex. A disponibilidade das ferramentas e a decisão de delegar no ChatGPT continuam sob controle do cliente. O [guia de dots](docs/DOTS.md) separa o que foi implementado do que ainda precisa ser validado na conversa real.
+**Versão atual: 0.10.0.** O painel oferece quatro abas de conexão e exporta configurações para Gemini CLI, Grok Build e as APIs Gemini/xAI. Os apps de chat usam o mesmo endpoint MCP com OAuth; os CLIs podem usar stdio local ou HTTP. Os exemplos de API começam somente com uma consulta de estado e permitem habilitar as demais ferramentas explicitamente. [Gemini](docs/GEMINI.md) e [Grok](docs/GROK.md) descrevem instalação, autenticação e limites de cada produto.
 
-[Documentação completa](docs/README.md) · [Instalar e atualizar](docs/OPERACAO.md) · [ChatGPT](docs/CHATGPT.md) · [Dots](docs/DOTS.md) · [Claude](docs/CLAUDE.md) · [MCPs pelo chat](docs/MCPS-PELO-CHAT.md) · [Watchers](docs/WATCHERS.md) · [Histórico de versões](CHANGELOG.md)
+A fachada de descoberta, schema e execução JSON da 0.9.0 continua disponível. A Ponte executa o código e as chamadas aos MCPs no seu computador, sem depender de abrir uma sessão Work ou Codex. A disponibilidade das ferramentas e a decisão de delegar no ChatGPT continuam sob controle do cliente. O [guia de dots](docs/DOTS.md) separa a capacidade do servidor da validação na conversa real.
+
+[Documentação completa](docs/README.md) · [Instalar e atualizar](docs/OPERACAO.md) · [ChatGPT](docs/CHATGPT.md) · [Dots](docs/DOTS.md) · [Claude](docs/CLAUDE.md) · [Gemini](docs/GEMINI.md) · [Grok](docs/GROK.md) · [MCPs pelo chat](docs/MCPS-PELO-CHAT.md) · [Watchers](docs/WATCHERS.md) · [Histórico de versões](CHANGELOG.md)
 
 ## Recursos
 
@@ -19,6 +21,7 @@ A Ponte é um serviço local com painel em português. Ela permite que clientes 
 | MCPs pelo chat | Listar conexões, cadastrar e reconectar com justificativa, revisão e uso imediato pelo catálogo dinâmico |
 | Dots e uso direto | Catálogo compacto com 12 ferramentas estáveis, descoberta sob demanda, invocação JSON e leitura restrita por risco |
 | Chats | MCP HTTP com OAuth, MCP local por stdio e API REST com OpenAPI para GPT Actions |
+| Gemini e Grok | Apps com MCP personalizado nas contas elegíveis, perfis CLI JSON/TOML e exemplos de Remote MCP pelas APIs |
 | Watchers | Criar, consultar, listar, aguardar e cancelar; gatilhos `signal` e `job`; estado e resultados persistidos |
 | MCP Events | Eventos `ponte.job.completed` por trabalho e `ponte.watcher.completed` por acompanhamento, com inscrição e callback fornecidos por um cliente compatível |
 | Painel | Projetos, conexões, ferramentas, execuções, acompanhamentos, autorização OAuth e diagnóstico de Events |
@@ -59,19 +62,39 @@ No macOS/Linux, use `npm` no lugar de `npm.cmd`. O preset do Roblox requer Windo
 | Claude com conector remoto | API pública HTTPS em `/mcp`, OAuth e autorização local | [Claude](docs/CLAUDE.md) |
 | Claude Desktop ou outro cliente stdio | Processo local `node dist/cli.js stdio`; serviço da Ponte já iniciado | [Claude](docs/CLAUDE.md) |
 | Claude Code | MCP HTTP ou stdio, conforme o ambiente | [Claude](docs/CLAUDE.md) |
+| Gemini Apps | MCP personalizado com HTTPS e OAuth; elegibilidade regional e de conta descrita no guia | [Gemini](docs/GEMINI.md) |
+| Gemini CLI | JSON com stdio local ou `httpUrl` HTTPS com OAuth | [Gemini](docs/GEMINI.md) |
+| Grok no chat | Conector MCP personalizado com HTTPS e OAuth | [Grok](docs/GROK.md) |
+| Grok Build | TOML nativo com stdio local ou HTTP com OAuth | [Grok](docs/GROK.md) |
+| Gemini Interactions API ou xAI Responses API | Remote MCP em `/mcp` com token API da Ponte; chave do provedor separada | [Gemini](docs/GEMINI.md), [Grok](docs/GROK.md) |
 | GPT personalizado com Actions | OpenAPI da Ponte e autenticação Bearer com token API | [Integrações](docs/INTEGRACOES.md) |
 
 Para conexões remotas, encaminhe **toda a API da porta 4318** por HTTPS e salve somente a origem em **Conectar IA → URL pública da API**, por exemplo `https://sua-ponte.exemplo.com`. A URL do servidor MCP será `https://sua-ponte.exemplo.com/mcp`. Mantenha o painel da porta **4317** local. O túnel precisa atender também descoberta, OAuth e callbacks de watchers; publicar apenas `/mcp` é insuficiente.
 
-O token `admin` autentica o painel; o token `api` atende REST/Actions e o adaptador stdio; clientes OAuth recebem suas próprias credenciais. O token exclusivo de um callback de watcher tem outra finalidade. Veja os contratos em [API e ferramentas](docs/API.md).
+O token `admin` autentica o painel; o token `api` atende REST/Actions, o adaptador stdio e MCP remoto com Bearer; clientes OAuth recebem suas próprias credenciais. A chave Google/xAI é outra credencial, usada pela aplicação que chama a API do modelo. O token exclusivo de um callback de watcher tem outra finalidade. Veja os contratos em [API e ferramentas](docs/API.md).
 
 Após conectar, peça ao chat para consultar `bridge_status` e usar `bridge_read` com `tool: "local_projects"` e `argumentsJson: "{}"`. A aprovação OAuth confirma a autorização; uma chamada de leitura confirma o uso efetivo das ferramentas.
+
+### Gemini e Grok: escolher o produto e exportar
+
+Em **Conectar IA**, selecione **ChatGPT**, **Claude**, **Gemini** ou **Grok**. As abas Gemini/Grok mostram o caminho do app, as configurações dos CLIs e os modelos de requisição das APIs. O comando `export-client` gera os mesmos seis perfis sem gravar na configuração do cliente:
+
+```powershell
+node dist/cli.js export-client gemini-cli-stdio --output gemini-ponte.json
+node dist/cli.js export-client grok-build-stdio --output grok-ponte.toml
+```
+
+Os outros perfis são `gemini-cli-http`, `grok-build-http`, `gemini-api` e `grok-api`. Perfis remotos exigem a origem pública configurada ou `--url https://sua-ponte.exemplo.com`; instalações com estado personalizado devem incluir `--state-dir` apontando para esse estado. O exportador recusa sobrescrever um arquivo existente. Mescle a entrada gerada preservando as demais configurações. O [guia de operação](docs/OPERACAO.md#exportar-configurações-para-gemini-e-grok) detalha formatos, prazos e exemplos.
+
+Os exemplos [Gemini API](examples/gemini-api.mjs) e [Grok API](examples/grok-api.mjs) leem credenciais do ambiente e, por padrão, permitem somente `bridge_status`. A opção `--tools` disponibiliza as 12 ferramentas centrais para um pedido autorizado. As APIs têm autenticação e cobrança próprias; a Ponte não fornece essas chaves.
+
+**Gemini Apps tem uma limitação de disponibilidade:** na documentação consultada em 22/10/2026, apps personalizados exigem usuário com 18 anos ou mais nos EUA, conta pessoal, interface em inglês e Keep Activity ativado; não estão disponíveis para contas de trabalho/escola. O [guia oficial](https://support.google.com/gemini/answer/17209137?hl=en-12) não confirma o recurso no Brasil. Gemini CLI e API têm caminhos próprios descritos no guia. As novas integrações foram preparadas a partir dos contratos oficiais e de testes controlados; **não houve login nem execução em contas reais Gemini/Grok** nesta entrega.
 
 ## Usar as ferramentas diretamente no dot
 
 A Ponte executa as operações no computador onde o serviço está rodando. O dot envia chamadas MCP: não precisa de terminal próprio para ler/editar arquivos, executar um programa autorizado, usar Playwright ou chamar o Roblox Studio.
 
-1. Atualize a Ponte, reinicie o serviço e confirme **0.9.0** em `bridge_status`.
+1. Atualize a Ponte, reinicie o serviço e confirme **0.10.0** em `bridge_status`.
 2. Em **Conectar IA → Catálogo MCP**, escolha **Compacto (dots)** se quiser apresentar somente a fachada estável. O padrão continua **Completo** para instalações existentes; as novas chamadas funcionam nos dois perfis.
 3. Use **Refresh/Scan Tools** na conexão do ChatGPT e abra uma conversa nova com o dot.
 4. Peça a descoberta por `bridge_list_tools` com `includeSchemas: false`, seguida de `bridge_tool_schema` para o nome escolhido. Use `bridge_read` quando o risco retornado for `read`; use `bridge_invoke` nos demais casos. Ambos recebem `tool`, `argumentsJson` e `idempotencyKey` opcional.
@@ -115,7 +138,7 @@ O produtor [ponte-watch-notify.mjs](scripts/ponte-watch-notify.mjs) envia o resu
 | Watcher `job` | O estado final de uma execução da Ponte | Não atribui ao trabalho um significado maior que a própria execução |
 | MCP Events | O estado terminal de um job ou watcher com inscrição ativa do cliente | Pode avisar um cliente compatível por webhook; depende da inscrição e do processamento pelo cliente |
 
-**Watchers pertencem à Ponte e não usam o agendador do ChatGPT ou Claude.** `monitorDurable: true` e `canWakeClosedConversation: false` permanecem no contrato desta versão. O fim de `tmux send-keys`, do comando que enviou a demanda ou de uma resposta do Claude não comprova a conclusão da tarefa. Cancelar o watcher encerra somente o acompanhamento, sem interromper o executor. `expired` significa que o prazo do acompanhamento acabou; não comprova falha da tarefa externa.
+**Watchers pertencem à Ponte e não usam o agendador do cliente.** `monitorDurable: true` e `canWakeClosedConversation: false` permanecem no contrato desta versão. O fim de `tmux send-keys`, do comando que enviou a demanda ou de uma resposta do Claude não comprova a conclusão da tarefa. Cancelar o watcher encerra somente o acompanhamento, sem interromper o executor. `expired` significa que o prazo do acompanhamento acabou; não comprova falha da tarefa externa.
 
 `waitMs` vale para uma chamada. O prazo total usa `timeoutMs` na criação, com padrão de uma hora e máximo de sete dias, e fica registrado em `expiresAt`; repetir uma espera não o renova. Valores acima de 45000 ms são rejeitados com orientação para consultar o mesmo ID, sem reduzir silenciosamente o valor. Um timeout de comunicação também não autoriza recriar o watcher ou reenviar a demanda.
 
@@ -182,7 +205,7 @@ npm.cmd start
 
 Preserve a pasta `.ponte` inteira, incluindo `secrets.json`, `oauth.json`, `events.json`, `watchers.json` e backups. O watcher usa a chave da instalação; apagar ou recriar as credenciais isoladamente pode impedir a leitura do estado existente. Não execute duas instâncias sobre o mesmo diretório.
 
-Confira **0.9.0** com `bridge_status` ou `doctor` e atualize o catálogo no cliente. Verifique `bridge_tool_schema`, `bridge_read` e `bridge_invoke`; `bridge_watch_wait` deve anunciar máximo de **45000 ms**, e Events deve listar **`ponte.watcher.completed`** junto de `ponte.job.completed`. As três ferramentas `bridge_mcp_*` e as cinco `bridge_watch_*` continuam disponíveis. Se o cliente mantiver o catálogo de ferramentas em cache, use `bridge_list_tools` e `bridge_call`; isso não substitui a atualização da descoberta de Events. Para instalações por ZIP, diretório personalizado, mudança de túnel e recuperação, siga [Operação](docs/OPERACAO.md).
+Confira **0.10.0** com `bridge_status` ou `doctor` e atualize o catálogo no cliente. Verifique `bridge_tool_schema`, `bridge_read` e `bridge_invoke`; `bridge_watch_wait` deve anunciar máximo de **45000 ms**, e Events deve listar **`ponte.watcher.completed`** junto de `ponte.job.completed`. As três ferramentas `bridge_mcp_*` e as cinco `bridge_watch_*` continuam disponíveis. Se o cliente mantiver o catálogo de ferramentas em cache, use `bridge_list_tools` e `bridge_call`; isso não substitui a atualização da descoberta de Events. Para instalações por ZIP, diretório personalizado, mudança de túnel e recuperação, siga [Operação](docs/OPERACAO.md).
 
 ## Desenvolvimento e evidência
 
@@ -201,6 +224,7 @@ A evidência de cada versão está em [Validação](docs/VALIDACAO.md), separand
 |---|---|
 | `src/core/`, `src/tools/` | Configuração, auditoria, trabalhos e ferramentas locais |
 | `src/auth/`, `src/mcp/` | OAuth, fachada MCP e clientes upstream |
+| `src/clients/` | Perfis exportáveis de Gemini/Grok e construção das requisições de exemplo das APIs |
 | `src/watchers/`, `src/events/` | Acompanhamentos nativos e entrega de eventos ao cliente |
 | `public/` | Painel e consentimento OAuth |
 | `tests/`, `scripts/` | Testes, smoke, instalação e produtor de sinais |

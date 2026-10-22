@@ -4,6 +4,19 @@
 
 Este histórico reúne as entregas já implementadas. As notas de cada versão descrevem suas mudanças; os guias em `docs/` descrevem o comportamento atual. A revisão exclusivamente documental registrada abaixo manteve o programa na versão de sua etapa.
 
+## 0.10.0 — Gemini e Grok — 22/10/2026
+
+- Abas próprias em **Conectar IA** para Gemini Apps e Grok, com URL MCP copiável, fluxo OAuth, requisitos de conta e links oficiais. As quatro abas também funcionam por teclado e em telas pequenas.
+- Seis perfis gerados com os caminhos reais da instalação e do estado: Gemini CLI por stdio/HTTP, Grok Build por stdio/HTTP e modelos de requisição para as duas APIs. Gemini usa JSON/`httpUrl`; Grok Build usa TOML. Os arquivos definem 60 segundos por chamada, sem alterar o máximo de 45 segundos por espera da Ponte. O comando de cadastro Grok usa o prazo padrão do cliente até mesclar o TOML.
+- `export-client PERFIL [--url HTTPS] [--output ARQUIVO]`: exporta sem inserir credenciais, sem editar as configurações do cliente e sem sobrescrever arquivos existentes. Perfis remotos exigem origem pública HTTPS; perfis locais dispensam túnel.
+- Comandos com argumentos literais para Bash/Zsh e PowerShell. Caminhos que os clientes reinterpretariam como variáveis e destinos com hostname inválido são recusados. Erros de um perfil não impedem o painel de exibir os demais.
+- Exemplos executáveis para Gemini Interactions e xAI Responses usando os campos MCP documentados de cada API. O padrão disponibiliza apenas `bridge_status`; `--tools` habilita a fachada completa, incluindo descoberta, execução, jobs e recuperação de watchers. O modelo é configurado pela conta, sem nome fixo presumido.
+- Chaves de provedor e token API da Ponte têm destinos separados. Exemplos ocultam os valores conhecidos nas saídas, recusam redirecionamentos e não repetem uma chamada de resultado incerto. Perfis e painel não exportam os segredos da instalação.
+- Testes por HTTP real em instalação temporária exercitam os dados gerados, aprovação, idempotência, reconexão pelo mesmo watcher e entrega de `succeeded`, `failed` e `needs_input`. O smoke usa também o perfil stdio gerado com o adaptador compilado.
+- Guias próprios de Gemini e Grok, exemplos, diagnóstico e documentação geral atualizados. Compatibilidade de contrato/protocolo e validação em contas reais são registradas separadamente. A elegibilidade de Gemini Apps continua dependente do Google; não foi comprovada retomada de conversa encerrada em nenhum dos novos clientes.
+
+A evidência está em [Validação](docs/VALIDACAO.md#gemini-e-grok--0100). Aprovação, autenticação e identidade dos trabalhos/watchers usam os mesmos controles existentes. `canWakeClosedConversation` permanece **false**.
+
 ## 0.9.0 — Ferramentas diretamente no dot — 22/10/2026
 
 - `bridge_read` e `bridge_invoke` aceitam `tool`, `argumentsJson` e `idempotencyKey`, mantendo o schema original, a identidade, a fila, a aprovação e as permissões da operação. O JSON é dado: não é avaliado como script.

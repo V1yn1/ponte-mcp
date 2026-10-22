@@ -272,7 +272,7 @@ export function createHttpApps(runtime: Application): { admin: Express; api: Exp
     const getCallableTools = () => publicTools(runtime, Boolean(runtime.store.config.publicUrl));
     const disconnected = requestSignal(req, res);
     const call = (name: string, args: Record<string, unknown>, signal?: AbortSignal) => callGateway(runtime, name, args, principal, signal ? AbortSignal.any([disconnected, signal]) : disconnected);
-    if (await handleModernMcp(req, res, { getTools, getCallableTools, call, events: runtime.events, principal, version: '0.9.0', instructions: SERVER_INSTRUCTIONS })) return;
+    if (await handleModernMcp(req, res, { getTools, getCallableTools, call, events: runtime.events, principal, version: '0.10.0', instructions: SERVER_INSTRUCTIONS })) return;
     const server = makeMcpServer(getTools, call);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     try { await server.connect(transport); await transport.handleRequest(req, res, req.body); }

@@ -8,9 +8,10 @@ import { ConfigStore, projectSchema, robloxPreset, publicUrlSchema } from './cor
 import { startApplication, projectRoot } from './app.js';
 import { makeMcpServer } from './mcp/server.js';
 import { makeOpenApi } from './openapi.js';
+import { CLIENT_PROFILE_IDS, exportClientProfile, type ClientProfileId } from './clients/profiles.js';
 import { WATCH_DEFAULT_WAIT_MS, WATCH_MAX_WAIT_MS, WatchRecoveryError, watcherRecovery } from './watchers/types.js';
 
-const HELP = `Ponte MCP 0.9.0 — ferramentas locais para chats\n\nComandos:\n  init [--workspace PASTA]  Criar configuração e credenciais locais\n  start                    Iniciar painel e API em loopback\n  stdio                    Expor MCP por stdio usando o serviço já iniciado\n  token admin|api          Mostrar a credencial escolhida neste terminal\n  doctor                   Verificar configuração e serviço\n  add-project ID PASTA     Autorizar pasta (reinicie o serviço após configurar)\n  add-roblox               Adicionar o MCP oficial do Roblox Studio\n  export-openapi [--url HTTPS] [--output ARQUIVO]\n\nOpções gerais:\n  --state-dir PASTA        Diretório local de configuração (padrão .ponte)\n  --port NUMERO            Porta do painel ao criar a configuração\n  --api-port NUMERO        Porta da API ao criar a configuração\n\nO serviço não remove cotas do modelo. Tokens admin e api são diferentes.\n`;
+const HELP = `Ponte MCP 0.10.0 — ferramentas locais para chats\n\nComandos:\n  init [--workspace PASTA]  Criar configuração e credenciais locais\n  start                    Iniciar painel e API em loopback\n  stdio                    Expor MCP por stdio usando o serviço já iniciado\n  token admin|api          Mostrar a credencial escolhida neste terminal\n  doctor                   Verificar configuração e serviço\n  add-project ID PASTA     Autorizar pasta (reinicie o serviço após configurar)\n  add-roblox               Adicionar o MCP oficial do Roblox Studio\n  export-openapi [--url HTTPS] [--output ARQUIVO]\n  export-client PERFIL [--url HTTPS] [--output ARQUIVO]\n    Gemini: gemini-cli-stdio, gemini-cli-http, gemini-api\n    Grok: grok-build-stdio, grok-build-http, grok-api\n    Exporta sem sobrescrever arquivos ou configurar o cliente.\n\nOpções gerais:\n  --state-dir PASTA        Diretório local de configuração (padrão .ponte)\n  --port NUMERO            Porta do painel ao criar a configuração\n  --api-port NUMERO        Porta da API ao criar a configuração\n\nO serviço não remove cotas do modelo. Tokens admin e api são diferentes.\n`;
 
 async function main() {
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
@@ -46,6 +47,26 @@ async function main() {
   });
   if (command === 'init') {
     process.stderr.write(`Configuração pronta em ${stateDir}.\nProjeto: ${store.config.projects[0]?.root ?? '(nenhum)'}\nPróximo passo: npm start\nToken do painel: node dist/cli.js token admin\n`); return;
+  }
+  if (command === 'export-client') {
+    const id = positionals[1];
+    if (positionals.length !== 2 || !CLIENT_PROFILE_IDS.includes(id as ClientProfileId)) {
+      throw new Error(`Informe um perfil de cliente: ${CLIENT_PROFILE_IDS.join(', ')}.`);
+    }
+    const profile = exportClientProfile(id as ClientProfileId, {
+      platform: process.platform, nodePath: process.execPath,
+      cliPath: path.join(projectRoot, 'dist', 'cli.js'), stateDir,
+      publicUrl: values.url ? publicUrlSchema.parse(values.url) : store.config.publicUrl,
+    });
+    if (values.output) {
+      try { await writeFile(path.resolve(values.output), profile.content, { encoding: 'utf8', flag: 'wx', mode: 0o600 }); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error('O arquivo de saída já existe. Escolha outro nome e mescle a configuração no cliente.');
+        throw error;
+      }
+      process.stderr.write(`Perfil ${id} exportado. Mescle a configuração sem substituir as entradas existentes.\n`);
+    } else process.stdout.write(profile.content);
+    return;
   }
   if (command === 'token') {
     if (positionals[1] !== 'admin' && positionals[1] !== 'api') throw new Error('Use token admin ou token api.');

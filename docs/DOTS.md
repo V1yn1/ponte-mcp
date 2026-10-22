@@ -1,12 +1,12 @@
-# Usar a Ponte MCP com dots — 0.9.0
+# Usar a Ponte MCP com dots — 0.10.0
 
 [Índice da documentação](README.md) · [Conectar ao ChatGPT](CHATGPT.md) · [API e ferramentas](API.md) · [Operação](OPERACAO.md)
 
-A Ponte 0.9.0 oferece um caminho de descoberta e execução para seu dot usar as ferramentas registradas na Ponte pela própria conexão MCP. A operação acontece no computador que executa a Ponte; o servidor não exige abrir uma sessão Work ou Codex. “Todas as ferramentas” significa as ferramentas disponíveis e autorizadas nesse catálogo, incluindo MCPs conectados à Ponte. Não significa acesso às ferramentas internas de todos os outros plugins da conta.
+A Ponte 0.10.0 oferece um caminho de descoberta e execução para seu dot usar as ferramentas registradas na Ponte pela própria conexão MCP. A operação acontece no computador que executa a Ponte; o servidor não exige abrir uma sessão Work ou Codex. “Todas as ferramentas” significa as ferramentas disponíveis e autorizadas nesse catálogo, incluindo MCPs conectados à Ponte. Não significa acesso às ferramentas internas de todos os outros plugins da conta.
 
 A [documentação oficial de dots](https://learn.chatgpt.com/docs/dots/computers-and-apps) informa que eles podem usar plugins compatíveis instalados e habilitados, inclusive para atualizar documentos. O acesso depende da conta conectada, das permissões e do ambiente. A documentação também permite ao dot [criar outras threads e delegar trabalho](https://learn.chatgpt.com/docs/dots/tasks-and-memory). Portanto, a Ponte oferece execução direta no servidor, mas não controla a disponibilidade de ferramentas nem as decisões de delegação do ChatGPT.
 
-**Validação no dot: ainda não verificada para a 0.9.0.** Na consulta real de 22 de outubro de 2026, a instância conectada respondeu `version: "0.6.0"`, `approvalMode: "automatic"` e `toolCount: 62`. Esse resultado confirma uma chamada àquela instância antiga; não valida o perfil compacto nem a execução da nova versão no dot. Testes locais e evidência no cliente são registrados separadamente em [Validação](VALIDACAO.md).
+**Validação no dot: ainda não verificada para a 0.10.0.** Na consulta real de 22 de outubro de 2026, a instância conectada respondeu `version: "0.6.0"`, `approvalMode: "automatic"` e `toolCount: 62`. Esse resultado confirma uma chamada àquela instância antiga; não valida o perfil compacto nem a execução da nova versão no dot. Testes locais e evidência no cliente são registrados separadamente em [Validação](VALIDACAO.md).
 
 ## 1. Conectar e atualizar a descoberta
 
@@ -15,7 +15,7 @@ Se a Ponte ainda não está conectada, siga [Conectar ao ChatGPT](CHATGPT.md) pa
 Se a conexão já funciona:
 
 1. Atualize e reinicie a Ponte com o mesmo diretório de estado, conforme [Operação](OPERACAO.md#atualizar-sem-perder-a-configuração).
-2. Consulte `bridge_status` na conexão usada pelo dot. Confirme `version: "0.9.0"`; a versão dos arquivos locais, sozinha, não confirma qual serviço recebeu a chamada.
+2. Consulte `bridge_status` na conexão usada pelo dot. Confirme `version: "0.10.0"`; a versão dos arquivos locais, sozinha, não confirma qual serviço recebeu a chamada.
 3. Em **Plugins**, abra a conexão da Ponte e use **Refresh/Atualizar**. Confira `bridge_tool_schema`, `bridge_read` e `bridge_invoke` entre os descritores descobertos.
 4. Confirme que o plugin continua instalado, habilitado e autenticado. A atualização do catálogo não exige novo OAuth se a autorização permanece válida.
 5. Peça ao dot uma nova consulta de `bridge_status` e `bridge_list_tools`. Se a sessão conservar ferramentas antigas, teste também em uma nova conversa compatível para localizar o problema; esse teste auxiliar não substitui o teste no dot.
@@ -175,7 +175,7 @@ Execute este roteiro na instalação atualizada e na conversa do dot. Registre d
 
 | Etapa | Ação | Evidência necessária |
 |---|---|---|
-| Instância | Chamar `bridge_status` | Versão 0.9.0, perfil e política da instância realmente acessada |
+| Instância | Chamar `bridge_status` | Versão 0.10.0, perfil e política da instância realmente acessada |
 | Descoberta | Listar resumo e obter o schema de um alvo | Nome, origem, risco e contrato coerentes; paginação preservada |
 | Leitura local | Ler um arquivo autorizado por `bridge_read` | Resultado real, conteúdo conferido e hash |
 | Escrita reversível | Editar um trecho único com `expectedHash`, reler e restaurar com o novo hash | Resultado de cada job e conteúdo restaurado; aprovação quando exigida |

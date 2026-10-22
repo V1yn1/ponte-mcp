@@ -1,4 +1,4 @@
-# Adicionar MCPs pelo chat — Ponte MCP 0.9.0
+# Adicionar MCPs pelo chat — Ponte MCP 0.10.0
 
 [Índice da documentação](README.md) · [API e ferramentas](API.md) · [Integrações](INTEGRACOES.md) · [Segurança](SEGURANCA.md)
 
@@ -10,7 +10,7 @@ No perfil **Compacto (dots)**, os três nomes de gerenciamento são descobertos 
 
 ## Pedir em linguagem natural
 
-Depois de atualizar a Ponte para **0.9.0**, confirme `bridge_status` e habilite sua conexão no chat. Um pedido possível é:
+Depois de atualizar a Ponte para **0.10.0**, confirme `bridge_status` e habilite sua conexão no chat. Um pedido possível é:
 
 ```text
 Adicione o Playwright MCP à minha Ponte e use-o para testar a página do projeto.
@@ -170,7 +170,7 @@ Para obter o catálogo atual, chame `bridge_list_tools`:
 
 Se houver `nextOffset`, continue a paginação. Use o **nome completo e o schema retornados** em `bridge_call`; não construa o prefixo/hash à mão. Isso funciona pela conexão existente mesmo quando o cliente mantém em cache o `tools/list` inicial. O wrapper consulta a lista atual no momento da chamada. A Ponte não promete enviar uma notificação de atualização ao cliente por um canal HTTP persistente.
 
-Se o cliente ainda anunciar o schema de `bridge_list_tools` de uma versão anterior, sem `source`, use o parâmetro já existente `search`: `"bridge_mcp"` encontra o gerenciamento e `"playwright__"` pesquisa o prefixo desse upstream. Confira a origem dos resultados. Atualizar metadados no ChatGPT/Claude pode ser necessário para os nomes novos aparecerem diretamente na interface do cliente. Isso é separado do uso pelo catálogo e `bridge_call`, que não exige cadastrar a Ponte novamente no chat.
+Se o cliente ainda anunciar o schema de `bridge_list_tools` de uma versão anterior, sem `source`, use o parâmetro já existente `search`: `"bridge_mcp"` encontra o gerenciamento e `"playwright__"` pesquisa o prefixo desse upstream. Confira a origem dos resultados. Atualizar metadados no cliente pode ser necessário para os nomes novos aparecerem diretamente na interface do cliente. Isso é separado do uso pelo catálogo e `bridge_call`, que não exige cadastrar a Ponte novamente no chat.
 
 ## 4. Reconectar sem trocar a configuração aprovada
 

@@ -2,7 +2,7 @@
 
 [Índice da documentação](README.md) · [Referência da API](API.md) · [Operação](OPERACAO.md) · [Segurança](SEGURANCA.md)
 
-Este guia descreve as entradas e os contratos de integração da Ponte MCP **0.9.0**. Os roteiros específicos estão em [CHATGPT.md](CHATGPT.md) e [CLAUDE.md](CLAUDE.md); os testes efetivamente realizados estão em [VALIDACAO.md](VALIDACAO.md). As referências externas foram consultadas em **22 de outubro de 2026**. Disponibilidade e permissões dos clientes dependem da conta, do workspace e do produto utilizado.
+Este guia descreve as entradas e os contratos de integração da Ponte MCP **0.10.0**. Os roteiros específicos estão em [ChatGPT](CHATGPT.md), [Claude](CLAUDE.md), [Gemini](GEMINI.md) e [Grok](GROK.md); os testes efetivamente realizados estão em [Validação](VALIDACAO.md). As referências externas foram consultadas em **22 de outubro de 2026**. Disponibilidade e permissões dos clientes dependem da conta, do workspace e do produto utilizado.
 
 ## Escolha a entrada do cliente
 
@@ -12,6 +12,11 @@ Este guia descreve as entradas e os contratos de integração da Ponte MCP **0.9
 | Claude com conector remoto | `https://SUA_ORIGEM/mcp`, OAuth com DCR público | Origem HTTPS e aprovação local; roteiro em [CLAUDE.md](CLAUDE.md) |
 | Claude Code | MCP HTTP com OAuth ou adaptador stdio | Escolher um transporte e seguir o [guia do cliente](CLAUDE.md) |
 | Claude Desktop local ou outro cliente stdio | `node CAMINHO/dist/cli.js stdio --state-dir CAMINHO_DO_ESTADO` | Ponte já iniciada no mesmo computador; caminhos absolutos |
+| Gemini Apps | HTTPS `/mcp`, OAuth com DCR | Conta pessoal elegível nos EUA, idioma inglês e demais condições do [guia Gemini](GEMINI.md) |
+| Gemini CLI | JSON `mcpServers`, stdio ou `httpUrl` | CLI instalado; serviço local iniciado para stdio ou API HTTPS e OAuth para HTTP |
+| Grok no chat | HTTPS `/mcp`, conector personalizado e OAuth | Recurso disponível na conta; configuração própria em organizações, conforme [Grok](GROK.md) |
+| Grok Build | TOML `mcp_servers.ponte`, stdio ou `url` HTTP | CLI instalado; serviço local iniciado para stdio ou API HTTPS e OAuth para HTTP |
+| Gemini Interactions API / xAI Responses API | Remote MCP HTTPS em `/mcp` | Token API da Ponte em `Authorization`; chave do provedor separada para a requisição ao modelo |
 | Cliente MCP com Bearer configurável | `/mcp` em loopback ou HTTPS | Token API; access token OAuth também é aceito quando emitido pela Ponte |
 | GPT personalizado com Actions | REST `/v1/*` e `/openapi.json` | Origem HTTPS e autenticação API Key/Bearer com o token API |
 | Cliente compatível com MCP Events | Mesma entrada HTTP `/mcp`, protocolo `2026-07-28` | Descoberta de eventos e assinatura explícita do job pelo cliente; detalhes abaixo |
@@ -19,9 +24,23 @@ Este guia descreve as entradas e os contratos de integração da Ponte MCP **0.9
 
 Um chat sem ferramentas não executa operações da Ponte somente por receber uma URL ou instruções em texto. A Ponte não fornece uma chave de modelo e não remove cotas ou custos do chat ou dos serviços conectados.
 
+## Gemini e Grok: apps, CLIs e APIs
+
+Em **Conectar IA**, as abas **ChatGPT**, **Claude**, **Gemini** e **Grok** apresentam o roteiro correspondente ao produto. Os apps Gemini/Grok usam a origem HTTPS da API com `/mcp`, descoberta OAuth e consentimento no painel local. Eles não recebem o token administrativo. Esse suporte reutiliza o servidor OAuth existente, com redirects validados pelo registro de cada cliente, sem autorizar um redirect apenas pelo nome do fornecedor.
+
+A [documentação oficial do Gemini Apps](https://support.google.com/gemini/answer/17209137?hl=en-12) exige usuário com 18 anos ou mais nos EUA, conta pessoal Google, interface em inglês e Keep Activity ativado; contas de trabalho/escola não são elegíveis. Ela não confirma apps personalizados no Brasil. Gemini CLI e API são produtos separados. O [guia oficial de conectores do Grok](https://docs.x.ai/grok/connectors) descreve cadastro pessoal e provisionamento empresarial; a disponibilidade precisa ser conferida na conta.
+
+`export-client` fornece `gemini-cli-stdio`, `gemini-cli-http`, `grok-build-stdio`, `grok-build-http`, `gemini-api` e `grok-api`. O JSON do Gemini usa `httpUrl` para Streamable HTTP; o TOML do Grok usa `url`. Os perfis stdio incluem os caminhos absolutos reais e o diretório de estado selecionado. O exportador não instala o cliente, não grava nas configurações dele e recusa sobrescrever o arquivo de saída. Veja os exemplos, o uso de `--state-dir` e os prazos em [Operação](OPERACAO.md#exportar-configurações-para-gemini-e-grok).
+
+Para APIs, os perfis são **modelos JSON `{url, body}`**: contêm marcadores de modelo e token, sem substituição automática. O [exemplo Gemini](../examples/gemini-api.mjs) usa Interactions com `type: "mcp_server"`, `name`, `url`, `headers` e `allowed_tools`, além de `store: false`. O [exemplo xAI](../examples/grok-api.mjs) usa Responses com `type: "mcp"`, `server_label`, `server_url`, `headers` e `allowed_tools`. Os nomes de campos de um SDK não devem ser misturados com os desse contrato HTTP.
+
+Por padrão, ambos permitem somente `bridge_status`. `--tools` habilita as 12 ferramentas centrais para uma tarefa autorizada. Como o conjunto inclui `bridge_invoke`, o modelo pode descobrir e solicitar os alvos autorizados do catálogo: a lista do provedor não restringe separadamente cada ferramenta interna do gateway. A política da Ponte e as permissões locais continuam valendo. As chaves Google/xAI autenticam a API do modelo; **`PONTE_API_TOKEN` autentica a Ponte e nunca deve conter o token admin**.
+
+Os exemplos fazem uma única requisição ao provedor, sem repetir automaticamente uma chamada incerta. Jobs e watchers continuam sendo acompanhados pelo mesmo ID e pela mesma identidade. Eles não implementam um agente permanente nem garantem retomada de conversa encerrada. Os contratos foram preparados com fontes oficiais e testes controlados; **a conexão e a execução em contas reais Gemini/Grok não foram realizadas nesta entrega**.
+
 ## Acompanhar tarefas com watchers nativos
 
-Para uma tarefa assíncrona delegada a outro executor, use as cinco ferramentas `bridge_watch_*` da própria Ponte. O fluxo não cria cron, automations ou agendamentos no ChatGPT/Claude:
+Para uma tarefa assíncrona delegada a outro executor, use as cinco ferramentas `bridge_watch_*` da própria Ponte. O fluxo não cria cron, automations ou agendamentos no cliente:
 
 1. Crie `bridge_watch_create` com `trigger.type: "signal"`, um `runId` exclusivo e uma `idempotencyKey` persistente.
 2. Se a criação retornar `pending_approval`, aguarde esse `jobId` com `bridge_job` e conclua a aprovação no painel. Só prossiga quando o resultado contiver `watcherId` e callback.
@@ -36,7 +55,7 @@ O gatilho `job` serve quando o próprio job da Ponte representa toda a operaçã
 
 Watchers e resultados limitados persistem, mas uma espera HTTP tem prazo próprio. `bridge_watch_wait` usa **25000 ms** por padrão e aceita de 0 a **45000 ms** em todas as interfaces; um valor maior é rejeitado com orientação de `get` pelo mesmo ID, sem ajuste silencioso. `timeoutMs` define o prazo total desde a criação (padrão 1 hora, máximo 7 dias), registrado em `expiresAt`; novas esperas não o renovam. A desconexão encerra somente a espera. `bridge_watch_cancel` encerra apenas o acompanhamento e não interrompe o executor ou o job original. `expired` não prova falha da tarefa externa.
 
-Erros de comunicação podem ocorrer antes dos cabeçalhos ou durante a leitura da resposta. Quando a Ponte consegue devolver a falha, a recuperação estruturada preserva `watcherId` e indica `bridge_watch_get` sem inventar estado. Consulte o mesmo ID antes de voltar a esperar. Autenticação inválida ou registro ausente não autorizam retry cego, nova criação ou reenvio da demanda. `monitorDurable: true` e `canWakeClosedConversation: false` continuam no contrato da 0.9.0.
+Erros de comunicação podem ocorrer antes dos cabeçalhos ou durante a leitura da resposta. Quando a Ponte consegue devolver a falha, a recuperação estruturada preserva `watcherId` e indica `bridge_watch_get` sem inventar estado. Consulte o mesmo ID antes de voltar a esperar. Autenticação inválida ou registro ausente não autorizam retry cego, nova criação ou reenvio da demanda. `monitorDurable: true` e `canWakeClosedConversation: false` continuam no contrato da 0.10.0.
 
 O roteiro completo, o recibo e a recuperação estão em [WATCHERS.md](WATCHERS.md). Os limites e as diferenças entre reinício de watchers `signal` e `job` estão em [ARQUITETURA.md](ARQUITETURA.md#watchers-acompanhamento-nativo-e-durável).
 
@@ -120,7 +139,7 @@ Assinaturas e tentativas persistem com validade e capacidade limitadas. Events m
 
 ## MCP local por stdio
 
-O comando `stdio` lê as credenciais do diretório de estado e usa a Ponte já iniciada. Todos os clientes que leem esse mesmo token API compartilham a identidade, o painel e a política. Na configuração `mcpServers`, informe caminhos absolutos para o executável Node, `dist/cli.js` e `--state-dir`; os exemplos por cliente estão em [CLAUDE.md](CLAUDE.md).
+O comando `stdio` lê as credenciais do diretório de estado e usa a Ponte já iniciada. Todos os clientes que leem esse mesmo token API compartilham a identidade, o painel e a política. Informe caminhos absolutos para o executável Node, `dist/cli.js` e `--state-dir`. Claude e Gemini CLI usam JSON `mcpServers`; Grok Build usa TOML `mcp_servers`. Os exemplos e roteiros estão em [Claude](CLAUDE.md), [Gemini](GEMINI.md) e [Grok](GROK.md).
 
 O diretório padrão é `.ponte` dentro da instalação, não a pasta atual do terminal. Ao mudar de instalação, reutilize explicitamente o estado antigo. Não inclua tokens no JSON do cliente quando usar o adaptador local.
 
@@ -138,7 +157,7 @@ O guia do túnel informa um prazo absoluto de **120 segundos por requisição**,
 
 Use `/openapi.json` da origem HTTPS da API e configure autenticação API Key/Bearer com o **token API**. O schema é público e não contém o segredo; as operações `/v1/*` exigem autenticação. Access tokens OAuth emitidos para `/mcp` não autenticam a REST.
 
-O OpenAPI 0.9.0 define **nove operações**:
+O OpenAPI 0.10.0 define **nove operações**:
 
 | Operação | Endpoint | Finalidade |
 |---|---|---|
@@ -164,7 +183,7 @@ Se a origem mudar, atualize `publicUrl` e reimporte o schema no cliente. A refer
 
 ### Cadastrar pelo chat ou pelo painel
 
-A versão 0.9.0 expõe `bridge_mcp_list`, `bridge_mcp_add` e `bridge_mcp_reconnect`. Um chat autorizado pode identificar uma capacidade que falta à tarefa, consultar as conexões existentes e solicitar um cadastro com justificativa e configuração confirmada na fonte oficial. Esse fluxo usa a política de aprovação atual, incluindo `automatic`, e mostra uma prévia em **Execuções**. As conexões aparecem no painel **Conexões MCP**.
+A versão 0.10.0 expõe `bridge_mcp_list`, `bridge_mcp_add` e `bridge_mcp_reconnect`. Um chat autorizado pode identificar uma capacidade que falta à tarefa, consultar as conexões existentes e solicitar um cadastro com justificativa e configuração confirmada na fonte oficial. Esse fluxo usa a política de aprovação atual, incluindo `automatic`, e mostra uma prévia em **Execuções**. As conexões aparecem no painel **Conexões MCP**.
 
 O chat não substitui IDs existentes com configurações diferentes, não edita `readOnlyTools`, não remove conexões nem altera a política. Env/headers no contrato do chat aceitam somente referências de ambiente; edição e opções administrativas permanecem no painel. O resultado separa cadastro salvo de conexão estabelecida. Para reconectar, use a revisão retornada na listagem; para usar ferramentas novas na mesma conversa, consulte `bridge_list_tools` com `source: "mcp:ID"` e chame o nome retornado por `bridge_call`.
 

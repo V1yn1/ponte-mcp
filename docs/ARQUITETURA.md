@@ -1,4 +1,4 @@
-# Arquitetura da Ponte MCP 0.9.0
+# Arquitetura da Ponte MCP 0.10.0
 
 [Índice da documentação](README.md) · [Referência da API](API.md) · [Dots](DOTS.md) · [Segurança](SEGURANCA.md)
 
@@ -32,6 +32,7 @@ A autenticação identifica a conexão antes do despacho. As ferramentas locais,
 | `Application` | Inicializar serviços, associar transições de jobs aos observadores e resolver a identidade API/OAuth | [src/app.ts](../src/app.ts) |
 | `ConfigStore` | Validar projetos, servidores e política; persistir configuração e credenciais locais | [src/core/config.ts](../src/core/config.ts) |
 | `PonteOAuthProvider` | Registro de clientes, consentimento, tokens e autorizações revogáveis | [src/auth/provider.ts](../src/auth/provider.ts) |
+| Perfis de clientes | Gerar configurações Gemini/Grok, comandos locais e modelos de requisição das APIs | [src/clients/profiles.ts](../src/clients/profiles.ts) |
 | `JobManager` | Validar argumentos, gerar prévia, aprovar, enfileirar, executar e cancelar ferramentas | [src/core/jobs.ts](../src/core/jobs.ts) |
 | `McpManagement` | Listar conexões sem segredos, validar cadastro/reconexão e serializar alterações de upstreams pelo chat e painel | [src/mcp/management.ts](../src/mcp/management.ts) |
 | `McpHub` | Manter clientes upstream, descobrir schemas e preservar os blocos de conteúdo retornados | [src/mcp/hub.ts](../src/mcp/hub.ts) |
@@ -58,9 +59,32 @@ O adaptador moderno anuncia `tools` e `events` e implementa `server/discover`, `
 
 O modo `stdio` é um adaptador do serviço já iniciado: lê o estado local, autentica-se com o token API e encaminha catálogo e chamadas para `/v1/mcp/tools` e `/v1/mcp/call`. Ele não inicia uma segunda instância independente da Ponte. A REST de Actions usa um OpenAPI com **nove operações**, cinco para status/catálogo/jobs e quatro para controles de watchers. A criação do watcher usa a operação existente `createJob`, com `tool: "bridge_watch_create"`; as três ferramentas `bridge_mcp_*` também usam `createJob`. Não há novas operações de administração no OpenAPI. Consulte [API.md](API.md) e [INTEGRACOES.md](INTEGRACOES.md).
 
+## Perfis de clientes e exemplos de API
+
+A v0.10.0 acrescenta uma camada de configuração em [src/clients/profiles.ts](../src/clients/profiles.ts), compartilhada pelo painel e pelo comando `export-client`. `createClientProfiles` recebe plataforma, caminhos absolutos de Node/CLI/estado e a origem pública opcional. Devolve seis perfis com formato, conteúdo, disponibilidade, motivo de indisponibilidade, documentação e comando opcional. Uma falha de representação afeta somente o perfil correspondente; não interrompe o estado do painel nem desabilita os demais.
+
+O estado administrativo inclui os perfis em `connection.clientProfiles` e o comando local de obtenção do token em `connection.apiTokenCommand`. O gerador não lê valores de tokens, não grava configurações e não realiza chamadas de rede. Os perfis não são adicionados à resposta pública de estado do MCP. **Conectar IA** organiza esses caminhos nas abas ChatGPT, Claude, Gemini e Grok.
+
+| Destino | Configuração gerada | Execução |
+|---|---|---|
+| Gemini CLI | JSON `mcpServers.ponte`; `command`/`args` ou `httpUrl`; timeout 60000 ms e `trust: false` | stdio local ou MCP HTTP com OAuth |
+| Grok Build | TOML `[mcp_servers.ponte]`; `command`/`args` ou `url`; início 30 s e ferramenta 60 s | stdio local ou MCP HTTP com OAuth |
+| Gemini API | Envelope JSON `{url, body}`; descritor `mcp_server` com `name`, `url`, `headers` e `allowed_tools` | Remote MCP a partir da Interactions API, com `store: false` |
+| Grok API | Envelope JSON `{url, body}`; descritor `mcp` com `server_label`, `server_url`, `headers` e `allowed_tools` | Remote MCP a partir da Responses API |
+
+Os apps Gemini/Grok não precisam desses arquivos: usam `/mcp` com descoberta OAuth, DCR e consentimento existente. Não foi criada uma rota de autenticação específica por fornecedor. Já os exemplos de API colocam o token **API** da Ponte em `Authorization` no descritor MCP, mesmo quando OAuth está ativo; a chave do modelo autentica separadamente a requisição ao provedor. O token administrativo não participa desse fluxo.
+
+`buildApiRequest` constrói apenas URL fixa do provedor e corpo da requisição. Por padrão permite somente `bridge_status`; o modo `tools` permite as 12 ferramentas centrais, incluindo o gateway para os alvos autorizados. Os perfis exportados usam marcadores de modelo/token sem expansão automática. [gemini-api.mjs](../examples/gemini-api.mjs) e [grok-api.mjs](../examples/grok-api.mjs) leem o ambiente, fazem uma requisição com prazo de 120 segundos e não repetem operações automaticamente. Eles não implementam um processo permanente de acompanhamento; os contratos de jobs e watchers permanecem os mesmos.
+
+As configurações e os comandos conservam os caminhos do estado selecionado, inclusive instalações personalizadas. JSON/TOML fazem o escape de seus próprios valores, e comandos citam argumentos literais para PowerShell ou shell POSIX. Como os clientes expandem variáveis depois de ler a configuração, padrões reconhecidos nesses caminhos tornam o perfil indisponível em vez de produzir uma referência a outro arquivo. A validação de URL exige HTTPS e recusa destinos literais locais/privados, credenciais e fragmentos; ela não faz DNS nem prova que o túnel está acessível.
+
+`export-client` exige estado existente. Sem `--output`, escreve no stdout; com essa opção, cria exclusivamente um arquivo novo. O usuário mescla a entrada no cliente preservando as demais configurações. A opção `--url` afeta somente o export; não atualiza `publicUrl` nem configura o túnel. O comando curto de cadastro do Grok também não grava os prazos recomendados: esses campos vêm do TOML. Veja [Operação](OPERACAO.md#exportar-configurações-para-gemini-e-grok).
+
+Os testes controlados verificam os perfis e o contrato do servidor. Eles não comprovam disponibilidade regional, login, ferramentas do modelo ou continuidade da conversa em uma conta do fornecedor. Os guias [Gemini](GEMINI.md) e [Grok](GROK.md) registram as fontes oficiais e os requisitos; a execução em contas reais dos novos clientes permanece não validada nesta entrega.
+
 ## Catálogo anunciado e execução pelo gateway
 
-Na 0.9.0, `mcpToolExposure` separa a exposição inicial de descritores do catálogo real. O padrão `full` mantém as ferramentas individuais anunciadas. O perfil opcional `compact` anuncia oito ferramentas gerais (`bridge_status`, `bridge_list_tools`, `bridge_tool_schema`, `bridge_read`, `bridge_invoke`, `bridge_call`, `bridge_job`, `bridge_cancel`) e os quatro controles de watchers: **12 descritores**. A seleção fica em **Conectar IA → Catálogo MCP**, usa o `PATCH /admin/settings` existente e persiste em `config.json`.
+Desde a 0.9.0, `mcpToolExposure` separa a exposição inicial de descritores do catálogo real. O padrão `full` mantém as ferramentas individuais anunciadas. O perfil opcional `compact` anuncia oito ferramentas gerais (`bridge_status`, `bridge_list_tools`, `bridge_tool_schema`, `bridge_read`, `bridge_invoke`, `bridge_call`, `bridge_job`, `bridge_cancel`) e os quatro controles de watchers: **12 descritores**. A seleção fica em **Conectar IA → Catálogo MCP**, usa o `PATCH /admin/settings` existente e persiste em `config.json`.
 
 O catálogo real continua reunindo as definições de `Application` e os controles de watchers. `bridge_list_tools` consulta esse catálogo nos dois perfis, com `includeSchemas: true` por padrão e opção de resumo sem schemas. `bridge_tool_schema` resolve o nome exato e devolve o descritor atual diretamente, acrescido da orientação `invocation`. O perfil não muda a resolução de nomes conhecidos, os limites de autorização ou as ferramentas permitidas do upstream. Uma chamada direta conhecida continua válida em `compact`.
 
@@ -115,7 +139,7 @@ Um watcher persiste uma **observação**, enquanto um job representa a execuçã
 | `signal` | POST autenticado do executor com `eventId`, `runId`, status e resumo | Continua aguardando até o sinal, o vencimento ou a perda da autorização |
 | `job` | Estado terminal de um job já pertencente à mesma identidade | Recupera o estado disponível; se o job não puder ser encontrado, termina como `interrupted` |
 
-Use `signal` para uma tarefa delegada a Claude, tmux ou outro executor. O fim de `send-keys` ou do comando que enviou a tarefa não comprova que ela terminou. Crie o watcher, obtenha a aprovação quando necessária, configure o callback no executor, delegue uma única vez e aguarde o mesmo `watcherId`. O procedimento não usa cron, automations ou agendadores do ChatGPT/Claude. O guia completo está em [WATCHERS.md](WATCHERS.md).
+Use `signal` para uma tarefa delegada a Claude, tmux ou outro executor. O fim de `send-keys` ou do comando que enviou a tarefa não comprova que ela terminou. Crie o watcher, obtenha a aprovação quando necessária, configure o callback no executor, delegue uma única vez e aguarde o mesmo `watcherId`. O procedimento não usa cron, automations ou agendadores do cliente. O guia completo está em [WATCHERS.md](WATCHERS.md).
 
 O sinal permite `succeeded`, `failed` ou `needs_input`. A Ponte verifica o token específico, a autorização proprietária, o `runId` e o tamanho do JSON. Repetir o mesmo `eventId` com o mesmo conteúdo confirma o resultado já persistido; um sinal diferente depois de um estado terminal é recusado. `needs_input` também encerra esse acompanhamento e informa que a tarefa exige intervenção, sem significar conclusão bem-sucedida.
 

@@ -18,6 +18,7 @@ import type { WebhookPost } from './events/webhook.js';
 import { WatchService } from './watchers/service.js';
 import { createWatcherTool, jobForObservation } from './watchers/tools.js';
 import { WATCH_DEFAULT_WAIT_MS, WATCH_MAX_WAIT_MS } from './watchers/types.js';
+import { apiTokenCommand, createClientProfiles } from './clients/profiles.js';
 
 export const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -88,7 +89,7 @@ export class Application {
   getTools(): ToolDefinition[] { return [...createLocalTools(() => this.store.config, this.store.stateDir), ...(this.watchers ? [createWatcherTool(this.watchers, () => this.store.config.publicUrl ?? this.apiUrl)] : []), ...this.mcpManagement.definitions(), ...this.hub.tools()]; }
   publicStatus() {
     return {
-      name: 'Ponte MCP', version: '0.9.0', paused: this.jobs.paused, approvalMode: this.store.config.approvalMode,
+      name: 'Ponte MCP', version: '0.10.0', paused: this.jobs.paused, approvalMode: this.store.config.approvalMode,
       projects: this.store.config.projects.map(({ id, name, allowWrite, allowExec }) => ({ id, name, allowWrite, allowExec })),
       servers: this.hub.statuses(), toolCount: this.getTools().length,
       directExecution: {
@@ -109,9 +110,13 @@ export class Application {
     const jobs = this.jobs.list(200);
     const config = this.store.publicConfig();
     const tools = this.getTools();
+    const clientContext = { platform: process.platform, nodePath: process.execPath,
+      cliPath: path.join(projectRoot, 'dist', 'cli.js'), stateDir: this.store.stateDir, publicUrl: config.publicUrl };
+    let tokenCommand: { text: string; shell: string } | null = null;
+    try { tokenCommand = apiTokenCommand(clientContext); } catch { /* Other connection options remain usable. */ }
     const counts = (status: string) => jobs.filter(job => job.status === status).length;
     return {
-      name: 'Ponte MCP', version: '0.9.0', paused: this.jobs.paused, startedAt: this.startedAt,
+      name: 'Ponte MCP', version: '0.10.0', paused: this.jobs.paused, startedAt: this.startedAt,
       config, servers: this.hub.statuses(),
       jobs: jobs.slice(0, 50).map(({ result: _result, preview: _preview, arguments: _arguments, ...job }) => ({ ...job, arguments: {} })),
       stats: { tools: tools.length, projects: config.projects.length, pending: counts('pending_approval'), running: counts('running') + counts('queued'), succeeded: counts('succeeded'), failed: counts('failed') },
@@ -123,6 +128,7 @@ export class Application {
         mcpUrl: (config.publicUrl ?? this.apiUrl).replace(/\/$/, '') + '/mcp', apiUrl: config.publicUrl ?? this.apiUrl,
         openapiUrl: (config.publicUrl ?? this.apiUrl).replace(/\/$/, '') + '/openapi.json',
         stdioCommand: process.execPath, stdioArgs: [path.join(projectRoot, 'dist', 'cli.js'), 'stdio', '--state-dir', this.store.stateDir],
+        clientProfiles: createClientProfiles(clientContext), apiTokenCommand: tokenCommand,
         oauth: oauthConnectionState(this),
       },
     };

@@ -1,4 +1,4 @@
-# Conectar a Ponte MCP 0.9.0 ao Claude
+# Conectar a Ponte MCP 0.10.0 ao Claude
 
 [Índice da documentação](README.md) · [Instalação e operação](OPERACAO.md) · [API e ferramentas](API.md) · [ChatGPT](CHATGPT.md)
 
@@ -14,7 +14,7 @@ As instruções de interface foram conferidas na documentação oficial em **22 
 
 ## Catálogo compacto e chamadas JSON
 
-A 0.9.0 também oferece o perfil **Compacto (dots)** em **Conectar IA → Catálogo MCP**. A preferência vale para todos os clientes da mesma Ponte, inclusive Claude HTTP e stdio. O padrão é **Completo**. Em compacto, use `bridge_list_tools` para descobrir ferramentas locais, de gerenciamento e upstreams, e `bridge_tool_schema` para consultar o contrato individual.
+A 0.10.0 também oferece o perfil **Compacto (dots)** em **Conectar IA → Catálogo MCP**. A preferência vale para todos os clientes da mesma Ponte, inclusive Claude HTTP e stdio. O padrão é **Completo**. Em compacto, use `bridge_list_tools` para descobrir ferramentas locais, de gerenciamento e upstreams, e `bridge_tool_schema` para consultar o contrato individual.
 
 Os gateways `bridge_read` e `bridge_invoke` recebem `tool`, `argumentsJson` (uma string contendo objeto JSON) e `idempotencyKey` opcional. Use `bridge_read` somente quando o risco informado pelo catálogo for `read`; ferramentas externas cadastradas pelo chat continuam com risco `execute` e usam `bridge_invoke`. A aprovação e as permissões permanecem as mesmas. O formato antigo `bridge_call` e nomes diretos já conhecidos continuam funcionando.
 
@@ -161,7 +161,7 @@ O watcher `signal` persiste no serviço, inclusive após reinício da Ponte; uma
 
 Informe `succeeded` ou `failed` com a evidência pertinente. `needs_input` é terminal: apresente a pendência e peça intervenção, sem continuar o loop. Uma nova etapa explicitamente autorizada usa outro watcher. `expired` significa que o prazo do acompanhamento venceu e não prova que o executor falhou.
 
-As respostas individuais mantêm `monitorDurable: true` e `canWakeClosedConversation: false` na 0.9.0. O callback vai do executor à Ponte. No sentido inverso, o novo `ponte.watcher.completed` exige um cliente com `events/subscribe` e não comprova que Claude oferece esse fluxo. Se um job da Ponte somente cria o watcher ou envia o prompt, `ponte.job.completed` cobre apenas essa etapa. [WATCHERS.md](WATCHERS.md) apresenta o fluxo completo e a recuperação.
+As respostas individuais mantêm `monitorDurable: true` e `canWakeClosedConversation: false` na 0.10.0. O callback vai do executor à Ponte. No sentido inverso, o novo `ponte.watcher.completed` exige um cliente com `events/subscribe` e não comprova que Claude oferece esse fluxo. Se um job da Ponte somente cria o watcher ou envia o prompt, `ponte.job.completed` cobre apenas essa etapa. [WATCHERS.md](WATCHERS.md) apresenta o fluxo completo e a recuperação.
 
 ### Claude Code Channels: possibilidade futura
 
@@ -171,7 +171,7 @@ A Ponte **não implementa Channels nesta entrega**. Essa pesquisa identifica um 
 
 ## 6. Atualizar o catálogo e reconectar
 
-Atualize e reinicie a Ponte conforme [Instalação e operação](OPERACAO.md), preservando o diretório de estado. Confirme `version: "0.9.0"` em `bridge_status` e as três ferramentas `bridge_mcp_*` e os cinco nomes `bridge_watch_*` no catálogo completo, ou por `bridge_list_tools` quando o perfil for compacto. Para stdio, reinicie completamente o Desktop ou reconecte o servidor em `/mcp` no Claude Code. Para o conector remoto, atualize a conexão na interface disponível e valide a ferramenta em nova conversa.
+Atualize e reinicie a Ponte conforme [Instalação e operação](OPERACAO.md), preservando o diretório de estado. Confirme `version: "0.10.0"` em `bridge_status` e as três ferramentas `bridge_mcp_*` e os cinco nomes `bridge_watch_*` no catálogo completo, ou por `bridge_list_tools` quando o perfil for compacto. Para stdio, reinicie completamente o Desktop ou reconecte o servidor em `/mcp` no Claude Code. Para o conector remoto, atualize a conexão na interface disponível e valide a ferramenta em nova conversa.
 
 Reiniciar o serviço com a mesma origem HTTPS e o mesmo estado preserva as autorizações OAuth concluídas. Se o login foi interrompido antes de terminar, inicie-o novamente. Uma nova autorização não herda os jobs e watchers da autorização anterior; tente consultar os IDs pela conexão ainda válida antes de substituí-la.
 
@@ -188,7 +188,7 @@ Reiniciar o serviço com a mesma origem HTTPS e o mesmo estado preserva as autor
 | A ferramenta está aguardando revisão | Abra **Execuções**, revise o trabalho e depois consulte o mesmo `jobId`. |
 | A URL pública mudou | Atualize a origem no painel e reconecte; tokens do emissor anterior não são reutilizados. |
 | MCP conectado, mas a ferramenta não aparece diretamente | Use `bridge_list_tools` com `source: "mcp:ID"` e chame o nome por `bridge_call`; o catálogo interno já é atualizado. |
-| `bridge_watch_*` ou `bridge_mcp_*` não aparece | Em compacto, consulte `bridge_list_tools` e invoque pelo gateway. Confira a 0.9.0 e recarregue metadados se a fachada nova não aparecer. |
+| `bridge_watch_*` ou `bridge_mcp_*` não aparece | Em compacto, consulte `bridge_list_tools` e invoque pelo gateway. Confira a 0.10.0 e recarregue metadados se a fachada nova não aparecer. |
 | `claude mcp login` não existe na versão instalada | Use `/mcp` na sessão interativa para autenticar, e confira a documentação correspondente à sua versão do Claude Code. |
 | O watcher está `waiting`, mas o tmux parece parado | Confira o recibo do executor. Inatividade ou fim de resposta não concluem uma tarefa. |
 | O produtor confirmou o sinal, mas não há novo turno | Consulte o watcher; o recebimento pela Ponte não ativa sozinho uma conversa encerrada. |

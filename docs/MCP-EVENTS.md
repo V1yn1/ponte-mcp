@@ -1,18 +1,18 @@
-# MCP Events na Ponte MCP 0.9.0
+# MCP Events na Ponte MCP 0.10.0
 
 [Índice da documentação](README.md) · [Conectar ao ChatGPT](CHATGPT.md) · [Watchers nativos](WATCHERS.md) · [API e ferramentas](API.md)
 
-MCP Events permite que a Ponte avise um cliente inscrito quando um job ou watcher termina. A versão 0.9.0 acrescenta **`ponte.watcher.completed`**, com filtro obrigatório `{watcherId}`, e mantém **`ponte.job.completed`**, com `{jobId}`. O cliente consulta o resultado pela ferramenta correspondente e decide como continuar o pedido autorizado. As entregas usam webhooks verificados e assinados.
+MCP Events permite que a Ponte avise um cliente inscrito quando um job ou watcher termina. Desde a versão 0.8.0, a Ponte oferece **`ponte.watcher.completed`**, com filtro obrigatório `{watcherId}`, e mantém **`ponte.job.completed`**, com `{jobId}`. O cliente consulta o resultado pela ferramenta correspondente e decide como continuar o pedido autorizado. As entregas usam webhooks verificados e assinados.
 
 O cliente precisa oferecer Events e criar a inscrição. Instalar a Ponte, autorizar OAuth ou ativar a aprovação automática não cria uma assinatura. A disponibilidade documentada pela OpenAI é **Work no navegador**, **Work com Cloud selecionado no aplicativo desktop** e **dots**, sujeita aos controles da conta e do workspace. Este guia usa Work. Fonte: [MCP Events da OpenAI](https://developers.openai.com/plugins/build/mcp-events), consultada em **22/10/2026**.
 
 Um [watcher `signal`](WATCHERS.md) recebe o recibo do executor e mantém seu resultado na Ponte. `ponte.watcher.completed` avisa essa transição terminal a quem se inscreveu; o resultado é recuperado com `bridge_watch_get`. Já um aviso de `ponte.job.completed` sobre o job de criação do watcher comprova somente a criação, e um aviso do job de envio ao Claude comprova somente esse envio.
 
-`monitorDurable: true` e `canWakeClosedConversation: false` permanecem no contrato da 0.9.0. Uma assinatura aceita ou entrega HTTP 2xx não muda esses valores: o cliente processa o evento de forma assíncrona. Para comprovar retomada, é preciso observar a consulta do resultado e a resposta efetiva da conversa após a entrega. [Validação](VALIDACAO.md#recuperação-de-esperas-e-eventos-de-watchers--080) registra o que foi observado e o que continua sem comprovação.
+`monitorDurable: true` e `canWakeClosedConversation: false` permanecem no contrato da 0.10.0. Uma assinatura aceita ou entrega HTTP 2xx não muda esses valores: o cliente processa o evento de forma assíncrona. Para comprovar retomada, é preciso observar a consulta do resultado e a resposta efetiva da conversa após a entrega. [Validação](VALIDACAO.md#recuperação-de-esperas-e-eventos-de-watchers--080) registra o que foi observado e o que continua sem comprovação.
 
 ## Começar pelo ChatGPT
 
-1. Atualize a Ponte para **0.9.0**, preserve seu diretório de estado e reinicie o serviço. Os comandos estão em [Instalação e operação](OPERACAO.md).
+1. Atualize a Ponte para **0.10.0**, preserve seu diretório de estado e reinicie o serviço. Os comandos estão em [Instalação e operação](OPERACAO.md).
 2. Mantenha a API em execução, com a origem HTTPS correta em **Conectar IA → URL pública da API**. Preserve uma conexão OAuth já concluída quando a origem continuar a mesma.
 3. Na conexão da Ponte em **Plugins**, selecione **Refresh/Atualizar**. Confirme os eventos **`ponte.job.completed`** e **`ponte.watcher.completed`**. A versão anunciada pelo servidor é a referência para a instalação em uso.
 4. Abra uma **nova conversa Work** compatível, com Cloud selecionado se estiver no desktop, e selecione a Ponte com `@`.
@@ -61,7 +61,7 @@ Uma conversa pode combinar esses mecanismos quando houver necessidade. Uma assin
 
 O watcher, o recibo do executor e seu prazo total permanecem na Ponte. A inscrição opcional de Events acrescenta a entrega ao cliente. **No ChatGPT, essa entrega usa o mecanismo do host de tarefas acionadas por eventos**, com suas permissões e processamento; não é um agendamento por horário nem polling do chat. Uma assinatura só existe depois de aceita pela Ponte; um pedido em linguagem natural ou uma tela de criação do cliente não comprovam esse aceite.
 
-Durante um turno ativo, `waiting` continua exigindo esperas de 25000 ms pelo mesmo ID até terminal ou limite concreto. Criar uma tarefa periódica no ChatGPT/Claude não substitui esse acompanhamento nativo. O evento também não transforma um resultado pendente em conclusão.
+Durante um turno ativo, `waiting` continua exigindo esperas de 25000 ms pelo mesmo ID até terminal ou limite concreto. Criar uma tarefa periódica no cliente não substitui esse acompanhamento nativo. O evento também não transforma um resultado pendente em conclusão.
 
 Events não fornece um modelo de IA dentro da Ponte, não remove cotas e não acrescenta autorização para novas tarefas. A continuação depende das instruções da conversa e das decisões do cliente. Actions e o adaptador stdio mantêm seus fluxos anteriores; este recurso está implementado na entrada HTTP moderna de MCP.
 
@@ -122,7 +122,7 @@ Referências normativas: [metadados](https://modelcontextprotocol.io/specificati
 
 ### Descobrir os eventos
 
-`events/list` recebe apenas os metadados de transporte. A 0.9.0 devolve os dois eventos em uma única página, com `delivery: ["webhook"]`, `resultType: "complete"` e os metadados da versão do servidor.
+`events/list` recebe apenas os metadados de transporte. A 0.10.0 devolve os dois eventos em uma única página, com `delivery: ["webhook"]`, `resultType: "complete"` e os metadados da versão do servidor.
 
 | Evento | `inputSchema` de `arguments` | Campos obrigatórios de `payloadSchema` |
 |---|---|---|
@@ -277,7 +277,7 @@ O arquivo privado `events.json` guarda assinaturas, URLs e chaves de callback, f
 
 Para watchers, `watcherArchives` conserva apenas ID, estado, horários, proprietário e prazo da cópia; não duplica resultado nem credencial de sinal. **`watchers.json` continua sendo a fonte do resultado**, sujeito aos limites próprios de retenção. Uma assinatura de Events não impede que um watcher terminal antigo seja removido por capacidade. Consulte e preserve a evidência necessária enquanto o registro estiver disponível.
 
-A 0.9.0 lê o estado anterior `version: 1` sem `watcherArchives`. Ao persistir esse campo, o arquivo pode deixar de ser aceito por versões anteriores com schema estrito. Um retorno de versão exige o conjunto de backup anterior compatível, não apenas trocar o código; veja [Operação](OPERACAO.md#estado-de-events-e-retorno-a-uma-versão-anterior).
+A 0.10.0 lê o estado anterior `version: 1` sem `watcherArchives`. Ao persistir esse campo, o arquivo pode deixar de ser aceito por versões anteriores com schema estrito. Um retorno de versão exige o conjunto de backup anterior compatível, não apenas trocar o código; veja [Operação](OPERACAO.md#estado-de-events-e-retorno-a-uma-versão-anterior).
 
 | Limite | Política da Ponte |
 |---|---|
@@ -334,7 +334,7 @@ Na revisão de **0.9.0**, a consulta real de leitura recuperou `succeeded` e o r
 
 | Sintoma | Conferência útil |
 |---|---|
-| O plugin não lista `ponte.watcher.completed` | Confirme a 0.9.0 na instância conectada, a mesma origem HTTPS e Refresh/Atualizar; uma descoberta antiga só de jobs não valida o novo evento |
+| O plugin não lista `ponte.watcher.completed` | Confirme a 0.10.0 na instância conectada, a mesma origem HTTPS e Refresh/Atualizar; uma descoberta antiga só de jobs não valida o novo evento |
 | Ferramentas funcionam, mas Events não aparece | Confirme Work no navegador ou Work com Cloud no desktop, além das permissões da conta/workspace |
 | O painel mostra zero avisos | Ainda não há assinatura ativa; aprovação automática e autorização OAuth não criam uma inscrição |
 | A criação do acompanhamento informa que os conectores de webhook não puderam ser validados | Confira `subscribeRequests` desde a inicialização e a captura HTTP da tentativa. Sem uma chamada recebida, a etapa de verificação de callback da Ponte ainda não foi alcançada; esse erro genérico não identifica sozinho a causa |

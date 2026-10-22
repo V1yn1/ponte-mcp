@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { auth } from '@modelcontextprotocol/sdk/client/auth.js';
 
 // Runs against the compiled application; no TypeScript loader or existing user
@@ -21,6 +22,7 @@ process.once('SIGTERM', interrupted);
 let temporaryRoot;
 let runtime;
 let client;
+let profileClient;
 let stage = 'carregar o build compilado';
 let failure;
 const secrets = [];
@@ -252,6 +254,24 @@ try {
   assert.equal(jsonText(await callTool('local_projects', {})).status, 'succeeded', 'cached direct tool names remain callable');
   log('OK: catálogo compacto com 12 ferramentas, descoberta e schema sob demanda, JSON direto, leitura restrita e idempotência pela conexão OAuth.');
 
+  stage = 'usar o perfil Gemini stdio com o programa compilado';
+  await runtime.store.update(config => ({ ...config, apiPort: Number(new URL(runtime.apiUrl).port) }));
+  const generated = runtime.state().connection.clientProfiles.find(profile => profile.id === 'gemini-cli-stdio');
+  assert.equal(generated.available, true);
+  const localProfile = JSON.parse(generated.content).mcpServers.ponte;
+  profileClient = new Client({ name: 'generated-stdio-profile', version: '1' });
+  // Only the managed test runtime's stdio descriptors are repaired by this
+  // preload; the exported command, CLI path and state arguments are preserved.
+  await profileClient.connect(new StdioClientTransport({ command: localProfile.command, args: [
+    '--import', fileURLToPath(new URL('../tests/fixtures/stdio-streams.mjs', import.meta.url)), ...localProfile.args,
+  ], stderr: 'ignore' }), options());
+  assert.equal((await profileClient.listTools({}, options())).tools.length, 12);
+  const fromProfile = await profileClient.callTool({ name: 'bridge_read', arguments: { tool: 'local_read_file', argumentsJson: JSON.stringify({ projectId: 'principal', path: 'automatic/result.txt' }) } }, undefined, options());
+  assert.equal(jsonText(fromProfile, 1).content, 'Modo automático confirmado.');
+  await profileClient.close();
+  profileClient = undefined;
+  log('OK: perfil stdio gerado, caminhos reais, diretório de estado preservado, descoberta e leitura pelo adaptador compilado.');
+
   assert.equal((await adminRequest('/admin/settings', 'PATCH', runtime.store.secrets.adminToken, { approvalMode: 'mutations' })).status, 200);
   const manualAgain = jsonText(await callTool('local_create_directory', { projectId: 'principal', path: 'manual-again' }));
   assert.equal(manualAgain.status, 'pending_approval');
@@ -352,6 +372,7 @@ try {
   // Each cleanup runs even when an earlier cleanup fails. Application.close()
   // cancels outstanding jobs and explicitly closes the HTTP connections.
   for (const cleanup of [
+    () => profileClient?.close(),
     () => client?.close(),
     () => runtime?.close(),
     () => temporaryRoot && rm(temporaryRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }),

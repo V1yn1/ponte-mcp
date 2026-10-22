@@ -1,4 +1,4 @@
-# Acompanhar tarefas externas com a Ponte MCP 0.9.0
+# Acompanhar tarefas externas com a Ponte MCP 0.10.0
 
 [Índice da documentação](README.md) · [ChatGPT](CHATGPT.md) · [Claude](CLAUDE.md) · [MCP Events](MCP-EVENTS.md) · [API e ferramentas](API.md)
 
@@ -19,7 +19,7 @@ O watcher não observa automaticamente a janela do terminal, texto impresso, est
 | Como consultar o resultado | `bridge_watch_get` ou `bridge_watch_wait` | `bridge_watch_get` para watcher; `bridge_job` para job |
 | Retomada de um chat encerrado | Não oferece | Depende de suporte, assinatura e processamento pelo cliente |
 
-Use o acompanhamento nativo da Ponte, sem criar cron, automation ou tarefa no agendador do ChatGPT/Claude. O retorno individual informa **`monitorDurable: true`** e **`canWakeClosedConversation: false`**. Esses valores permanecem na 0.9.0, mesmo com uma assinatura Events aceita ou um webhook recebido. Só um teste efetivo de retomada no cliente pode sustentar uma garantia diferente. A duração do acompanhamento na Ponte é independente da duração do turno do cliente.
+Use o acompanhamento nativo da Ponte, sem criar cron, automation ou tarefa no agendador do cliente. O retorno individual informa **`monitorDurable: true`** e **`canWakeClosedConversation: false`**. Esses valores permanecem na 0.10.0, mesmo com uma assinatura Events aceita ou um webhook recebido. Só um teste efetivo de retomada no cliente pode sustentar uma garantia diferente. A duração do acompanhamento na Ponte é independente da duração do turno do cliente.
 
 Desde a **0.8.0**, `ponte.watcher.completed` aceita o filtro `{watcherId}` e avisa os estados terminais do acompanhamento. O aviso contém somente ID, estado e horários; o cliente consulta `bridge_watch_get` para recuperar o resultado. `ponte.job.completed` continua disponível: assinar o job de criação de um watcher acompanha a criação, e assinar um job que envia texto ao tmux acompanha o envio. O [guia de MCP Events](MCP-EVENTS.md) explica a inscrição feita pelo cliente com seu próprio callback e segredo. Não invente um callback do ChatGPT nem reutilize as credenciais de um fluxo no outro.
 
@@ -35,7 +35,7 @@ Desde a **0.8.0**, `ponte.watcher.completed` aceita o filtro `{watcherId}` e avi
 
 Mesmo em `approvalMode: "all"`, get, list, wait e cancel são controles diretos, autenticados, sem um novo job de aprovação. `bridge_watch_list` aceita `offset` de 0 a 500 e `limit` de 1 a 500, com padrões 0 e 50; retorna `watchers`, `total`, `offset` e `limit`. Use essa lista para recuperar o ID da mesma conexão depois de uma desconexão.
 
-| Campo | O que limita | Contrato da 0.9.0 |
+| Campo | O que limita | Contrato da 0.10.0 |
 |---|---|---|
 | `waitMs` | Uma chamada de `bridge_watch_wait` | Padrão **25000 ms**, mínimo 0 e máximo **45000 ms**; 0 consulta sem aguardar |
 | `timeoutMs` | Prazo total do watcher, contado desde a criação | Padrão **3600000 ms** (1 hora), de 1000 a **604800000 ms** (7 dias) |
@@ -178,7 +178,7 @@ Timeout, desconexão, resposta incompleta ou erro temporário de comunicação n
 { "watcherId": "ID_RETORNADO_PELA_PONTE" }
 ```
 
-Envie esses argumentos a `bridge_watch_get`. A 0.9.0 retorna orientação estruturada quando a camada da Ponte consegue tratar a falha, incluindo falhas antes dos cabeçalhos HTTP, durante a leitura da resposta e respostas temporárias como HTTP 503 no adaptador stdio. A orientação conserva `watcherId` e `nextCall` para `bridge_watch_get`, sem inventar um `status`. Se o próprio cliente cortar a chamada antes de receber essa orientação, aplique a mesma recuperação.
+Envie esses argumentos a `bridge_watch_get`. A 0.10.0 retorna orientação estruturada quando a camada da Ponte consegue tratar a falha, incluindo falhas antes dos cabeçalhos HTTP, durante a leitura da resposta e respostas temporárias como HTTP 503 no adaptador stdio. A orientação conserva `watcherId` e `nextCall` para `bridge_watch_get`, sem inventar um `status`. Se o próprio cliente cortar a chamada antes de receber essa orientação, aplique a mesma recuperação.
 
 | Resultado da consulta | Ação do chat |
 |---|---|

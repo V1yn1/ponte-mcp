@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Ponte MCP",
-    "version": "0.9.0",
+    "version": "0.10.0",
     "description": "Ferramentas locais e MCPs conectados. A aprovação segue a política selecionada no painel do computador. Não altera cotas de IA. Descubra o schema usando listTools; envie argumentsJson com JSON válido. Para cadastrar MCPs pelo chat, descubra bridge_mcp_list, bridge_mcp_add e bridge_mcp_reconnect filtrando source=bridge:mcps. O cadastro exige motivo, segue a aprovação existente e nunca substitui uma configuração diferente com o mesmo ID. Confirme server.status e consulte listTools com source=mcp:<id> antes de usar as ferramentas novas. Consulte getJob até estado final; não confunda pending_approval com sucesso. Crie acompanhamentos com bridge_watch_create antes de delegar e aguarde o watcherId com chamadas de 25 s, no máximo 45 s cada. Se waiting, continue aguardando no turno ativo. Após timeout de comunicação, consulte getWatcher e retome waitWatcher pelo mesmo ID, sem recriar ou reenviar a demanda. O prazo total é timeoutMs/expiresAt e não é renovado pela espera. Apresente sucesso, falha ou necessidade de intervenção ao receber o sinal real do executor. O acompanhamento é nativo e durável; não usa agendamentos do cliente nem comprova retomada após o fim do turno."
   },
   "servers": [
