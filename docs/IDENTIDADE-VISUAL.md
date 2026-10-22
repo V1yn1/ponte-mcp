@@ -1,6 +1,8 @@
-# Identidade visual da Ponte
+# Identidade visual da Ponte — 0.6.0
 
-A identidade da versão 0.5.0 usa uma ponte com dois pilares e um arco como símbolo da conexão entre assistentes e ferramentas. O painel aplica azul cobalto nos controles, grafite na navegação e fundos claros nas áreas de leitura. A cor verde deixou de ser a base da interface.
+[Índice da documentação](README.md) · [Histórico de versões](../CHANGELOG.md)
+
+A identidade introduzida na versão 0.5.0 e mantida na 0.6.0 usa uma ponte com dois pilares e um arco como símbolo da conexão entre assistentes e ferramentas. O painel aplica azul cobalto nos controles, grafite na navegação e fundos claros nas áreas de leitura. A cor verde deixou de ser a base da interface.
 
 ## Logotipo
 
@@ -17,7 +19,13 @@ Preserve a proporção e a transparência do PNG. Não incline o símbolo nem os
 | Fundo principal | Branco suave `#F7F8FC` |
 | Acento secundário do símbolo | Azul pervinca `#91A8FF` |
 
-Os estados de atenção e erro usam cores próprias acompanhadas de texto e ícones. O arquivo `public/styles.css` define os valores efetivos dos componentes, incluindo contrastes de hover, foco e estados desativados; `public/consent.css` usa a mesma direção visual na autorização.
+Os estados de atenção e erro usam cores próprias acompanhadas de texto e ícones. O arquivo [public/styles.css](../public/styles.css) define os valores efetivos dos componentes, incluindo contrastes de hover, foco e estados desativados; [public/consent.css](../public/consent.css) usa a mesma direção visual na autorização.
+
+## Aplicação na versão atual
+
+A seção **Acompanhamentos**, acrescentada na 0.6.0, segue os mesmos tokens de cor e componentes. O número de monitores ativos e o número de chamadas em espera são informações diferentes e têm rótulos próprios. Estados usam texto além da cor; resultados de executor são apresentados como conteúdo, sem se tornarem comandos da interface.
+
+Os cards **Chat** e **Ferramentas** permanecem alinhados, sem rotação. Para avaliar mudanças visuais, confira login, navegação, consentimento, estados vazios e acompanhamentos em desktop e celular. O registro em [Validação](VALIDACAO.md) distingue auditoria estática de inspeção visual efetivamente executada.
 
 ## Criação do arquivo
 

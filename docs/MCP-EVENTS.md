@@ -1,15 +1,19 @@
-# MCP Events na Ponte MCP 0.5.0
+# MCP Events na Ponte MCP 0.6.0
+
+[Índice da documentação](README.md) · [Conectar ao ChatGPT](CHATGPT.md) · [Watchers nativos](WATCHERS.md) · [API e ferramentas](API.md)
 
 MCP Events permite que a Ponte avise uma conversa inscrita quando um trabalho termina. O ChatGPT pode então consultar o resultado e continuar o pedido do usuário. A Ponte implementa o evento **`ponte.job.completed`**, com um `jobId` obrigatório por assinatura, usando webhooks verificados e assinados.
 
-O cliente precisa oferecer Events e criar a inscrição. Instalar a Ponte, autorizar OAuth ou ativar a aprovação automática não cria uma assinatura e não habilita a retomada em qualquer conversa. A disponibilidade documentada pela OpenAI é **Work no navegador** e **Work com Cloud selecionado no aplicativo desktop**, sujeita às permissões da conta e do workspace. Fonte: [MCP Events da OpenAI](https://developers.openai.com/plugins/build/mcp-events), consultada em 22/10/2026.
+O cliente precisa oferecer Events e criar a inscrição. Instalar a Ponte, autorizar OAuth ou ativar a aprovação automática não cria uma assinatura. A disponibilidade documentada pela OpenAI é **Work no navegador**, **Work com Cloud selecionado no aplicativo desktop** e **dots**, sujeita aos controles da conta e do workspace. Este guia usa Work. Fonte: [MCP Events da OpenAI](https://developers.openai.com/plugins/build/mcp-events), consultada em **22/10/2026**.
+
+**MCP Events e watchers têm funções diferentes.** Events envia uma notificação da Ponte ao cliente. Um [watcher `signal`](WATCHERS.md) recebe um recibo do executor na Ponte e mantém seu resultado consultável. Na 0.6.0, o único evento anunciado é `ponte.job.completed`; não há evento de conclusão de watcher. Um aviso sobre o job que criou o watcher comprova a criação, e um aviso sobre um job que enviou texto ao Claude comprova o término daquele envio. Para a tarefa externa, confira o recibo do watcher.
 
 ## Começar pelo ChatGPT
 
-1. Atualize a Ponte para **0.5.0**, preserve seu diretório de estado e reinicie o serviço. Os comandos estão no [README](../README.md#atualizar-uma-instalação-existente).
+1. Atualize a Ponte para **0.6.0**, preserve seu diretório de estado e reinicie o serviço. Os comandos estão em [Instalação e operação](OPERACAO.md).
 2. Mantenha a API em execução, com a origem HTTPS correta em **Conectar IA → URL pública da API**. Preserve uma conexão OAuth já concluída quando a origem continuar a mesma.
-3. No plugin da Ponte, use **Atualizar ferramentas** e atualize a descoberta de eventos disponível na interface. Confirme que **`ponte.job.completed`** aparece na página do plugin.
-4. Abra uma conversa Work compatível, com Cloud selecionado se estiver no desktop, e selecione a Ponte com `@`.
+3. Na conexão da Ponte em **Plugins**, selecione **Refresh/Atualizar**. Confirme que **`ponte.job.completed`** aparece entre os eventos descobertos.
+4. Abra uma **nova conversa Work** compatível, com Cloud selecionado se estiver no desktop, e selecione a Ponte com `@`.
 5. Peça uma tarefa em um projeto autorizado. Quando uma chamada retornar um `jobId` pendente de aprovação ou de execução, peça para acompanhar aquele ID e continuar quando ele terminar.
 
 Exemplo de pedido, substituindo `JOB_ID` pelo ID realmente retornado:
@@ -22,7 +26,7 @@ que criou o trabalho. Se falhar, for recusado ou cancelado, explique
 o estado antes de propor outra ação.
 ```
 
-O cliente envia `events/subscribe` com `arguments.jobId` e fornece a URL de callback e o segredo de assinatura. A Ponte verifica esse destino antes de aceitar a inscrição. Esses dados não precisam ser copiados pelo usuário e não devem aparecer na conversa.
+O cliente envia `events/subscribe` com `arguments.jobId` e fornece a URL de callback e o segredo de assinatura. **`events/subscribe` é um método do protocolo, não uma ferramenta MCP:** não aparece em `tools/list` e não deve ser encaminhado a `bridge_call`. A Ponte verifica o destino antes de aceitar a inscrição. Esses dados não precisam ser copiados pelo usuário e não devem aparecer na conversa.
 
 Para um primeiro teste, use uma alteração pequena em um projeto de teste com a política de revisão ativa: a chamada fica em `pending_approval`, permitindo confirmar a inscrição antes de aprovar em **Execuções**. Não é necessário mudar sua política para usar Events. Se o trabalho concluir antes de terminar a inscrição, a Ponte também envia o estado final atual, desde que o trabalho ainda esteja disponível para aquela conexão.
 
@@ -48,9 +52,12 @@ Use **Encerrar aviso** para cancelar a inscrição. Isso não cancela a execuç�
 |---|---|
 | Política `automatic` | Libera ferramentas válidas conforme as permissões locais |
 | `bridge_job` com `waitMs` | Espera até 25 segundos pelo mesmo trabalho durante uma chamada ativa |
+| Watcher `signal` e `bridge_watch_wait` | Recebe um resultado do executor e permite aguardá-lo na Ponte; não cria assinatura Events |
 | Assinatura de `ponte.job.completed` | Entrega um aviso depois que um trabalho específico chega ao estado final |
 
-Uma conversa pode usar os três mecanismos. Uma assinatura também pode acompanhar um trabalho que exige aprovação manual; o aviso chega depois da execução, recusa, cancelamento ou expiração, e não apenas porque a aprovação foi concedida. Cada novo trabalho que precise de acompanhamento exige seu próprio `jobId` na assinatura. Consultas de acompanhamento não devem gerar uma cadeia de novas assinaturas.
+Uma conversa pode combinar esses mecanismos quando houver necessidade. Uma assinatura também pode acompanhar um trabalho que exige aprovação manual; o aviso chega depois da execução, recusa, cancelamento ou expiração. Cada novo trabalho que precise de acompanhamento exige seu próprio `jobId` na assinatura. Consultas de acompanhamento não devem gerar uma cadeia de novas assinaturas.
+
+O fluxo de watcher não usa o agendador do ChatGPT/Claude. Events depende do mecanismo de entrega disponibilizado pelo cliente, que pode apresentá-lo como tarefa acionada por evento e aplicar suas próprias permissões. Uma assinatura só existe depois de aceita pela Ponte; um pedido em linguagem natural ou uma tela de criação do cliente não comprovam esse aceite.
 
 Events não fornece um modelo de IA dentro da Ponte, não remove cotas e não acrescenta autorização para novas tarefas. A continuação depende das instruções da conversa e das decisões do cliente. Actions e o adaptador stdio mantêm seus fluxos anteriores; este recurso está implementado na entrada HTTP moderna de MCP.
 
@@ -58,7 +65,7 @@ Events não fornece um modelo de IA dentro da Ponte, não remove cotas e não ac
 
 A API continua na porta 4318 e usa o mesmo endpoint **POST `/mcp`** autenticado por OAuth ou pelo token API legado. O painel permanece local na porta 4317. O callback é um destino de saída fornecido pelo cliente; não existe nova porta de entrada que o usuário precise abrir para Events.
 
-O adaptador de `src/mcp/modern.ts` atende o protocolo **`2026-07-28`**. Ele implementa este conjunto de métodos:
+O adaptador de [src/mcp/modern.ts](../src/mcp/modern.ts) atende o protocolo **`2026-07-28`**, exigido pelo perfil atual de Events do ChatGPT. Ele implementa este conjunto de métodos:
 
 | Método | Finalidade |
 |---|---|
@@ -149,7 +156,7 @@ Referências normativas: [metadados](https://modelcontextprotocol.io/specificati
   "_meta": {
     "io.modelcontextprotocol/serverInfo": {
       "name": "ponte-mcp",
-      "version": "0.5.0"
+      "version": "0.6.0"
     }
   }
 }
@@ -266,7 +273,7 @@ O corpo de um evento normal usa este envelope; ele não tem o campo `type` da ve
 }
 ```
 
-O cliente recebe somente metadados de conclusão. Para obter o resultado da ferramenta e a mensagem de erro do trabalho, use a consulta autenticada a `bridge_job` dentro do prazo de retenção. O aviso não inclui argumentos, código ou conteúdo de arquivos, e a cópia arquivada remove os argumentos de entrada.
+O cliente recebe somente metadados de conclusão. Para obter o resultado da ferramenta e a mensagem de erro do trabalho, use a consulta autenticada a `bridge_job` dentro do prazo de retenção. O aviso não inclui argumentos, código ou conteúdo de arquivos, e a cópia arquivada remove os argumentos de entrada. Quando o job criou um watcher, a cópia também remove `callback.token`; a recuperação desse segredo segue o fluxo idempotente de [WATCHERS.md](WATCHERS.md).
 
 Os cabeçalhos de entrega são:
 
@@ -340,11 +347,15 @@ O registro contém somente contagens, horários e erros na forma `{ "code": -320
 
 Se a descoberta tiver sido recebida, mas `subscribeRequests` continuar em zero, nenhuma nova inscrição chegou ao adaptador desde a inicialização indicada. Isso não informa por que o cliente parou, nem invalida uma assinatura restaurada do disco. Se houver uma recusa, use o código/categoria para localizar a etapa. Por exemplo, `-32602` indica parâmetros ou metadados inválidos, `-32020` indica divergência de cabeçalhos, e `-32015` com `challenge_failed` indica que a verificação de callback não confirmou o desafio.
 
-Na verificação integrada de 22/10/2026, o ChatGPT descobriu a Ponte e seu evento, e a captura de requisições registrou `server/discover` e `events/list` com HTTP 200. A criação nativa do acompanhamento retornou **“Webhook connectors could not be validated before creation.”**, sem criar uma tarefa. A janela de captura examinada após a tentativa não registrou `events/subscribe`. Essa evidência localiza a interrupção antes de uma inscrição recebida pela Ponte nessa janela; ela não identifica a causa interna da validação do cliente. Não há, nesse resultado, evidência de falha do desafio de callback, da assinatura HMAC ou das restrições de endereço. O diagnóstico adicionado torna essa fronteira visível em novas tentativas; ele não altera o protocolo nem comprova que o erro de criação foi resolvido.
+### Evidências históricas e limite da revisão atual
+
+Uma tentativa anterior de **22/10/2026** descobriu a Ponte e seu evento: a captura registrou `server/discover` e `events/list` com HTTP 200. O cliente retornou **“Webhook connectors could not be validated before creation.”** e a janela examinada não mostrou `events/subscribe`. Isso situa a interrupção daquela tentativa antes da inscrição recebida pela Ponte, sem identificar a causa interna do cliente. Não comprova falha de desafio, assinatura HMAC ou filtragem de endereços da Ponte.
+
+Há também uma evidência manual posterior, em **nova conversa Work**, de inscrição criada, aviso `ponte.job.completed` recebido e consulta ao job correspondente. O [histórico de validação](VALIDACAO.md) registra o alcance dessa evidência. A falha anterior deve ser interpretada como ocorrência daquela tentativa, não como indisponibilidade universal de Events. Esta revisão documental não executou um novo teste de conta, e a entrega histórica de um evento de job não valida a conclusão de uma tarefa externa nem a retomada por watcher.
 
 | Sintoma | Conferência útil |
 |---|---|
-| O plugin não lista `ponte.job.completed` | Confirme a 0.5.0, a mesma origem HTTPS e a atualização das ferramentas/eventos; o cliente precisa descobrir o protocolo `2026-07-28` |
+| O plugin não lista `ponte.job.completed` | Confirme a 0.6.0 e a mesma origem HTTPS, use Refresh/Atualizar e abra nova conversa; o cliente precisa descobrir o protocolo `2026-07-28` |
 | Ferramentas funcionam, mas Events não aparece | Confirme Work no navegador ou Work com Cloud no desktop, além das permissões da conta/workspace |
 | O painel mostra zero avisos | Ainda não há assinatura ativa; aprovação automática e autorização OAuth não criam uma inscrição |
 | A criação do acompanhamento informa que os conectores de webhook não puderam ser validados | Confira `subscribeRequests` desde a inicialização e a captura HTTP da tentativa. Sem uma chamada recebida, a etapa de verificação de callback da Ponte ainda não foi alcançada; esse erro genérico não identifica sozinho a causa |
@@ -357,8 +368,9 @@ Na verificação integrada de 22/10/2026, o ChatGPT descobriu a Ponte e seu even
 | Mudança de URL, revogação ou novo consentimento | A autorização anterior não acompanha a nova identidade; refaça a conexão e o acompanhamento necessário |
 | Limite de armazenamento ou de assinaturas | Encerre avisos desnecessários e aguarde a expiração das cópias retidas; cancelar um aviso não apaga seu resultado imediatamente |
 | Trabalho cancelado após reinício | Consulte a mensagem de interrupção e confira o estado externo antes de qualquer repetição |
+| Um aviso chegou, mas a tarefa do Claude ainda continua | Confira qual `jobId` foi assinado. Jobs de criação de watcher ou envio ao tmux terminam antes da tarefa externa; consulte o watcher `signal` correspondente |
 
-Para um teste completo no ChatGPT, observe quatro evidências: evento descoberto no plugin, assinatura visível no painel, aviso recebido e consulta ao mesmo `jobId` pela conversa. Testes locais de protocolo e transporte não comprovam disponibilidade de Events em uma conta específica. Os resultados efetivamente executados nesta entrega ficam em [VALIDACAO.md](VALIDACAO.md).
+Para um teste completo no ChatGPT, observe quatro evidências: evento descoberto no plugin, assinatura visível no painel, aviso recebido e consulta ao mesmo `jobId` pela conversa. Testes locais de protocolo e transporte não comprovam disponibilidade de Events em uma conta específica. As verificações efetivamente executadas e a origem de cada evidência ficam em [VALIDACAO.md](VALIDACAO.md).
 
 ## Referências oficiais e perfil adotado
 
@@ -372,3 +384,5 @@ Para um teste completo no ChatGPT, observe quatro evidências: evento descoberto
 - [Grupo de trabalho de MCP Events — rascunho experimental](https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/main/docs/design-sketch-proposal.md): identidade da assinatura e semântica geral de eventos; é um rascunho em evolução.
 
 A Ponte implementa o perfil de webhook e verificação documentado pela OpenAI. Não implementa polling de eventos, streams de eventos, replay por cursor, eventos globais de todos os trabalhos nem mensagens de controle de lacuna/encerramento. Exemplos abreviados da documentação de Events são complementados pelos metadados e pelo `resultType` exigidos pelo protocolo `2026-07-28`.
+
+Os limites e as políticas específicos da Ponte descritos neste guia estão em [src/events/service.ts](../src/events/service.ts), [src/events/webhook.ts](../src/events/webhook.ts) e [src/mcp/modern.ts](../src/mcp/modern.ts). Eles não são limites universais do protocolo ou dos clientes.

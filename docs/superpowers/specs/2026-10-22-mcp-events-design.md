@@ -1,5 +1,7 @@
 # MCP Events na Ponte — desenho da versão 0.4.0
 
+> **Registro histórico.** Este documento preserva o planejamento da entrega indicada, não instruções para reexecutá-la. Consulte o [índice atual](../../README.md), o [histórico de versões](../../../CHANGELOG.md) e a [validação](../../VALIDACAO.md) para o comportamento e a evidência publicados.
+
 ## Objetivo e escopo autorizado
 
 O usuário pediu implementar a retomada de uma conversa inscrita no ChatGPT quando uma execução da Ponte terminar. A entrega adiciona o perfil webhook de MCP Events, mantém o MCP anterior e a aprovação automática, e entrega código, testes, documentação e atualização no repositório existente. O cliente precisa oferecer Events e criar uma assinatura; o servidor não inventa um endereço de retorno nem uma identidade de conversa.

@@ -1,173 +1,186 @@
 # Conexão com chats e outros servidores
 
-Ponte MCP **0.6.0**. Documentação do ChatGPT e do Claude consultada em **22 de outubro de 2026**. As telas e permissões dos fornecedores podem mudar. Os roteiros de conexão estão em [CHATGPT.md](CHATGPT.md) e [CLAUDE.md](CLAUDE.md); os resultados efetivamente observados na entrega estão em [VALIDACAO.md](VALIDACAO.md).
+[Índice da documentação](README.md) · [Referência da API](API.md) · [Operação](OPERACAO.md) · [Segurança](SEGURANCA.md)
 
-## Escolha a entrada compatível com seu cliente
+Este guia descreve as entradas e os contratos de integração da Ponte MCP **0.6.0**. Os roteiros específicos estão em [CHATGPT.md](CHATGPT.md) e [CLAUDE.md](CLAUDE.md); os testes efetivamente realizados estão em [VALIDACAO.md](VALIDACAO.md). As referências externas foram consultadas em **22 de outubro de 2026**. Disponibilidade e permissões dos clientes dependem da conta, do workspace e do produto utilizado.
 
-| Cliente | Entrada da ponte | Requisito adicional |
+## Escolha a entrada do cliente
+
+| Cliente ou fluxo | Entrada da Ponte | Requisitos |
 |---|---|---|
-| ChatGPT com MCP nativo | `https://SUA_ORIGEM/mcp`, OAuth com DCR | Origem HTTPS encaminhando toda a API, `publicUrl` configurada e aprovação local |
-| ChatGPT com MCP Events | Mesma entrada `/mcp`, protocolo `2026-07-28` | Work no navegador ou Work + Cloud no desktop, evento descoberto e assinatura de um `jobId` pelo cliente |
-| Claude remoto | `https://SUA_ORIGEM/mcp`, OAuth público com DCR | Registro automático, origem HTTPS e aprovação local |
-| Claude Code | HTTP com OAuth ou stdio | Callback HTTP loopback aceita porta temporária; configure um transporte por entrada |
-| Claude Desktop local ou outro cliente com MCP stdio | `node dist/cli.js stdio --state-dir CAMINHO` | Ponte iniciada no mesmo computador |
-| Cliente MCP HTTP com Bearer configurável | `http://127.0.0.1:4318/mcp` | Token API; remoto exige encaminhamento HTTPS |
-| ChatGPT com Secure MCP Tunnel disponível | Túnel oficial para uma entrada MCP compatível | Permissões, associação ao workspace e configuração própria do cliente de túnel |
-| GPT personalizado com Actions | REST em origem HTTPS | OpenAPI e autenticação API Key/Bearer |
-| Chat sem ferramentas | Não consegue executar diretamente | Mudar para uma superfície com integração explícita |
+| ChatGPT com MCP remoto | `https://SUA_ORIGEM/mcp`, OAuth com DCR | API acessível por HTTPS, `publicUrl` configurada e consentimento no painel local |
+| Claude com conector remoto | `https://SUA_ORIGEM/mcp`, OAuth com DCR público | Origem HTTPS e aprovação local; roteiro em [CLAUDE.md](CLAUDE.md) |
+| Claude Code | MCP HTTP com OAuth ou adaptador stdio | Escolher um transporte e seguir o [guia do cliente](CLAUDE.md) |
+| Claude Desktop local ou outro cliente stdio | `node CAMINHO/dist/cli.js stdio --state-dir CAMINHO_DO_ESTADO` | Ponte já iniciada no mesmo computador; caminhos absolutos |
+| Cliente MCP com Bearer configurável | `/mcp` em loopback ou HTTPS | Token API; access token OAuth também é aceito quando emitido pela Ponte |
+| GPT personalizado com Actions | REST `/v1/*` e `/openapi.json` | Origem HTTPS e autenticação API Key/Bearer com o token API |
+| Cliente compatível com MCP Events | Mesma entrada HTTP `/mcp`, protocolo `2026-07-28` | Descoberta de eventos e assinatura explícita do job pelo cliente; detalhes abaixo |
+| ChatGPT com Secure MCP Tunnel | Entrada MCP HTTP ou stdio alcançável pelo cliente do túnel | Configuração e permissões próprias do túnel; detalhes abaixo |
 
-## Watchers nativos para tarefas delegadas
+Um chat sem ferramentas não executa operações da Ponte somente por receber uma URL ou instruções em texto. A Ponte não fornece uma chave de modelo e não remove cotas ou custos do chat ou dos serviços conectados.
 
-As cinco ferramentas `bridge_watch_*` acompanham tarefas na própria Ponte, sem agendador do cliente. O gatilho `signal` recebe um recibo autenticado do executor; `job` acompanha o estado final de um job da Ponte. Crie o acompanhamento antes de delegar e use `bridge_watch_wait` com o mesmo ID. Consulta e resultado persistem mesmo após reconectar. Uma chamada ativa pode aguardar o gatilho; um watcher não reabre uma conversa encerrada. O roteiro de integração com uma sessão Claude existente está em [WATCHERS.md](WATCHERS.md).
+## Acompanhar tarefas com watchers nativos
 
-O produtor remoto envia POST para `/hooks/watchers/:watcherId/signal` com o token exclusivo retornado na criação. Encaminhe esse caminho pelo mesmo túnel da API. Não use tokens de API/admin no callback e não confunda esse recibo de entrada da Ponte com o callback de saída do protocolo MCP Events.
+Para uma tarefa assíncrona delegada a outro executor, use as cinco ferramentas `bridge_watch_*` da própria Ponte. O fluxo não cria cron, automations ou agendamentos no ChatGPT/Claude:
 
-## ChatGPT nativo com OAuth
+1. Crie `bridge_watch_create` com `trigger.type: "signal"`, um `runId` exclusivo e uma `idempotencyKey` persistente.
+2. Se a criação retornar `pending_approval`, aguarde esse `jobId` com `bridge_job` e conclua a aprovação no painel. Só prossiga quando o resultado contiver `watcherId` e callback.
+3. Configure no executor a URL, o token exclusivo e o `runId` retornados. Para outro computador, use a URL pública HTTPS da API.
+4. Delegue a tarefa uma única vez. O executor envia o recibo quando souber o resultado real: `succeeded`, `failed` ou `needs_input`.
+5. Chame `bridge_watch_wait` para o mesmo `watcherId`. Se continuar `waiting`, use novas esperas limitadas dentro do turno ativo. Após reconectar, recupere o estado com `bridge_watch_get` ou `bridge_watch_list`.
 
-A fachada `/mcp` implementa authorization code com PKCE `S256`, cadastro dinâmico de clientes (DCR), descoberta de autorização, renovação e revogação. O scope usado é `ponte:tools`. As ferramentas anunciam essa política em `securitySchemes` e no espelho `_meta.securitySchemes`.
+O token de callback serve apenas para sinalizar aquele watcher. Não o substitua pelo token API, pelo token administrativo ou pelo access token OAuth; não o exponha em mensagens ou logs. O endpoint de entrada é `/hooks/watchers/:watcherId/signal`, que precisa ser encaminhado junto da API quando houver um executor remoto.
 
-Configure a origem HTTPS da API em **Conectar IA → URL pública da API**. No ChatGPT, abra **Plugins → + → Add custom MCP server**, informe a URL completa terminada em `/mcp`, escolha **OAuth** e deixe as credenciais de cliente vazias. Se houver escolha entre métodos de registro, use **DCR**. O ChatGPT registra seu próprio cliente e inicia a autorização.
+O gatilho `job` serve quando o próprio job da Ponte representa toda a operação observada. Um job que só enviou texto para tmux ou iniciou a delegação confirma somente esse envio. Para esperar a conclusão real do executor, use `signal`. A criação de um watcher também é um job curto: seu sucesso confirma a criação do acompanhamento.
 
-A página de consentimento mostra um código de oito caracteres. No painel local, abra **Conectar IA**, compare o código, revise o pedido e autorize. A página retorna automaticamente ao ChatGPT; conclua a criação, instale o plugin e selecione-o com `@` em uma conversa. As etapas detalhadas e o primeiro teste estão em [CHATGPT.md](CHATGPT.md).
+Watchers e resultados limitados persistem, mas uma espera HTTP não dura para sempre. O padrão de `bridge_watch_wait` é **25000 ms**, com faixa de 0 a **300000 ms**, respeitando o timeout do cliente e dos intermediários. A desconexão encerra somente a espera; ela não cancela o monitor. O watcher não reabre uma conversa encerrada. `bridge_watch_cancel` encerra apenas o acompanhamento e não interrompe o executor ou o job original.
 
-### Contrato HTTP
+O roteiro completo, o recibo e a recuperação estão em [WATCHERS.md](WATCHERS.md). Os limites e as diferenças entre reinício de watchers `signal` e `job` estão em [ARQUITETURA.md](ARQUITETURA.md#watchers-acompanhamento-nativo-e-durável).
 
-Os caminhos abaixo pertencem à API da porta 4318. O túnel precisa encaminhar todos eles, sem acrescentar um prefixo de caminho.
+## MCP HTTP e OAuth
 
-| Caminho | Finalidade | Autenticação |
+Configure `publicUrl` com a **origem HTTPS da API**, sem caminho, query, fragmento ou credenciais. A URL configurada identifica o emissor OAuth; o recurso protegido é essa origem acrescida de `/mcp`. A porta padrão da API é 4318. A porta administrativa, 4317 por padrão, permanece local.
+
+O encaminhamento HTTPS precisa alcançar os caminhos da API sem adicionar um prefixo. Publicar apenas `/mcp` deixa descoberta, consentimento, renovação ou sinais de watchers inacessíveis.
+
+| Caminho | Finalidade | Autenticação ou controle |
 |---|---|---|
-| `/.well-known/oauth-protected-resource` | Descoberta do recurso protegido | Pública |
-| `/.well-known/oauth-protected-resource/mcp` | Descoberta específica do recurso `/mcp` | Pública |
-| `/.well-known/oauth-authorization-server` | Metadados do servidor de autorização | Pública |
-| `/register` | Cadastro dinâmico do cliente OAuth | Validação dos metadados do cliente |
-| `/authorize` | Início do pedido de autorização | Cliente registrado, redirect, recurso e PKCE válidos; consentimento local pendente |
-| `/oauth/consent` e seus recursos | Página que mostra o código de verificação | Não recebe credenciais administrativas |
-| `/oauth/consent/status` e `/oauth/complete` | Acompanhar a decisão e concluir o retorno OAuth | Identificador aleatório do pedido; conclusão exige decisão local |
-| `/token` | Troca de código ou renovação | Cliente público com PKCE, ou segredo do cliente conforme o registro |
-| `/revoke` | Revogação de credenciais OAuth | Autenticação do cliente correspondente |
-| `/mcp` | Transporte MCP | Access token OAuth ou token API legado |
-| `/v1/*` | REST, trabalhos e adaptador stdio | Somente token API legado |
-| `/openapi.json` | Definição de Actions | Pública |
+| `/.well-known/oauth-protected-resource` | Descoberta do recurso | Pública |
+| `/.well-known/oauth-protected-resource/mcp` | Descoberta específica de `/mcp` | Pública |
+| `/.well-known/oauth-authorization-server` | Metadados OAuth | Pública |
+| `/register` | Registro dinâmico de cliente | Metadados validados pela Ponte |
+| `/authorize` | Pedido de autorização | Cliente, redirect, recurso, scope e PKCE válidos |
+| `/oauth/consent` e recursos da página | Exibir o código de verificação | Página pública; não recebe token administrativo |
+| `/oauth/consent/status` e `/oauth/complete` | Acompanhar a decisão e retornar ao cliente | Identificador aleatório do pedido; conclusão exige decisão local |
+| `/token` | Troca de código ou renovação | Método do cliente registrado; PKCE na troca inicial |
+| `/revoke` | Revogar o grant vinculado ao token | Cliente correspondente |
+| `/mcp` | Chamadas MCP por POST | Access token OAuth ou token API |
+| `/v1/*` | REST, jobs, watchers e adaptador stdio | Somente token API |
+| `/hooks/watchers/:watcherId/signal` | Recibo do executor | Token exclusivo do watcher |
+| `/openapi.json` | Schema de Actions | Público |
+| `/health` | Diagnóstico mínimo da API | Público |
 
-O `issuer` é exatamente a origem HTTPS configurada, sem barra final. O identificador do recurso é essa origem acrescida de `/mcp`. O mesmo recurso acompanha a autorização e a troca de tokens; credenciais de outro recurso são rejeitadas.
+Mesmo as rotas públicas passam pela validação de Host. `publicUrl` permite o Host da origem HTTPS; Host local válido também é aceito caso o túnel o reescreva. A Ponte mantém `trust proxy` desativado e não deduz o emissor a partir de headers encaminhados. Os contratos estão em [src/http.ts](../src/http.ts) e [src/auth/http.ts](../src/auth/http.ts).
 
-A Ponte anuncia `authorization_response_iss_parameter_supported: true` e inclui `iss` nos redirects OAuth de sucesso e erro. Isso permite ao ChatGPT usar o callback estável `https://chatgpt.com/connector_platform_oauth_redirect`. Callbacks HTTPS precisam coincidir exatamente com o registro. Para clientes nativos como Claude Code, callbacks HTTP de loopback aceitam apenas variação da porta: host, caminho e query devem coincidir literalmente. A troca do código exige o URI completo efetivamente aprovado. Não configure curingas.
+### Registro e consentimento
 
-O registro aceita `none` para cliente público e `client_secret_post` para cliente com segredo. `client_secret_basic`, CIMD e `private_key_jwt` não são anunciados como métodos implementados pela Ponte. O cliente DCR e seu segredo persistem, sem expiração automática do segredo, enquanto tokens têm validade e revogação próprias.
+A Ponte implementa authorization code com PKCE **S256**, DCR e scope **`ponte:tools`**. Aceita `none` para cliente público e `client_secret_post` para cliente com segredo. CIMD, `private_key_jwt` e `client_secret_basic` não são anunciados como métodos implementados. No ChatGPT, use o caminho OAuth com DCR descrito em [CHATGPT.md](CHATGPT.md), sem inventar credenciais de cliente. O [guia oficial de autenticação](https://developers.openai.com/plugins/build/auth) explica a escolha de registro pelo cliente.
 
-O transporte MCP é **Streamable HTTP sem sessão persistente, com respostas JSON**. Mensagens usam POST em `/mcp`; GET autenticado retorna 405 e não mantém um canal SSE aberto. Sem credencial válida, a autenticação responde 401 antes dessa verificação de método. Isso não impede que a ponte se conecte a upstreams que usem SSE.
+O consentimento mostra um código de oito caracteres. O proprietário compara o código no painel local e aprova ou rejeita. A política `automatic` de ferramentas não aprova novas conexões OAuth.
 
-Para o protocolo `2026-07-28`, um adaptador HTTP implementa `server/discover`, catálogo e chamadas de ferramentas, além de `events/list`, `events/subscribe` e `events/unsubscribe`. Ele exige os metadados de versão/capacidades e os cabeçalhos correspondentes por requisição. As versões legadas continuam no SDK 1.32.1. O modo stdio e as conexões upstream mantêm seus transportes existentes; esta atualização não migra o projeto inteiro para o SDK v2. O contrato detalhado está em [MCP-EVENTS.md](MCP-EVENTS.md#contrato-do-endpoint-mcp).
+O servidor anuncia `authorization_response_iss_parameter_supported: true` e inclui o `iss` exato nos redirects de sucesso e erro. Redirects HTTPS precisam corresponder exatamente ao cadastro. Para clientes nativos, callbacks HTTP de loopback aceitam variação somente da porta, mantendo host, caminho e query literais. A troca de código exige o URI completo usado na autorização. Use o redirect efetivamente registrado pelo cliente; não configure curingas. A implementação está em [src/auth/provider.ts](../src/auth/provider.ts).
 
-### Renovação e mudança de origem
+### Validade, identidade e atualização
 
-Pedidos de autorização aguardam revisão por até 10 minutos, códigos OAuth valem por 2 minutos e access tokens por até 1 hora. Refresh tokens rotacionam, sem prolongar o prazo absoluto de 30 dias da autorização. Reutilizar um refresh token já consumido revoga sua família de tokens. O painel permite revogar a autorização de uma conexão. Pedidos pendentes e códigos ainda não trocados ficam em memória; reiniciar o serviço exige começar novamente esses fluxos.
+Pedidos aguardam aprovação por até **10 minutos**, códigos OAuth valem **2 minutos** e access tokens até **1 hora**. Grants renováveis têm prazo absoluto de **30 dias**; rotacionar o refresh token não estende esse prazo. Clientes sem `refresh_token` recebem autorização de até 1 hora. Reutilizar um refresh token já consumido revoga seu grant. `/revoke` e a ação de revogação do painel encerram o grant inteiro, sem apagar o cadastro DCR.
 
-Use uma origem estável. Alterar `publicUrl` muda os identificadores de emissor e recurso; configure novamente a conexão no ChatGPT para o novo endereço. Copiar apenas os arquivos do programa para outra pasta não transfere o estado OAuth: preserve o diretório `.ponte` ou passe seu caminho absoluto em `--state-dir`.
+Cada grant OAuth possui sua identidade de jobs, watchers e assinaturas. Renovar tokens preserva esse vínculo; realizar novo consentimento cria outro. Clientes que usam o mesmo token API compartilham a identidade. Um cliente REST/stdio não acessa pela credencial API o job ou watcher de um grant OAuth diferente. Os projetos e as políticas de ferramentas continuam compartilhados; essa separação de registros não implementa usuários ou projetos isolados.
 
-Ao atualizar para 0.6.0, preserve `.ponte` e mantenha uma conexão OAuth já concluída. No plugin da Ponte, atualize as ferramentas e a descoberta de eventos; confirme `ponte.job.completed` na página do plugin. Atualizar o catálogo não exige recriar uma conexão que funciona. O procedimento completo de atualização está em [CHATGPT.md](CHATGPT.md).
+Mantenha uma origem HTTPS estável. Alterar `publicUrl` invalida as autorizações vinculadas ao emissor anterior e exige novo consentimento. Durante uma atualização, preserve o estado completo, incluindo `secrets.json`, `oauth.json` e `watchers.json`, conforme [OPERACAO.md](OPERACAO.md). Não recrie tokens para atualizar o catálogo.
 
-Fontes oficiais:
+Depois de atualizar a Ponte, atualize os metadados da conexão no cliente e confirme as cinco ferramentas `bridge_watch_*`. A [documentação de conexão do ChatGPT](https://developers.openai.com/plugins/deploy/connect-chatgpt) orienta usar **Refresh** para MCPs personalizados e testar em uma nova conversa. Uma atualização de ferramentas não exige, por si só, apagar uma conexão OAuth válida. Em caso de `invalid_client`, confira preservação do estado, origem e cadastro antes de recomeçar o fluxo.
 
-- [Adicionar um MCP customizado](https://developers.openai.com/api/docs/guides/custom-mcp-server)
-- [OAuth, registro de clientes e identificação do emissor](https://developers.openai.com/plugins/build/auth)
-- [Metadados e erros de ferramentas](https://developers.openai.com/plugins/reference)
-- [Conectar e testar uma integração MCP](https://developers.openai.com/plugins/deploy/connect-chatgpt)
+### Transporte legado e protocolo moderno
 
-## Claude
+`/mcp` usa Streamable HTTP com respostas JSON e sem sessão persistente. Mensagens usam POST; GET autenticado retorna 405 e não mantém SSE. Sem credencial válida, a autenticação responde antes da verificação de método.
 
-O painel **Conectar IA → Claude** oferece o conector remoto, o JSON stdio do Claude Desktop e os comandos do Claude Code. O OAuth remoto usa DCR público com PKCE S256 e o mesmo consentimento local. O adaptador stdio lê as credenciais locais e usa o serviço já iniciado. Siga [CLAUDE.md](CLAUDE.md) para escolher e validar o caminho.
+Versões legadas seguem o SDK **1.32.1**. Para `2026-07-28`, o adaptador HTTP da Ponte implementa `server/discover`, `tools/list`, `tools/call` e os três métodos `events/*`, exigindo os metadados e cabeçalhos correspondentes em cada requisição. O catálogo moderno anuncia somente `tools` e `events`. Isso é uma implementação delimitada do contrato HTTP moderno, não uma migração completa para o SDK v2. Os detalhes estão em [MCP-EVENTS.md](MCP-EVENTS.md) e [src/mcp/modern.ts](../src/mcp/modern.ts).
 
-## Aprovação e espera por resultados MCP
+## Aprovação e espera
 
-A política é comum a todos os clientes autorizados. Em **Visão geral → Você no controle → Política de aprovação**, `mutations` mantém a revisão de alterações e comandos, `all` revisa todas as ferramentas e **Aprovar automaticamente todas** seleciona `automatic`. Esse modo libera pendentes válidos e chamadas futuras de ferramentas locais e MCP. A seleção persiste após reiniciar.
+A política configurada no painel aplica-se às ferramentas locais, upstreams e `bridge_watch_create`. `mutations` revisa escritas e comandos, `all` revisa todas as ferramentas submetidas ao `JobManager`, e `automatic` libera solicitações válidas. Permissões de projeto, listas permitidas, schemas e hashes continuam sendo verificados.
 
-Permissões de projeto, listas de ferramentas permitidas, validações e hashes continuam valendo. A pausa bloqueia novas solicitações e a partida da fila. Ao sair do modo automático, trabalhos automáticos ainda enfileirados voltam à revisão conforme a política; os que já começaram continuam. Novas conexões OAuth sempre exigem aprovação local.
+Consultas de catálogo/estado, controles de jobs e `bridge_watch_get/list/wait/cancel` têm caminhos diretos de controle. Eles não ficam aguardando uma nova aprovação de ferramenta. A espera de watcher não ocupa uma das quatro vagas de execução. Consulte [SEGURANCA.md](SEGURANCA.md#política-de-aprovação-e-operações-incertas) para mudanças de política, pausa e cancelamentos.
 
-`bridge_status` retorna `approvalMode`. Trabalhos podem incluir `approval: "manual"` ou `approval: "automatic"`, também registrado na auditoria. Chamadas de ferramentas, diretas ou por `bridge_call`, aguardam até 25 segundos enquanto o trabalho está `queued` ou `running`; um `pending_approval` inicial retorna imediatamente.
+| Operação | O que espera | Prazo da chamada |
+|---|---|---|
+| Ferramenta MCP direta ou `bridge_call` | Job em `queued` ou `running`; `pending_approval` inicial retorna imediatamente | Até 25 segundos |
+| `bridge_job` | Mesmo job, incluindo aprovação | `waitMs` entre 0 e 25000; padrão 0 |
+| `bridge_watch_wait` / REST `waitWatcher` | Gatilho de um watcher existente | `waitMs` entre 0 e 300000; padrão 25000 |
+| REST `getJob` / `getWatcher` | Consulta do estado atual | Sem parâmetro de espera |
 
-Para aguardar o mesmo trabalho durante o turno ativo, chame `bridge_job`:
+Ao vencer uma espera, consulte o mesmo identificador. Não reenvie uma operação porque o resultado não chegou. `pending_approval`, `queued`, `running` e `waiting` não significam sucesso. Uma tarefa externa pode ter continuado mesmo após timeout, cancelamento ou perda de conexão.
 
-```json
-{ "jobId": "ID_RETORNADO", "waitMs": 25000 }
-```
+## MCP Events, quando o cliente oferecer
 
-`waitMs` aceita inteiros de 0 a 25000, com padrão 0 para retornar imediatamente. A espera acompanha `pending_approval`, `queued` e `running` até um resultado final ou o prazo. Depois disso, o mesmo `jobId` continua consultável. Faça consultas limitadas e não reenvie a operação apenas porque ela ainda não terminou. Essa espera não retoma uma conversa encerrada; para isso, um cliente compatível precisa criar uma assinatura de Events.
+Events é uma integração separada para **avisos de saída da Ponte ao cliente**. Watchers `signal` recebem **recibos de entrada do executor para a Ponte**. Eles têm endpoints, credenciais, persistência e finalidade diferentes. O fluxo de tarefas delegadas com watchers permanece nativo e não depende de criar uma assinatura de Events.
 
-### MCP Events
+A [documentação oficial de MCP Events](https://developers.openai.com/plugins/build/mcp-events), consultada na data acima, lista suporte em Work no navegador, Work no desktop com Cloud selecionado e dots, sujeito aos controles do workspace. Não se deve inferir suporte a Events só porque uma conversa consegue chamar ferramentas MCP.
 
-A Ponte 0.6.0 implementa o perfil de webhooks e verificação de [MCP Events da OpenAI](https://developers.openai.com/plugins/build/mcp-events), usando o protocolo `2026-07-28`. A disponibilidade documentada é **Work no navegador** ou **Work com Cloud selecionado no desktop**, sujeita à conta e ao workspace. Não se aplica automaticamente a toda conversa que tenha ferramentas MCP.
+A Ponte expõe `ponte.job.completed` pelo protocolo HTTP `2026-07-28`. O cliente cria a assinatura por `events/subscribe`, fornecendo callback HTTPS e segredo de assinatura, e identifica um `jobId` pertencente à conexão. Esse é um método do protocolo, não uma ferramenta enviada a `tools/call`. A Ponte verifica o callback e, ao concluir o job, entrega um evento assinado; o cliente busca o resultado com `bridge_job`. A decisão de continuar a conversa pertence ao cliente e às instruções do usuário.
 
-O evento `ponte.job.completed` exige o `jobId` de um trabalho da mesma conexão. O cliente cria a assinatura e fornece callback e segredo; a Ponte verifica o destino e envia um evento assinado quando aquele trabalho atinge estado final. Ao recebê-lo, o chat consulta `bridge_job` e continua conforme as instruções dadas pelo usuário. Uma assinatura criada logo após a conclusão também recebe o estado final atual; não há reprodução de histórico por cursor.
+Um aviso entregue não comprova retomada da conversa. A Ponte não fornece callback ou segredo em nome do cliente, não cria assinaturas globais e não usa eventos para iniciar ciclos de chamadas. Em particular, inscrever o job de `bridge_watch_create` avisa somente que o acompanhamento foi criado; não existe evento de conclusão de watcher nesta versão.
 
-Atualize as ferramentas e eventos do plugin e confira a inscrição em **Conectar IA → Avisos de conclusão**. A opção **Encerrar aviso** cancela a inscrição, sem cancelar o trabalho. Callbacks e segredos não aparecem no painel. O modo automático de aprovação e Events podem ser usados juntos, mas um não ativa o outro.
+Assinaturas, tentativas e cópias dos jobs acompanhados persistem com validade e capacidade limitadas. O painel mostra avisos e entregas; encerrá-los não cancela os jobs. O adaptador stdio não anuncia Events. Veja [MCP-EVENTS.md](MCP-EVENTS.md) para configuração, limites e diagnóstico.
 
-As assinaturas, tentativas de entrega e resultados dos trabalhos acompanhados persistem em estado privado, com prazo e capacidade limitados. Nenhuma operação é repetida ao reiniciar a Ponte. O status de entrega confirma o recebimento do aviso; a retomada exige suporte do cliente. Há exemplos, referência do protocolo e diagnóstico em [MCP-EVENTS.md](MCP-EVENTS.md).
+## MCP local por stdio
 
-## MCP local e privado
+O comando `stdio` lê as credenciais do diretório de estado e usa a Ponte já iniciada. Todos os clientes que leem esse mesmo token API compartilham a identidade, o painel e a política. Na configuração `mcpServers`, informe caminhos absolutos para o executável Node, `dist/cli.js` e `--state-dir`; os exemplos por cliente estão em [CLAUDE.md](CLAUDE.md).
 
-O modo stdio é um adaptador do serviço local: todos os clientes compartilham o mesmo painel, política e conjunto de conexões. Não é necessário colocar um token em uma URL ou em uma conversa. O processo iniciado pelo cliente lê a configuração local.
+O diretório padrão é `.ponte` dentro da instalação, não a pasta atual do terminal. Ao mudar de instalação, reutilize explicitamente o estado antigo. Não inclua tokens no JSON do cliente quando usar o adaptador local.
 
-Na configuração `mcpServers` do cliente, informe caminhos absolutos para `dist/cli.js` e `--state-dir`. Se `node` não for encontrado, use o caminho absoluto do executável. O painel gera esse exemplo com os caminhos atuais. O diretório de estado padrão fica na pasta da instalação, não na pasta atual do terminal; ao atualizar para outra pasta, reutilize explicitamente o estado antigo.
+O adaptador estende o prazo da sua requisição interna somente para `bridge_watch_wait`, incluindo a chamada via `bridge_call`: espera solicitada mais 10 segundos. O cliente MCP ainda pode impor um timeout menor. Uma interrupção de espera preserva o watcher e orienta recuperar o mesmo ID. Código: [src/cli.ts](../src/cli.ts).
 
-### Secure MCP Tunnel
+## Secure MCP Tunnel
 
-A documentação do ChatGPT também oferece **Plugins → Add custom MCP server → Tunnel**. O túnel oficial aceita um comando stdio ou um endereço HTTP e usa uma conexão de saída. Seu processo `tunnel-client` precisa continuar ativo. Siga o guia oficial para instalação, associação à conta/workspace e autenticação. Esta entrega inclui o servidor a conectar e o adaptador stdio; não provisiona nem valida uma conexão de túnel oficial na conta do usuário.
+O [guia oficial de Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels) permite encaminhar MCP de um comando stdio ou endpoint HTTP acessível pelo `tunnel-client`. O cliente do túnel precisa permanecer ativo, associado à conta/workspace corretos e autenticado com as permissões necessárias. A Ponte fornece o servidor e o adaptador stdio; não provisiona o túnel na conta do usuário.
 
-O roteiro HTTP com OAuth acima usa uma origem HTTPS acessível para descoberta, autorização no navegador e chamadas MCP. Não substitua essas URLs por um `tunnel_id` ou suponha que uma entrada de túnel publique automaticamente as páginas OAuth. Configure cada modo de acordo com o transporte e a autenticação previstos pelo cliente do túnel.
+O caminho de OAuth público documentado neste projeto usa uma origem HTTPS que também atende descoberta e consentimento. Um `tunnel_id` não é essa origem. Tampouco se deve presumir que um túnel MCP publique `/hooks/watchers/*` como callback HTTP para executores externos; configure a conectividade do executor separadamente.
 
-O túnel não altera cotas do chat. Possui requisitos e limites operacionais próprios. A ponte não precisa de uma chave OpenAI para ler arquivos ou usar MCPs; a solução de conexão escolhida pode precisar de credenciais adicionais.
-
-Fontes oficiais:
-
-- [Adicionar um MCP customizado](https://developers.openai.com/api/docs/guides/custom-mcp-server)
-- [Conectar e testar uma integração MCP](https://developers.openai.com/plugins/deploy/connect-chatgpt)
-- [Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)
+O guia do túnel informa um prazo absoluto de **120 segundos por requisição**, incluindo tempo na fila. Portanto, o máximo de 300 segundos aceito por `bridge_watch_wait` não garante que uma espera desse tamanho atravesse o túnel. Use a espera padrão de 25 segundos ou outra duração compatível, recuperando o mesmo watcher após interrupções. Os limites do túnel e do provedor permanecem válidos.
 
 ## Actions via HTTPS
 
-A porta 4318 é a única que deve ser encaminhada. A porta 4317 dá acesso à administração e deve permanecer em loopback. O serviço valida o cabeçalho Host; configure `publicUrl` com a origem HTTPS usada pelo túnel. Se o túnel reescrever Host para `127.0.0.1:4318`, o host local também é aceito.
+Use `/openapi.json` da origem HTTPS da API e configure autenticação API Key/Bearer com o **token API**. O schema é público e não contém o segredo; as operações `/v1/*` exigem autenticação. Access tokens OAuth emitidos para `/mcp` não autenticam a REST.
 
-Use uma URL HTTPS estável enquanto a Action estiver em uso. Depois de mudar a URL, atualize `publicUrl` e o schema no editor do GPT. O schema público está em `/openapi.json`, sem token, pois contém somente a definição dos endpoints. Todos os endpoints REST de ferramentas e trabalhos exigem o token API; access tokens OAuth de `/mcp` não autenticam `/v1/*`.
+O OpenAPI 0.6.0 define **nove operações**:
 
-A Action tem cinco operações:
+| Operação | Endpoint | Finalidade |
+|---|---|---|
+| `getBridgeStatus` | `GET /v1/status` | Estado da Ponte, projetos e capacidades |
+| `listTools` | `GET /v1/tools` | Catálogo de ferramentas com schemas e risco |
+| `createJob` | `POST /v1/jobs` | Solicitar uma ferramenta, inclusive `bridge_watch_create` |
+| `getJob` | `GET /v1/jobs/{jobId}` | Consultar estado e resultado da execução |
+| `cancelJob` | `POST /v1/jobs/{jobId}/cancel` | Solicitar cancelamento da execução |
+| `listWatchers` | `GET /v1/watchers` | Listar acompanhamentos da identidade API |
+| `getWatcher` | `GET /v1/watchers/{watcherId}` | Recuperar estado e resultado do acompanhamento |
+| `waitWatcher` | `POST /v1/watchers/{watcherId}/wait` | Esperar o gatilho com prazo limitado |
+| `cancelWatcher` | `POST /v1/watchers/{watcherId}/cancel` | Encerrar somente o acompanhamento |
 
-1. `getBridgeStatus`: projetos e conexões disponíveis.
-2. `listTools`: catálogo filtrável, schemas e riscos.
-3. `createJob`: chamada com `tool`, `argumentsJson` e `idempotencyKey`.
-4. `getJob`: estado e resultado.
-5. `cancelJob`: solicitação de cancelamento.
+`createJob` usa `tool`, `argumentsJson` e `idempotencyKey`. `argumentsJson` é uma **string contendo um objeto JSON**, conforme o schema descoberto por `listTools`; isso mantém o OpenAPI estável quando o catálogo muda. Clientes próprios também podem enviar `arguments` como objeto à REST, mas precisam escolher exatamente uma das duas formas.
 
-O campo `argumentsJson` é uma string contendo um objeto JSON. Isso mantém o schema de Actions estável mesmo quando os MCPs conectados apresentam schemas dinâmicos. A API também aceita um objeto `arguments` para clientes próprios; envie apenas uma dessas formas.
+Para criar um watcher, solicite `tool: "bridge_watch_create"` e inclua o `name`, o `trigger` e a chave persistente nos argumentos serializados. A chave externa de `createJob` deduplica o job em memória; a `idempotencyKey` dentro dos argumentos recupera o watcher persistido. Consulte `getJob` até obter o resultado da criação e configure o executor antes de delegar. Depois use os endpoints específicos de controle; não submeta `bridge_watch_wait` a `/v1/jobs`.
 
-Consultas e cancelamentos exigem a identidade que criou o trabalho. Clientes Actions/stdio com o mesmo token API compartilham essa identidade, enquanto cada autorização OAuth tem seu próprio vínculo. O token API não permite consultar nem cancelar pela REST um trabalho criado por uma autorização OAuth. O painel administrativo conserva acesso a todas as execuções.
+Não há operação REST remota para aprovar manualmente trabalhos ou mudar a política. Uma Action pode precisar de confirmação própria do cliente, além das regras locais da Ponte. `getJob` não aceita `waitMs`; `waitWatcher` aceita. Nenhum desses mecanismos de espera garante continuidade após encerrar a conversa.
 
-Não há endpoint remoto para aprovar manualmente trabalhos ou mudar a política. Se a política local exigir revisão, o usuário aprova no computador; em `automatic`, a ponte aprova os trabalhos válidos. A Action consulta o resultado por `getJob`; o parâmetro `waitMs` é exclusivo de `bridge_job` no MCP. Nenhum desses fluxos reabre uma conversa encerrada.
-
-Fontes oficiais:
-
-- [Introdução a GPT Actions](https://developers.openai.com/api/docs/actions/introduction)
-- [Configurar uma Action](https://developers.openai.com/api/docs/actions/getting-started)
-- [Autenticação de Actions](https://developers.openai.com/api/docs/actions/authentication)
+Se a origem mudar, atualize `publicUrl` e reimporte o schema no cliente. A referência completa está em [API.md](API.md); a definição efetivamente servida é gerada por [src/openapi.ts](../src/openapi.ts).
 
 ## Servidores upstream
 
 ### stdio
 
-Use `command`, `args` e, se necessário, `cwd` e `env`. O executável deve existir. A ponte não instala pacotes MCP automaticamente; instalar via `npx` executa código desse pacote e pode depender de downloads. No Windows, scripts `.cmd`/`.bat` podem exigir `cmd.exe` com argumentos apropriados; use a configuração publicada pelo próprio fornecedor.
+Cadastre `command`, `args` e, se necessário, `cwd` e `env`. O executável precisa existir. A Ponte inicia o processo configurado, mas não instala um pacote MCP por conta própria; usar `npx` pode baixar e executar o pacote escolhido. No Windows, scripts `.cmd`/`.bat` exigem configuração de executável compatível, como `cmd.exe`, conforme as instruções do fornecedor.
+
+O processo recebe o ambiente mínimo do SDK mais as variáveis explicitamente configuradas. Não herda indiscriminadamente o ambiente da Ponte. Variáveis sensíveis podem ser referenciadas por `${VARIAVEL}`, cujo valor é resolvido no ambiente do processo da Ponte; o campo precisa estar disponível quando ela for iniciada.
 
 ### Streamable HTTP e SSE
 
-Use `transport: "http"` para Streamable HTTP e `"sse"` para o transporte legado. URLs remotas precisam usar HTTPS; HTTP é aceito para loopback. Não use credenciais na URL. Use headers e referências `${VARIAVEL}`.
+Use `transport: "http"` para Streamable HTTP ou `"sse"` para o transporte legado. URLs remotas precisam de HTTPS; HTTP é permitido para endereços locais aceitos pela configuração. Não coloque usuário/senha na URL. Para credenciais, configure headers e referências de ambiente.
 
-Não há login OAuth interativo para upstreams nesta versão. É possível conectar servidores que aceitem headers já configurados ou que não exijam autenticação. Redirecionamentos são recusados para impedir que headers sejam enviados a outro endereço.
+Não há login OAuth interativo para upstreams nesta versão. São aceitos servidores sem autenticação ou com headers já configurados. Redirecionamentos são recusados, inclusive para não encaminhar headers a outro destino. O timeout padrão é 30 segundos e pode ser configurado entre 100 ms e 120 segundos. Falhas de transporte não fazem a Ponte repetir chamadas de ferramentas automaticamente.
 
 ### Catálogos e políticas
 
-O agregador pagina `tools/list`, limita catálogos a 500 ferramentas por servidor e rejeita paginação circular. Nomes exportados têm namespace e hash determinísticos. Um servidor pode alterar suas ferramentas; a ponte atualiza o catálogo em resposta à notificação apropriada. Alguns clientes precisam atualizar ou reconectar a integração para enxergar alterações.
+O hub pagina `tools/list`, limita o catálogo a **500 ferramentas por servidor** e recusa paginação circular. Nomes exportados usam namespace e hash determinísticos; descubra o nome exato no catálogo, em vez de construí-lo manualmente. A Ponte atualiza definições ao receber notificação de alteração, mas o cliente pode precisar atualizar seus metadados para enxergar a mudança.
 
-`readOnlyTools` e `allowedTools` usam os **nomes originais** do upstream. `readOnlyTools` classifica as leituras que dispensam revisão no modo `mutations`; `all` exige revisão também dessas chamadas e `automatic` dispensa revisão de todas as ferramentas expostas. A anotação `readOnlyHint` enviada por um servidor externo não concede essa autorização sozinha.
+`readOnlyTools` e `allowedTools` usam os **nomes originais do upstream**. `readOnlyTools` identifica as chamadas tratadas como leituras no modo `mutations`; a anotação `readOnlyHint` recebida do servidor não concede essa classificação sozinha. `all` revisa também essas ferramentas e `automatic` libera as ferramentas expostas, mantendo validações e permissões.
 
-No painel, **Limitar ferramentas expostas** ativa a lista de nomes permitidos. Desmarcada, todas as ferramentas descobertas ficam disponíveis e seguem a política de aprovação selecionada. Marcada com a lista vazia, nenhuma ferramenta é exposta. Em `config.json`, omitir `allowedTools` permite todas; `allowedTools: []` permite zero. Na API administrativa, `allowedTools: null` remove uma restrição anterior; omitir o campo preserva a configuração existente.
+| Configuração de `allowedTools` | Resultado |
+|---|---|
+| Campo omitido | Expõe todas as ferramentas descobertas |
+| Lista de nomes | Expõe somente os nomes originais listados |
+| `[]` | Não expõe ferramentas desse servidor |
+| `null` em atualização administrativa | Remove uma restrição anterior |
+| Campo omitido em atualização administrativa | Preserva a configuração existente |
 
-Fonte oficial do SDK utilizado: [MCP TypeScript SDK v1 — servidor](https://ts.sdk.modelcontextprotocol.io/server) e [cliente](https://ts.sdk.modelcontextprotocol.io/client). A versão do SDK é fixada no `package.json` e as dependências exatas estão no `package-lock.json`.
+No painel, a opção **Limitar ferramentas expostas** controla essa lista. Prefira limitar o catálogo à tarefa necessária e revisar o programa que será iniciado. Exemplos específicos estão em [ROBLOX.md](ROBLOX.md) e [PLAYWRIGHT.md](PLAYWRIGHT.md). As fontes do contrato são [src/core/config.ts](../src/core/config.ts), [src/mcp/hub.ts](../src/mcp/hub.ts) e a dependência fixada no [package.json](../package.json).

@@ -1,107 +1,146 @@
-# Arquitetura da Ponte MCP 0.4.0
+# Arquitetura da Ponte MCP 0.6.0
 
-## Componentes
+[Índice da documentação](README.md) · [Referência da API](API.md) · [Segurança](SEGURANCA.md)
+
+A Ponte é um serviço local de um único proprietário. Ela reúne ferramentas de arquivos, execução de comandos, servidores MCP externos, aprovação de trabalhos e acompanhamento durável de tarefas. O cliente de chat fornece o modelo e decide como conduzir a conversa; a Ponte não inclui um modelo nem altera cotas ou custos dos fornecedores.
+
+## Componentes e caminhos de execução
 
 ```mermaid
 flowchart TD
-    Chat["ChatGPT"] --> OAuth["OAuth e descoberta"]
-    Chat --> MCP["MCP HTTP"]
-    Local["Cliente stdio"] --> Adaptador["Adaptador local"]
-    Adaptador --> REST["REST com token API"]
-    Actions["GPT Actions"] --> REST
-    OAuth --> Credenciais["Clientes e autorizações persistentes"]
-    Credenciais --> MCP
-    MCP --> Core["Catálogo, permissões e trabalhos"]
-    REST --> Core
-    Painel["Painel local"] --> Core
-    Painel --> Credenciais
-    Core --> Arquivos["Arquivos do projeto"]
-    Core --> Processo["Comandos aprovados"]
-    Core --> Hub["Clientes MCP"]
-    Hub --> Studio["Roblox Studio"]
-    Hub --> Outros["Outros servidores"]
-    Core --> Events["Assinaturas e fila de eventos"]
-    MCP --> Events
-    Events --> Callback["Callback verificado do cliente"]
-    Callback --> Chat
+    Cliente["Cliente MCP"] --> MCP["MCP HTTP: /mcp"]
+    Stdio["Adaptador stdio"] --> REST["REST: /v1/*"]
+    Actions["Actions e clientes REST"] --> REST
+    MCP --> Entrada["Autenticação e despacho"]
+    REST --> Entrada
+    Entrada --> Jobs["JobManager: aprovação e fila"]
+    Entrada --> Watch["WatchService: controles e espera"]
+    Jobs --> Local["Arquivos e comandos locais"]
+    Jobs --> Hub["McpHub: servidores externos"]
+    Jobs -->|"criar watcher e observar jobs"| Watch
+    Executor["Executor externo"] -->|"sinal autenticado"| Watch
+    Jobs -->|"conclusão de job inscrito"| Events["EventService: avisos ao cliente"]
 ```
 
-O mesmo processo mantém o provedor OAuth, os clientes externos e os trabalhos. As fachadas MCP e REST não executam ferramentas diretamente: ambas passam pelo `JobManager`. O consentimento OAuth autoriza uma conexão a solicitar ferramentas; a política de trabalhos determina quais solicitações exigem revisão local antes de executar.
+A autenticação identifica a conexão antes do despacho. As ferramentas locais, as ferramentas de upstreams e `bridge_watch_create` passam pelo `JobManager`. Os controles `bridge_status`, `bridge_list_tools`, `bridge_job`, `bridge_cancel` e `bridge_watch_get/list/wait/cancel` têm caminhos próprios; consultar ou aguardar um watcher não cria um trabalho nem ocupa uma vaga de execução. Os métodos de protocolo `events/*` também são tratados diretamente pelo serviço de Events.
 
-## Decisões
+| Componente | Responsabilidade | Implementação |
+|---|---|---|
+| `Application` | Inicializar serviços, associar transições de jobs aos observadores e resolver a identidade API/OAuth | [src/app.ts](../src/app.ts) |
+| `ConfigStore` | Validar projetos, servidores e política; persistir configuração e credenciais locais | [src/core/config.ts](../src/core/config.ts) |
+| `PonteOAuthProvider` | Registro de clientes, consentimento, tokens e autorizações revogáveis | [src/auth/provider.ts](../src/auth/provider.ts) |
+| `JobManager` | Validar argumentos, gerar prévia, aprovar, enfileirar, executar e cancelar ferramentas | [src/core/jobs.ts](../src/core/jobs.ts) |
+| `McpHub` | Manter clientes upstream, descobrir schemas e preservar os blocos de conteúdo retornados | [src/mcp/hub.ts](../src/mcp/hub.ts) |
+| `WatchService` | Persistir acompanhamentos, receber sinais e manter esperas limitadas por proprietário | [src/watchers/service.ts](../src/watchers/service.ts) |
+| `EventService` | Manter assinaturas, cópias de jobs e tentativas de entrega de avisos | [src/events/service.ts](../src/events/service.ts) |
 
-**Servidor local com painel web.** Atende Windows sem depender de Electron ou empacotamento nativo. O pacote também é executável em Linux/macOS. O frontend não depende de serviços externos nem envia telemetria.
+`ToolDefinition` reúne schema MCP, risco (`read`, `write` ou `execute`), origem, fingerprint opcional, prévia e execução com `AbortSignal`. O `JobManager` usa a assinatura desses dados para detectar uma ferramenta ou configuração que mudou depois da solicitação. O contrato está em [src/types.ts](../src/types.ts).
 
-**Dois listeners.** Permite encaminhar ferramentas por HTTPS sem expor rotas administrativas. Tokens e origens também são verificados independentemente.
+## Interfaces e transportes
 
-**OAuth na fachada MCP.** A API da porta 4318 contém descoberta, registro de clientes, autorização, consentimento no navegador, troca de tokens, renovação, revogação e `/mcp`. O painel da porta 4317 continua sendo o local onde o proprietário aprova a conexão. O servidor usa authorization code com PKCE `S256` e scope `ponte:tools`. Cada ferramenta declara sua política OAuth e o espelho compatível em `_meta.securitySchemes`.
+Existem dois listeners HTTP, ambos vinculados a `127.0.0.1`: administração na porta **4317** e API na **4318**, por padrão. A porta administrativa serve o painel e `/admin/*`; a API serve OAuth, MCP, REST, OpenAPI e os callbacks de watchers. As portas são configuráveis e precisam ser diferentes. Um encaminhamento HTTPS remoto deve publicar somente a API.
 
-**Compatibilidade com instalações existentes.** `/mcp` aceita access tokens OAuth e o token API legado. A REST `/v1/*` mantém a autenticação por token API, usada por Actions e pelo adaptador stdio. Tokens OAuth não autorizam rotas administrativas nem substituem a autenticação da REST.
+| Entrada | Autenticação | Uso |
+|---|---|---|
+| `/admin/*` | Token administrativo | Configuração, decisões locais e inspeção de todas as execuções |
+| `/mcp` | Access token OAuth ou token API | Cliente MCP HTTP |
+| `/v1/*` | Token API | Actions, clientes REST e adaptador stdio |
+| `/hooks/watchers/:watcherId/signal` | Token exclusivo do watcher | Recibo do executor externo |
+| `/openapi.json` e `/health` | Sem Bearer; sujeitos à validação de Host | Schema público e diagnóstico mínimo |
 
-**Transporte MCP sem estado de sessão.** Cada POST autenticado em `/mcp` passa pela escolha de protocolo. Pedidos legados usam uma instância de servidor e transporte Streamable HTTP do SDK v1; pedidos com protocolo `2026-07-28` usam o adaptador `src/mcp/modern.ts`, com descoberta por `server/discover` e metadados por requisição. Ambos devolvem JSON. Não há sessão persistente do transporte nem canal SSE mantido por GET; esse método retorna 405 depois da autenticação. O estado de autorizações, assinaturas e trabalhos pertence à aplicação, não à sessão de transporte.
+A fachada MCP usa **POST com respostas JSON, sem sessão persistente de transporte**. Para versões legadas, cada requisição cria servidor e transporte Streamable HTTP do SDK `@modelcontextprotocol/sdk` **1.32.1**. O protocolo `2026-07-28` usa o adaptador [src/mcp/modern.ts](../src/mcp/modern.ts), que valida envelope JSON-RPC, versão, capacidades e cabeçalhos correspondentes a cada requisição. GET autenticado em `/mcp` retorna 405; a fachada não mantém um canal SSE por GET.
 
-**Trabalhos assíncronos com espera limitada.** `callGateway` aguarda até 25 segundos enquanto uma chamada de ferramenta está `queued` ou `running`. Um `pending_approval` inicial retorna imediatamente. `bridge_job` aceita `waitMs` inteiro de 0 a 25000, padrão 0, e pode esperar por aprovação e execução do mesmo trabalho (`pending_approval`, `queued` ou `running`). Ao vencer o prazo, retorna o estado atual e mantém o `jobId` consultável. A espera ocorre durante uma chamada do turno ativo; não reabre uma conversa encerrada.
+O adaptador moderno anuncia `tools` e `events` e implementa `server/discover`, `tools/list`, `tools/call`, `events/list`, `events/subscribe` e `events/unsubscribe`. Os resultados modernos incluem `resultType: "complete"`. Resources, prompts, sampling e tarefas do protocolo não são anunciados. O adaptador stdio e os clientes upstream continuam no SDK v1; Events está disponível pela fachada HTTP moderna. A ausência de sessão HTTP não elimina o estado da aplicação em disco ou na memória.
 
-**SDK oficial e descoberta dinâmica.** Upstreams implementam protocolos e schemas diferentes. O hub usa o SDK MCP para negociação e transportes, pagina catálogos, cria nomes únicos e preserva blocos de conteúdo. Não assume os argumentos das ferramentas Roblox.
+O modo `stdio` é um adaptador do serviço já iniciado: lê o estado local, autentica-se com o token API e encaminha catálogo e chamadas para `/v1/mcp/tools` e `/v1/mcp/call`. Ele não inicia uma segunda instância independente da Ponte. A REST de Actions usa um OpenAPI com **nove operações**, cinco para status/catálogo/jobs e quatro para controles de watchers. A criação do watcher usa a operação existente `createJob`, com `tool: "bridge_watch_create"`; não há uma décima operação de criação. Consulte [API.md](API.md) e [INTEGRACOES.md](INTEGRACOES.md).
 
-**SDK v1 preservado e adaptador moderno delimitado.** `@modelcontextprotocol/sdk` 1.32.1 continua responsável por clientes legados, stdio e upstreams. O adaptador HTTP implementa `server/discover`, `tools/list`, `tools/call` e os três métodos `events/*` usados pela integração de Events. Valida versão, envelope JSON-RPC, metadados e espelhos de cabeçalhos; a descoberta anuncia somente `tools` e `events`. Todos os resultados modernos incluem `resultType: "complete"`. Resources, prompts, sampling, tarefas do protocolo e transporte moderno por stdio não são anunciados. Essa mudança não é uma migração completa das dependências para o SDK v2.
+## Jobs: aprovação, execução e espera
 
-**API independente de provedor.** Nenhum SDK de modelo é necessário. O cliente de chat fornece o modelo e a política de conversação. O OpenAPI mantém somente cinco Actions e descobre schemas por catálogo, reduzindo a necessidade de reinstalar a integração a cada novo servidor conectado.
+Ao receber uma ferramenta do catálogo, o `JobManager` copia os argumentos, valida o JSON Schema, calcula a assinatura e, quando disponível, prepara a prévia. O trabalho recebe um `jobId` e um dos estados iniciais `pending_approval` ou `queued`.
 
-## Política de aprovação
+| Política em `config.json` | Comportamento de ferramentas submetidas ao `JobManager` |
+|---|---|
+| `mutations` — padrão | Leituras podem executar; escritas e comandos aguardam revisão |
+| `all` | Toda ferramenta submetida aguarda revisão, inclusive leituras |
+| `automatic` | Libera solicitações válidas pendentes e novas submissões |
 
-`approvalMode` é persistido em `config.json`. O padrão continua sendo `mutations`: leituras podem executar diretamente, enquanto alterações e comandos aguardam revisão. `all` exige revisão de todas as ferramentas. `automatic` aprova as chamadas futuras e reconcilia a fila, liberando solicitações pendentes ainda válidas. A política vale para ferramentas locais, upstreams MCP, chamadas do painel e todos os clientes autorizados.
+Essa política inclui `bridge_watch_create`, classificado como escrita. Os controles de watcher consultam o serviço diretamente e continuam disponíveis sob `all`; cancelá-lo também não exige criar um job de aprovação. Todos exigem a identidade autorizada que possui o acompanhamento.
 
-A seleção fica em **Visão geral → Você no controle → Política de aprovação**. Mudar para **Aprovar automaticamente todas** não altera permissões de projeto, listas permitidas, validação de argumentos ou verificações de hash. A assinatura da ferramenta é revalidada; solicitações obsoletas são recusadas. Novas conexões OAuth continuam dependendo da decisão local.
+A assinatura é revalidada antes de aprovar e executar. A aprovação não suspende `allowWrite`, `allowExec`, listas de ferramentas permitidas, validação de argumentos ou `expectedHash`. Pedidos de aprovação expiram após **15 minutos**. O campo `approval` identifica liberações `manual` ou `automatic`; leituras permitidas por `mutations` podem não incluir esse campo.
 
-Ao selecionar uma política que exija revisão, trabalhos aprovados automaticamente ainda em `queued` voltam para `pending_approval` quando necessário. Trabalhos com aprovação manual e trabalhos já iniciados não são retirados da execução por essa mudança. A pausa impede novas solicitações e a partida da fila.
+Ao mudar para uma política mais restritiva, trabalhos automaticamente liberados ainda em `queued` retornam a `pending_approval` quando necessário. Aprovações manuais e trabalhos já iniciados são preservados. A pausa bloqueia novas submissões e a partida da fila; consultas, cancelamentos de acompanhamentos e sinais de watchers existentes continuam sendo processados. Revogar OAuth exige uma decisão separada da política de ferramentas.
 
-O status público inclui `approvalMode`. Trabalhos aprovados registram `approval: "manual"` ou `approval: "automatic"`; o campo aparece nas respostas MCP, nos detalhes do painel e na auditoria. Leituras liberadas pela política `mutations` podem não ter esse campo.
+A execução passa por `queued` e `running` até `succeeded`, `failed`, `rejected`, `cancelled` ou `expired`. Há até **quatro execuções simultâneas**, **200 jobs retidos**, limite de **4 MiB por resultado** e prazo máximo de **120 segundos por execução**. Antes de novas submissões, trabalhos terminais antigos podem ser removidos para acomodar o limite de quantidade ou reduzir a retenção acima de **64 MiB**. Esses limites não tornam uma chamada externa transacional: um timeout ou cancelamento pode acontecer depois de efeitos no destino.
 
-## Interfaces internas
+A chamada MCP de uma ferramenta aguarda até **25 segundos** enquanto seu job está `queued` ou `running`; `pending_approval` inicial retorna imediatamente. `bridge_job` aceita `waitMs` de 0 a 25000, padrão 0, e pode aguardar também a aprovação. Ao vencer a espera, retorna o estado atual do mesmo job. A espera da chamada e o prazo da execução são independentes.
 
-`ToolDefinition` associa metadados MCP, risco, origem, fingerprint, preview opcional e execução cancelável. Ferramentas locais e externas implementam o mesmo contrato.
+Jobs e suas chaves de idempotência ficam em memória. Reutilizar uma chave com os mesmos argumentos recupera o job enquanto ele estiver retido; argumentos diferentes são recusados. Reiniciar ou remover o job da retenção encerra essa garantia. Nenhuma operação externa é reenviada automaticamente após reconectar ou reiniciar.
 
-`ConfigStore` valida e persiste o estado administrativo. `JobManager` copia argumentos, valida JSON Schema, controla fila/aprovação/idempotência, identifica a conexão que criou o trabalho e registra transições. `McpHub` mantém clientes por conexão e descarta definições obsoletas. `EventService` gerencia assinaturas, cópias dos trabalhos acompanhados e uma fila de entrega persistente. O módulo `events/webhook.ts` verifica destinos e assina e envia callbacks. `Application` reúne esses componentes e compõe as rotas.
+## Watchers: acompanhamento nativo e durável
 
-## Fluxo de autorização
+Um watcher persiste uma **observação**, enquanto um job representa a execução de uma ferramenta. A criação do watcher gera um job curto, sujeito à aprovação; quando ele termina, entrega um `watcherId`. Esse sucesso confirma que o acompanhamento foi criado. A tarefa externa só é confirmada pelo gatilho correspondente.
 
-1. O cliente descobre o recurso `/mcp` e o servidor de autorização. A origem HTTPS configurada fornece o `issuer` exato, sem barra final; o recurso acrescenta `/mcp`.
-2. O ChatGPT cadastra um cliente em `/register` por DCR. O registro persiste e aceita `none` ou `client_secret_post`.
-3. `/authorize` valida cliente, redirect, recurso, scope e desafio PKCE. A página `/oauth/consent` mostra um código de verificação de oito caracteres e acompanha o pedido.
-4. O proprietário encontra o mesmo código no painel local e aprova ou rejeita. O navegador retorna ao redirect registrado com `state` e `iss`; no sucesso, recebe também um código OAuth de uso único.
-5. O cliente troca o código em `/token`, comprovando PKCE e os vínculos da autorização. As credenciais emitidas ficam vinculadas ao cliente e ao recurso.
-6. Chamadas MCP apresentam o access token. A validação de credenciais antecede a execução; em seguida, as permissões de projeto e as regras de aprovação de trabalhos continuam sendo aplicadas.
-7. A renovação rotaciona o refresh token, preservando o prazo absoluto da autorização. Revogação e detecção de reutilização invalidam a família de tokens correspondente.
+| Gatilho | O que observa | Comportamento no reinício |
+|---|---|---|
+| `signal` | POST autenticado do executor com `eventId`, `runId`, status e resumo | Continua aguardando até o sinal, o vencimento ou a perda da autorização |
+| `job` | Estado terminal de um job já pertencente à mesma identidade | Recupera o estado disponível; se o job não puder ser encontrado, termina como `interrupted` |
 
-A implementação anuncia suporte à identificação do emissor em respostas de autorização (RFC 9207). Redirects de sucesso e erro incluem o `iss` exato. Erros anteriores à validação de cliente e redirect são respondidos diretamente, sem redirecionar para um endereço não validado.
+Use `signal` para uma tarefa delegada a Claude, tmux ou outro executor. O fim de `send-keys` ou do comando que enviou a tarefa não comprova que ela terminou. Crie o watcher, obtenha a aprovação quando necessária, configure o callback no executor, delegue uma única vez e aguarde o mesmo `watcherId`. O procedimento não usa cron, automations ou agendadores do ChatGPT/Claude. O guia completo está em [WATCHERS.md](WATCHERS.md).
 
-## Persistência e limites de identidade
+O sinal permite `succeeded`, `failed` ou `needs_input`. A Ponte verifica o token específico, a autorização proprietária, o `runId` e o tamanho do JSON. Repetir o mesmo `eventId` com o mesmo conteúdo confirma o resultado já persistido; um sinal diferente depois de um estado terminal é recusado. `needs_input` também encerra esse acompanhamento e informa que a tarefa exige intervenção, sem significar conclusão bem-sucedida.
 
-O diretório de estado padrão é `.ponte` dentro da pasta de instalação. `--state-dir` ou `PONTE_STATE_DIR` permitem reutilizar um caminho absoluto, inclusive ao mover ou atualizar o programa. `config.json` guarda a configuração, incluindo a política de aprovação; `secrets.json`, os tokens locais; `oauth.json`, clientes e autorizações OAuth. Trabalhos comuns permanecem em memória, com auditoria de metadados e backups em disco. `events.json` acrescenta assinaturas, segredos de webhook, entregas e cópias dos trabalhos acompanhados, incluindo seus resultados e sem os argumentos de entrada.
+`bridge_watch_get/list/wait/cancel` usam o `WatchService` diretamente, inclusive quando encaminhados por `bridge_call`. A espera tem padrão de **25 segundos** e máximo de **300 segundos**, condicionado ao timeout do cliente e dos intermediários. Uma desconexão encerra somente aquela espera. O watcher permanece consultável pela mesma identidade, mas não reabre uma conversa encerrada. `bridge_watch_cancel` encerra a observação; não cancela o job original, não interrompe o executor e não desfaz seus efeitos.
 
-Pedidos OAuth aguardam aprovação por 10 minutos. Códigos de autorização valem por 2 minutos, access tokens por até 1 hora e a autorização renovável tem prazo absoluto de 30 dias. A rotação do refresh token não reinicia esse prazo. O registro DCR e seu segredo não recebem expiração automática, para permitir sua reutilização após reinícios e novas autorizações. Pedidos pendentes e códigos ainda não trocados são voláteis; um reinício exige recomeçar esses fluxos.
+`watchers.json` guarda estado, resultado limitado, vínculo de identidade, hash do token e recibo de deduplicação. A chave de idempotência do watcher persiste com o registro: chamar `bridge_watch_create` com a mesma identidade, chave e argumentos recupera o acompanhamento e sua credencial de sinal. Essa recuperação ainda passa pela política de criação. O token é derivado de um HMAC com o token API estável da instância; preservar somente `watchers.json` sem o `secrets.json` correspondente não é suficiente.
 
-A aplicação continua tendo **um único proprietário**. Conexões OAuth são revogáveis separadamente, mas compartilham o catálogo, os projetos autorizados e as políticas do painel. A leitura e o cancelamento de trabalhos por um cliente, tanto em memória quanto na recuperação de resultados arquivados, exigem a autorização OAuth ou identidade do token API que criou o trabalho. O painel administrativo mantém acesso a todos. Esse controle por trabalho não cria uma divisão dos projetos por usuário; isolamento entre proprietários exigiria instâncias e diretórios de estado separados ou uma arquitetura de autorização adicional.
+| Limite de watcher | Valor |
+|---|---|
+| Prazo total de acompanhamento | Padrão 1 hora; de 1 segundo a 7 dias |
+| Acompanhamentos em `waiting` | 100 |
+| Registros persistidos | 500; ao atingir capacidade, a próxima criação remove o terminal mais antigo |
+| Esperas ativas | 200 no total e 20 por watcher |
+| JSON de sinal/resultado | 32 KiB |
+| Arquivo de estado | 24 MiB |
+| Sinais autenticados | 60 por minuto, por watcher |
 
-## Eventos e continuidade
+Registros terminais não são removidos somente porque `expiresAt` passou; a retenção é limitada por capacidade. A idempotência e a consulta deixam de existir quando o registro é removido. Revogar ou expirar a autorização cancela watchers que ainda aguardavam e impede acesso ou novos sinais nessa identidade. A rotina interna atualiza autorizações e prazos a cada 250 ms e também nas operações de controle. Fontes: [tipos e limites](../src/watchers/types.ts), [serviço](../src/watchers/service.ts), [ferramentas](../src/watchers/tools.ts) e [rotas HTTP](../src/http.ts).
 
-O evento `ponte.job.completed` exige `arguments.jobId`; não existe inscrição global para todos os trabalhos. O cliente cria a assinatura por `events/subscribe`, fornecendo callback HTTPS e segredo `whsec_`. A Ponte verifica o destino com um desafio assinado antes de ativar a assinatura. O próprio cliente determina qual conversa recebe o evento e como ela continua, conforme a [integração de MCP Events da OpenAI](https://developers.openai.com/plugins/build/mcp-events).
+## OAuth e propriedade dos registros
 
-Uma assinatura só pode acompanhar trabalho criado pela mesma autorização OAuth ou identidade do token API. O ID da assinatura deriva da identidade autenticada, do callback, do evento e dos argumentos. Renovar a mesma assinatura preserva esse ID; alterações de segredo permitem uma sobreposição de assinaturas criptográficas por cinco minutos. A validade tem padrão e máximo de 24 horas por renovação. A autorização OAuth precisa continuar válida: revogação, vencimento ou mudança de emissor impedem novas entregas.
+A origem HTTPS de `publicUrl`, sem barra final, define o emissor OAuth; o recurso é essa origem acrescida de `/mcp`. A Ponte implementa DCR, authorization code com PKCE `S256`, scope `ponte:tools`, renovação e revogação. O registro aceita `none` ou `client_secret_post`. As ferramentas anunciadas quando há origem pública incluem `securitySchemes` e seu espelho em `_meta.securitySchemes`.
 
-Ao aceitar a inscrição, o serviço registra uma cópia do trabalho e reserva espaço para seu resultado final. As transições terminais `succeeded`, `failed`, `rejected`, `cancelled` e `expired` geram um evento de metadados. A inscrição consulta novamente o trabalho depois de verificar o callback; assim, uma conclusão ocorrida durante a verificação também é enfileirada. Uma assinatura feita depois de o trabalho terminar recebe seu estado terminal atual, sem reprodução de um histórico de eventos.
+O navegador recebe um código de verificação de oito caracteres. A decisão é tomada no painel administrativo local, nunca pela página pública de consentimento. Pedidos aguardam até **10 minutos**; códigos OAuth são de uso único e valem **2 minutos**. Access tokens valem até **1 hora**. Autorizações renováveis têm prazo absoluto de **30 dias**, preservado pela rotação do refresh token; clientes sem renovação recebem autorização de até **1 hora**. Clientes DCR persistem sem expiração automática de seu segredo. Pedidos pendentes e códigos ainda não trocados são voláteis.
 
-O evento tem identidade estável nas tentativas de entrega. A tentativa é persistida antes do envio; falhas de conexão e respostas recusadas têm novas tentativas limitadas, enquanto HTTP 410/413 encerram a entrega daquele evento. Uma resposta 2xx registra o recebimento pelo cliente. Se o processo parar depois de o destinatário aceitar o evento e antes de persistir a confirmação, o envio pode se repetir: o cliente deve deduplicar por `eventId`.
+A identidade de um cliente OAuth é o **grant**, a autorização individual concedida; renovar tokens preserva essa identidade. Um novo consentimento cria outra identidade. Clientes REST, stdio e MCP que usam o mesmo token API compartilham a identidade derivada desse token. Jobs, watchers e assinaturas de Events verificam esse vínculo. O administrador local tem acesso aos registros pelo painel. O catálogo, os projetos e as políticas continuam compartilhados entre conexões: não existe isolamento por projeto ou usuário.
 
-Assinaturas e entregas sobrevivem ao reinício. `bridge_job` usa o resultado arquivado como alternativa quando o trabalho já não está no `JobManager`, somente para a mesma identidade. Trabalhos acompanhados que estavam pendentes ou em execução e não existem no processo restaurado recebem estado `cancelled` e uma mensagem de interrupção. Nenhuma operação é reenviada; efeitos externos anteriores podem ter ocorrido. A cópia permanece até a maior validade concedida para aquela identidade e trabalho, inclusive após encerrar a assinatura, e é expurgada ao vencer. Trabalhos sem assinatura continuam voláteis.
+A revogação pelo painel ou por `/revoke` remove a autorização inteira e seus tokens. Reutilizar um refresh token consumido também revoga a autorização. Mudar `publicUrl` invalida grants, tokens, pedidos pendentes e códigos vinculados ao emissor anterior; os cadastros de clientes permanecem. Essas ações impedem novos acessos e entregas autorizadas, mas não cancelam automaticamente jobs já aceitos nem desfazem operações externas. Consulte [SEGURANCA.md](SEGURANCA.md) para limites e preservação de credenciais.
 
-O serviço limita a 100 assinaturas e 64 MiB de estado total, reservando capacidade para o resultado de cada trabalho pendente antes de aceitar a inscrição. Por isso, o limite de armazenamento pode impedir uma nova assinatura antes do limite de quantidade. Callbacks, segredos, argumentos e resultados não entram no evento ou no diagnóstico público. O painel recebe somente os dados necessários para acompanhar a entrega e encerrar um aviso.
+## MCP Events: notificações de saída
 
-O contrato HTTP, as decisões de compatibilidade e os limites completos estão em [MCP-EVENTS.md](MCP-EVENTS.md). Aprovação automática, espera de `bridge_job` e assinatura de Events são mecanismos independentes; somente o último oferece o aviso para um cliente compatível continuar uma conversa inscrita.
+Events é um mecanismo separado do callback de entrada de um watcher. A implementação usa o [perfil de MCP Events da OpenAI](https://developers.openai.com/plugins/build/mcp-events) na fachada HTTP moderna. O cliente compatível precisa oferecer o recurso e criar a assinatura; o acompanhamento nativo descrito acima não depende dessa integração.
 
-## Evoluções possíveis
+`ponte.job.completed` exige `arguments.jobId` e só acompanha um job da mesma identidade. O cliente fornece callback HTTPS e segredo `whsec_` em `events/subscribe`. A Ponte verifica o destino com desafio assinado antes de ativá-lo. O evento contém metadados da conclusão; o cliente consulta `bridge_job` para obter o resultado. Uma assinatura posterior à conclusão recebe o estado terminal atual, sem histórico por cursor.
 
-As próximas etapas úteis dependem do uso real: perfis isolados por projeto, provedores externos de identidade, histórico completo com armazenamento cifrado, instalação como serviço, rollback pelo painel e suporte adicional a resources/prompts. Um isolamento real de comandos exige uma camada de sistema operacional separada. Esses itens não são apresentados como implementados nesta entrega.
+Assinaturas e tentativas de entrega persistem em `events.json`, junto de cópias dos jobs acompanhados, sem seus argumentos de entrada. A inscrição reserva espaço para o resultado final. A identidade do evento permanece estável nos reenvios, com no máximo **seis tentativas**; o destinatário deve deduplicar por `eventId`. HTTP 410/413 encerra a entrega; 2xx confirma o recebimento, sem comprovar continuidade ou sucesso de uma conversa.
 
-O contrato do cliente ChatGPT está documentado nas páginas oficiais de [autenticação](https://developers.openai.com/plugins/build/auth) e [conexão de MCPs](https://developers.openai.com/api/docs/guides/custom-mcp-server). A validação local da implementação e a validação da conta do usuário são etapas distintas; os resultados da entrega ficam em [VALIDACAO.md](VALIDACAO.md).
+Há até **100 assinaturas**, validade padrão e máxima de **24 horas por renovação** e orçamento de **64 MiB**, incluindo reservas. As cópias dos jobs persistem até a maior validade concedida para aquela combinação de identidade e job, mesmo após encerrar uma assinatura. Ao reiniciar, jobs arquivados que estavam incompletos e não existem no processo restaurado tornam-se `cancelled`; nenhuma ferramenta é repetida. Se um watcher `job` encontrar essa cópia recuperada, ele reflete seu estado `cancelled`, em vez de `interrupted`.
+
+Uma assinatura do job de `bridge_watch_create` informa o fim da **criação do acompanhamento**, não o fim da tarefa externa. Não existe evento de conclusão de watcher nesta versão. Para tarefas delegadas, mantenha `signal` e `bridge_watch_wait/get`; para um fluxo de Events autorizado e suportado pelo cliente, veja [MCP-EVENTS.md](MCP-EVENTS.md).
+
+## Persistência e operação
+
+O diretório padrão é `.ponte` na instalação, substituível por `--state-dir` ou `PONTE_STATE_DIR`. Cada arquivo tem uma função distinta:
+
+| Estado | Persistência | Consequência operacional |
+|---|---|---|
+| `config.json` | Projetos, upstreams, portas, origem e política de aprovação | Reutilizar mantém a configuração |
+| `secrets.json` | Tokens administrativo/API; token API também é a chave dos sinais | Preservar junto do estado de watchers |
+| `oauth.json` | Clientes, grants e hashes de tokens | Reutilizar mantém conexões OAuth ainda válidas |
+| `watchers.json` | Acompanhamentos e resultados limitados | Sobrevive à chamada e ao reinício; não reinicia executores |
+| `events.json` | Assinaturas, entregas, segredos de webhook e cópias de jobs | Recupera resultados somente dentro do prazo e da identidade |
+| `audit.jsonl` e backups | Metadados de transições e conteúdos anteriores de arquivos editados | Não equivalem a uma fila de execução recuperável |
+| Fila e jobs comuns | Memória | Perdidos no reinício, salvo as cópias limitadas de Events |
+
+As gravações de watchers, OAuth e Events usam arquivos privados e substituição do estado. Watchers e Events também sincronizam o arquivo temporário antes da substituição. Esses dados não recebem cifragem em repouso pela Ponte. Preserve o diretório completo ao atualizar, e consulte [OPERACAO.md](OPERACAO.md) para instalação, backups e diagnóstico.
+
+O projeto não implementa isolamento de comandos pelo sistema operacional, recuperação automática da execução de jobs, separação de projetos por usuário nem migração completa para o SDK MCP v2. Os testes e a integração efetivamente observada estão registrados em [VALIDACAO.md](VALIDACAO.md).

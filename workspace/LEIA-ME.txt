@@ -4,3 +4,19 @@ Você pode testar a leitura e a criação de arquivos aqui. Para trabalhar em
 um projeto real, adicione sua pasta em Projetos no painel local.
 
 O Roblox Studio usa uma conexão MCP separada, em Conexões MCP.
+
+Na configuração inicial, o projeto de demonstração usa o ID principal.
+Confirme o ID pelo painel ou por local_projects antes de enviar argumentos.
+Para editar um arquivo existente, leia-o e use o sha256 em expectedHash.
+expectedHash: null permite criar somente um arquivo que ainda não existe.
+
+Escritas e comandos seguem a política de aprovação. Comandos também
+precisam de allowExec habilitado no projeto. O modo automático não amplia
+essas permissões.
+
+Acompanhamentos de tarefas ficam em Acompanhamentos no painel. Crie um
+watcher antes de delegar e use bridge_watch_wait para esperar o gatilho na
+própria Ponte. Isso não utiliza o agendador do ChatGPT ou do Claude.
+
+Documentação da instalação: docs/README.md e docs/OPERACAO.md.
+Referência de ferramentas: docs/API.md. Acompanhamentos: docs/WATCHERS.md.

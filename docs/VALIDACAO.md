@@ -1,8 +1,28 @@
 # Validação da entrega — Ponte MCP 0.6.0
 
+[Índice da documentação](README.md) · [Histórico de versões](../CHANGELOG.md) · [Operação](OPERACAO.md)
+
+Este documento registra a evidência de cada etapa. Os números de testes são os observados na entrega indicada, não uma nova execução feita ao editar a documentação. Registros históricos de erro não descrevem automaticamente o estado atual do produto; a verificação manual posterior de Events está registrada junto do diagnóstico original.
+
+## Revisão integral da documentação — 22/10/2026
+
+Esta revisão manteve o programa na **0.6.0** e alterou guias, exemplos e instruções. O conteúdo foi confrontado com os schemas, rotas, CLI e serviços da versão atual; as orientações dos clientes e upstreams foram conferidas nas fontes oficiais vinculadas em cada guia.
+
+| Verificação documental | Resultado |
+|---|---|
+| Cobertura | 24 arquivos Markdown revisados, incluindo índice, operação, API, changelog e arquivo histórico; instruções de chat e projeto de demonstração atualizadas |
+| Links relativos e âncoras | 287 referências locais conferidas; uma âncora antiga do README foi corrigida |
+| Exemplos estruturados | 27 blocos JSON dos documentos e os três arquivos JSON de exemplos válidos |
+| Exemplos de shell | 13 blocos `sh`/`bash` passaram em `bash -n`; essa análise não executa os comandos nem valida PowerShell |
+| CLI e OpenAPI | Ajuda da CLI compilada conferida; exemplo OpenAPI regenerado de 0.5.0 para 0.6.0 e comparado com o gerador atual, com nove operações |
+| Revisão independente | Corrigidos o vínculo de identidade dos jobs criados pelo painel e a descrição do orçamento de memória; guias de clientes, watchers e upstreams revisados sem achado importante restante |
+| Formatação e escopo | `git diff --check` passou; nenhum arquivo de implementação, teste ou dependência foi alterado |
+
+Não houve nova execução dos 237 testes do produto nesta revisão documental, nova autenticação em conta de cliente, teste no computador do usuário, instalação de upstream, renderização de navegador ou envio de sinal a tarefa real. A evidência da implementação da 0.6.0 está registrada abaixo; o teste manual histórico de Events permanece identificado separadamente.
+
 ## Watchers nativos da Ponte — 0.6.0
 
-Verificação em **22 de outubro de 2026**, em Linux com Node.js 24.19.0. Os testes usam arquivos, credenciais, portas e executores controlados. Nenhuma demanda real do Slack foi encaminhada e nenhuma sessão Claude neurolaudos foi alterada nesta validação.
+Verificação em **22 de outubro de 2026**, em Linux com Node.js 24.19.0. Os testes usam arquivos, credenciais, portas e executores controlados. Nenhuma demanda real do Slack foi encaminhada e nenhuma sessão real do Claude foi alterada nesta validação.
 
 | Verificação | Resultado observado |
 |---|---|
@@ -46,7 +66,13 @@ A Ponte conectada respondeu **0.4.0**, com aprovação automática, dois projeto
 
 A criação nativa de uma tarefa de teste retornou **`Webhook connectors could not be validated before creation.`**, sem identificador de automação. Uma consulta confirmou ausência de tarefa criada. Uma nova tentativa com outro trabalho válido, depois de atualizar a descoberta, retornou o mesmo erro.
 
-A captura do ngrok examinada antes e depois da tentativa continha `server/discover`, `events/list` e `tools/list` com HTTP 200, e **nenhum `events/subscribe`** nessa janela. Isso localiza a interrupção antes de a Ponte receber a assinatura observada; não identifica a causa interna da validação do cliente. Não há evidência de que o callback, o desafio ou a verificação HMAC tenham sido alcançados. **O erro nativo de criação da automação continua pendente.** O diagnóstico da 0.5.0 torna essas etapas visíveis; não representa uma correção comprovada desse bloqueio externo.
+A captura do ngrok examinada antes e depois daquela tentativa continha `server/discover`, `events/list` e `tools/list` com HTTP 200, e **nenhum `events/subscribe`** nessa janela. Isso localizou a interrupção antes de a Ponte receber a assinatura observada; não identificou a causa interna da validação do cliente. Naquela tentativa não houve evidência de que o callback, o desafio ou a verificação HMAC tivessem sido alcançados. O diagnóstico da 0.5.0 tornou essas etapas visíveis; sua implementação, por si só, não demonstrou a correção do bloqueio externo.
+
+### Verificação manual posterior de Events no ChatGPT
+
+Ainda em **22 de outubro de 2026**, uma nova conversa do ChatGPT concluiu a inscrição de teste. O registro de tela da sessão confirmou o recebimento e a validação de `ponte.job.completed`, seguidos de uma consulta única ao job com `waitMs: 0`, estado `succeeded` e ferramenta `local_projects`. A inscrição de teste foi pausada após a confirmação. Identificadores de conversa, automação e trabalho, assim como a captura privada, não são publicados neste repositório.
+
+Essa evidência manual mostra que o fluxo de Events funcionou naquela sessão posterior. Ela não estabelece a causa interna da tentativa anterior, não garante suporte em toda conta/cliente e não substitui um teste dos watchers da v0.6.0. O mecanismo de inscrição do cliente usado nesse teste pertence ao fluxo separado de Events; os watchers nativos não dependem dele nem criam agendamentos no chat.
 
 ### Painel e logotipo
 
@@ -56,7 +82,7 @@ A auditoria estática conferiu IDs únicos, referências ARIA, scripts externos,
 
 ### Limites restantes
 
-A suíte e o smoke não comprovam uma conexão em conta real do Claude nem a retomada de conversa pelo ChatGPT. A instalação Windows conectada ainda precisa receber a 0.5.0 e reiniciar para carregar os novos recursos. O teste PowerShell verifica somente a preservação dos argumentos no comando copiado; não comprova instalação ou autenticação do Claude Code. Configure o cliente conforme [CLAUDE.md](CLAUDE.md) e confira `bridge_status`/`local_projects` para validar a conexão real.
+A suíte e o smoke daquela entrega não comprovaram uma conexão em conta real do Claude nem a retomada de conversa pelo ChatGPT. Naquele momento, a instalação Windows conectada ainda precisava receber a 0.5.0 e reiniciar. O teste PowerShell verificou somente a preservação dos argumentos no comando copiado; não comprovou instalação ou autenticação do Claude Code. A verificação manual posterior de Events está descrita acima. Para uma instalação atual, siga [CLAUDE.md](CLAUDE.md) e confira `bridge_status`/`local_projects`.
 
 ## Histórico: MCP Events e continuidade por trabalho — 0.4.0
 
@@ -77,7 +103,7 @@ As regressões foram reproduzidas antes das respectivas correções. Na revisão
 
 O fluxo HTTP executa a escrita real, aceita a inscrição após o desafio, confere a assinatura dos bytes entregues, reinicia a aplicação e recupera o resultado completo com a mesma autorização OAuth. O smoke repete a descoberta e a entrega usando o código em `dist`. Os testes de transporte inspecionam a resolução e as opções da conexão HTTPS sem enviar avisos a uma conversa real.
 
-**Limites desta verificação:** os testes comprovam o contrato implementado e o fluxo com receptor controlado. Não comprovam retomada de uma conversa real no ChatGPT, disponibilidade de Events na conta do usuário, entrega pelo túnel ngrok ou funcionamento no Windows. A conexão real consultada nesta etapa ainda informou a versão **0.2.1**. É necessário atualizar e reiniciar essa instalação, atualizar a descoberta do plugin e criar a assinatura pelo cliente compatível. Também não foi realizada nova inspeção visual do painel nesta entrega. Instruções e critérios para o teste real estão em [MCP-EVENTS.md](MCP-EVENTS.md).
+**Limites daquela verificação:** os testes comprovaram o contrato implementado e o fluxo com receptor controlado. Não comprovaram retomada de uma conversa real no ChatGPT, disponibilidade de Events na conta do usuário, entrega pelo túnel ngrok ou funcionamento no Windows. A conexão real consultada naquela etapa ainda informou a versão **0.2.1**, portanto precisava ser atualizada antes do teste completo. Também não houve nova inspeção visual do painel naquela entrega. A evidência manual posterior está na seção da 0.5.0; instruções atuais estão em [MCP-EVENTS.md](MCP-EVENTS.md).
 
 ## Histórico: aprovação automática e espera de resultados — 0.3.0
 
@@ -101,7 +127,7 @@ A revisão independente identificou o prazo anterior de 15 s no adaptador stdio,
 
 ## Histórico da validação 0.2.1
 
-Os resultados abaixo registram a etapa anterior, antes do teste posterior da conexão real com o ChatGPT e da listagem do Studio SubR. Não representam uma nova execução de testes de navegador na versão 0.3.0.
+Os resultados abaixo registram a etapa anterior, antes do teste posterior da conexão real com o ChatGPT e da listagem de uma sessão do Studio. Não representam uma nova execução de testes de navegador nas versões seguintes.
 
 ### Correção da espera no OAuth com túneis
 

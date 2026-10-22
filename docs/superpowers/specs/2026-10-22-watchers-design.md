@@ -1,5 +1,7 @@
 # Watchers nativos da Ponte MCP
 
+> **Registro histórico.** Este documento preserva o planejamento da entrega indicada, não instruções para reexecutá-la. Consulte o [índice atual](../../README.md), o [histórico de versões](../../../CHANGELOG.md) e a [validação](../../VALIDACAO.md) para o comportamento e a evidência publicados.
+
 ## Objetivo e limite de produto
 
 Manter na Ponte o acompanhamento de uma tarefa delegada, sem usar agendamento, cron ou automations do ChatGPT/Claude. O caso central é enviar uma demanda ao Claude em uma sessão remota e aguardar a conclusão real, não o término de `tmux send-keys`. O monitor e o resultado sobrevivem ao encerramento da chamada e a reinícios da Ponte. Uma chamada MCP ativa pode aguardar seu resultado. Nenhuma API do produto promete reabrir um turno do ChatGPT sem um transporte de retomada oferecido pelo cliente.

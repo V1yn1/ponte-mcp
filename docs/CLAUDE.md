@@ -1,4 +1,6 @@
-# Conectar a Ponte MCP ao Claude
+# Conectar a Ponte MCP 0.6.0 ao Claude
+
+[Índice da documentação](README.md) · [Instalação e operação](OPERACAO.md) · [API e ferramentas](API.md) · [ChatGPT](CHATGPT.md)
 
 A Ponte oferece três caminhos para o Claude: conector remoto com OAuth, adaptador local para Claude Desktop e conexão pelo Claude Code. Todos usam os projetos, ferramentas e política de aprovação do mesmo serviço Ponte.
 
@@ -8,7 +10,7 @@ A Ponte oferece três caminhos para o Claude: conector remoto com OAuth, adaptad
 | Claude Desktop local | Entrada `mcpServers` com o comando stdio da Ponte | Não |
 | Claude Code | HTTP com OAuth ou comando stdio local | Somente para o caminho HTTPS deste guia |
 
-As instruções de interface foram conferidas na documentação oficial em **22 de outubro de 2026**. A disponibilidade depende das políticas da conta ou organização. A validação automatizada da Ponte cobre protocolo e autenticação; não representa uma conexão executada em uma conta real do Claude.
+As instruções de interface foram conferidas na documentação oficial em **22 de outubro de 2026**. A disponibilidade depende das políticas da conta ou organização. A cobertura automatizada da Ponte está descrita em [VALIDACAO.md](VALIDACAO.md); ela não representa uma conexão executada em uma conta real do Claude. Esta revisão documental não instalou nem autenticou um cliente Claude.
 
 ## 1. Conector remoto: Claude no navegador e Desktop
 
@@ -53,7 +55,7 @@ Se o pedido expirar, inicie a conexão outra vez para gerar um novo código. Cad
 
 O modo stdio inicia um adaptador que conversa com a Ponte já em execução. Ele lê as credenciais do diretório de estado local, sem copiá-las para a configuração do Claude.
 
-1. Compile e inicie a Ponte conforme o [README](../README.md).
+1. Compile e inicie a Ponte conforme [Instalação e operação](OPERACAO.md).
 2. No painel, abra **Conectar IA → Claude** e copie o JSON do **Claude Desktop**. Ele contém os caminhos absolutos do Node, de `dist/cli.js` e do diretório de estado desta instalação.
 3. No menu do aplicativo Claude Desktop, abra **Settings → Developer → Edit Config**.
 4. Acrescente a entrada `ponte` ao objeto `mcpServers`, preservando as demais entradas.
@@ -121,25 +123,33 @@ Mostre os projetos retornados pelas ferramentas.
 
 Confira os dados reais e a chamada registrada no painel. A conclusão do consentimento sozinha não comprova que uma ferramenta foi executada.
 
-As ferramentas seguem a política da Ponte: `mutations` revisa alterações, `all` revisa todas as chamadas e `automatic` libera as chamadas permitidas. As permissões dos projetos continuam valendo. Se uma ação retornar `pending_approval`, aprove o trabalho em **Execuções** e peça ao Claude para consultar **o mesmo `jobId`**, usando `bridge_job`:
+As solicitações executadas como jobs seguem a política da Ponte: `mutations` revisa alterações e comandos, `all` revisa também as leituras e `automatic` libera as chamadas permitidas. Controles diretos, como `bridge_status`, `bridge_job` e get/list/wait/cancel de watchers, não entram nessa fila. As permissões dos projetos e os controles do próprio Claude continuam valendo. Se uma ação retornar `pending_approval`, aprove o trabalho em **Execuções** e peça ao Claude para consultar **o mesmo `jobId`**, usando `bridge_job`:
 
 ```json
 { "jobId": "ID_RETORNADO", "waitMs": 25000 }
 ```
 
-Consulte até obter o estado final, sem repetir a operação original. Uma autorização OAuth consulta seus próprios trabalhos; outra conexão OAuth não herda esse acesso. O painel administrativo pode acompanhar todos eles.
+Consulte o mesmo job com esperas limitadas durante o turno ativo, sem repetir a operação original. Se o turno terminar, consulte o ID ao retornar. Uma autorização OAuth consulta seus próprios trabalhos; outra conexão OAuth não herda esse acesso. O painel administrativo pode acompanhar todos eles.
 
-Esta integração com Claude usa chamadas MCP e consultas a `bridge_job`. O catálogo de MCP Events da Ponte não demonstra que o Claude cadastrou uma assinatura nem que retomará uma conversa. A retomada por evento depende de suporte e assinatura feitos pelo cliente; as instruções de Events do ChatGPT estão em [MCP-EVENTS.md](MCP-EVENTS.md).
+Esta integração com Claude usa chamadas MCP, consultas a `bridge_job` e as ferramentas de watcher descritas abaixo. O catálogo de MCP Events da Ponte não demonstra que o Claude cadastrou uma assinatura nem que retomará uma conversa. A retomada por evento depende de suporte e assinatura feitos pelo cliente; não foi validada por este roteiro. As instruções de Events do ChatGPT estão em [MCP-EVENTS.md](MCP-EVENTS.md).
 
 ## 5. Acompanhar uma demanda executada pelo Claude
 
-Para uma tarefa longa delegada a outra sessão, use os [watchers nativos da Ponte](WATCHERS.md). **Crie `bridge_watch_create` antes de enviar a demanda**, com `trigger: {"type":"signal","source":"claude-code","runId":"neurolaudos-demanda-..."}`. Resolva uma eventual aprovação e entregue ao executor a URL e o token exclusivos retornados em `callback`, mantendo o segredo em ambiente ou arquivo privado. O script `scripts/ponte-watch-notify.mjs` envia o recibo explícito de `succeeded`, `failed` ou `needs_input` para esse `runId`.
+Para uma tarefa longa delegada a outra sessão, use os [watchers nativos da Ponte](WATCHERS.md). **Crie `bridge_watch_create` antes de enviar a demanda**, com `trigger: {"type":"signal","source":"claude-code","runId":"meu-projeto-demanda-001"}`. Resolva uma eventual aprovação e entregue ao executor a URL e o token exclusivos retornados em `callback`, mantendo o segredo em ambiente ou arquivo privado. O [script produtor](../scripts/ponte-watch-notify.mjs) envia o recibo explícito de `succeeded`, `failed` ou `needs_input` para esse `runId`.
 
-Uma chamada SSH ou `tmux send-keys` concluída comprova o envio, e não o término da demanda neurolaudos. Um hook `Stop` genérico também não comprova a tarefa inteira: a [referência oficial de hooks](https://code.claude.com/docs/en/hooks#stop) o define como o momento em que o agente principal terminou de responder. O produtor deve sinalizar apenas depois de conferir os critérios de aceite, ou sinalizar a falha/pendência que efetivamente encontrou. Nenhum hook global é instalado por esse fluxo.
+Uma chamada SSH ou `tmux send-keys` concluída comprova somente o envio à sessão. O watcher não inspeciona a janela do tmux, o texto do terminal ou um período sem atividade. Um hook `Stop` genérico também não comprova a tarefa inteira: a [referência oficial de hooks](https://code.claude.com/docs/en/hooks#stop) o define como o momento em que o agente principal terminou de responder. O produtor deve sinalizar depois de conferir os critérios de aceite, ou sinalizar a falha/pendência que efetivamente encontrou. Nenhum hook global é instalado por esse fluxo.
 
 Use `bridge_watch_wait` no mesmo `watcherId`, com espera padrão de **25 segundos**, ou `waitMs` de 0 a **300000**. O cliente pode encerrar a chamada antes desse limite. O watcher `signal` persiste no serviço, inclusive após reinício da Ponte; uma desconexão remove só aquela espera. Não é necessário criar automations ou cron no Claude/ChatGPT, nem repetir a operação original. Volte a consultar ou aguardar o mesmo acompanhamento.
 
-O [guia oficial MCP do Claude Code](https://code.claude.com/docs/en/mcp#automatic-backgrounding-of-long-tool-calls) informa que, por padrão, uma chamada da conversa principal ainda em execução após **dois minutos** passa a uma tarefa em segundo plano, com exceções e configuração própria. Essa tarefa do cliente não sobrevive à saída da sessão. O watcher da Ponte e seu prazo são independentes dela; manter o resultado no servidor não garante acordar um chat encerrado. [WATCHERS.md](WATCHERS.md) apresenta o fluxo completo, o wrapper de processo e seus limites, sem alterar a instalação ou as conexões MCP existentes.
+As respostas individuais informam `monitorDurable: true` e `canWakeClosedConversation: false`. O callback vai do executor à Ponte e não é o callback de MCP Events. A 0.6.0 não anuncia um evento de conclusão de watcher. Se um job da Ponte somente cria o watcher ou envia o prompt, `ponte.job.completed` para esse job cobre apenas essa etapa.
+
+O [guia oficial MCP do Claude Code](https://code.claude.com/docs/en/mcp#automatic-backgrounding-of-long-tool-calls) informa que, por padrão, uma chamada da conversa principal ainda em execução após **dois minutos** passa a uma tarefa em segundo plano, com exceções e configuração própria. Essa tarefa do cliente não sobrevive à saída da sessão. O watcher da Ponte e seu prazo são independentes dela; manter o resultado no servidor não garante acordar um chat encerrado. [WATCHERS.md](WATCHERS.md) apresenta o fluxo completo, o wrapper de processo e seus limites.
+
+## 6. Atualizar o catálogo e reconectar
+
+Atualize e reinicie a Ponte conforme [Instalação e operação](OPERACAO.md), preservando o diretório de estado. Confirme `version: "0.6.0"` em `bridge_status` e os cinco nomes `bridge_watch_*` no catálogo. Para stdio, reinicie completamente o Desktop ou reconecte o servidor em `/mcp` no Claude Code. Para o conector remoto, atualize a conexão na interface disponível e valide a ferramenta em nova conversa.
+
+Reiniciar o serviço com a mesma origem HTTPS e o mesmo estado preserva as autorizações OAuth concluídas. Se o login foi interrompido antes de terminar, inicie-o novamente. Uma nova autorização não herda os jobs e watchers da autorização anterior; tente consultar os IDs pela conexão ainda válida antes de substituí-la.
 
 ## Diagnóstico
 
@@ -153,9 +163,21 @@ O [guia oficial MCP do Claude Code](https://code.claude.com/docs/en/mcp#automati
 | Desktop informa falha de processo | Confira caminhos absolutos, JSON válido, diretório de estado e serviço iniciado. Reinicie completamente o Desktop. |
 | A ferramenta está aguardando revisão | Abra **Execuções**, revise o trabalho e depois consulte o mesmo `jobId`. |
 | A URL pública mudou | Atualize a origem no painel e reconecte; tokens do emissor anterior não são reutilizados. |
+| `bridge_watch_*` não aparece | Confirme a 0.6.0 e recarregue o catálogo; reconecte o stdio ou atualize a conexão remota. |
+| `claude mcp login` não existe na versão instalada | Use `/mcp` na sessão interativa para autenticar, e confira a documentação correspondente à sua versão do Claude Code. |
+| O watcher está `waiting`, mas o tmux parece parado | Confira o recibo do executor. Inatividade ou fim de resposta não concluem uma tarefa. |
+| O produtor confirmou o sinal, mas não há novo turno | Consulte o watcher; o recebimento pela Ponte não ativa sozinho uma conversa encerrada. |
 
 ## Cobertura da implementação
 
 Os testes automatizados exercitam descoberta, DCR público com o callback hospedado do Claude, consentimento local, PKCE, troca de código, renovação, revogação e chamadas reais de ferramentas por Streamable HTTP. Também cobrem callbacks locais com portas efêmeras, recusa de mudanças de host/caminho/query, erros sem redirecionamento inseguro e a regressão do fluxo ChatGPT com cliente confidencial.
 
-O fluxo de teste usa listeners HTTP locais para simular os identificadores HTTPS. Ele não verifica um túnel externo, configurações de uma conta Claude, a interface do Claude Desktop ou a instalação do Claude Code do usuário. Faça a chamada da seção anterior após configurar o cliente para confirmar esses componentes.
+O fluxo de teste usa listeners HTTP locais para simular os identificadores HTTPS. Ele não verifica um túnel externo, configurações de uma conta Claude, a interface do Claude Desktop ou a instalação do Claude Code do usuário. Faça a chamada da seção 4 após configurar o cliente para confirmar esses componentes.
+
+## Referências oficiais
+
+- [Claude — conectores e registro de um MCP remoto](https://support.claude.com/en/articles/11176164-use-connectors-to-extend-claude-s-capabilities).
+- [Claude — autenticação de conectores](https://claude.com/docs/connectors/building/authentication).
+- [Claude Code — transportes, login, reconexão e esperas MCP](https://code.claude.com/docs/en/mcp).
+- [Claude Code — significado do hook Stop](https://code.claude.com/docs/en/hooks#stop).
+- [MCP — configuração de servidores locais no Claude Desktop](https://modelcontextprotocol.io/docs/develop/connect-local-servers).

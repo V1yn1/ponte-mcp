@@ -1,5 +1,7 @@
 # MCP Events Implementation Plan
 
+> **Registro histórico.** Este documento preserva o planejamento da entrega indicada, não instruções para reexecutá-la. Consulte o [índice atual](../../README.md), o [histórico de versões](../../../CHANGELOG.md) e a [validação](../../VALIDACAO.md) para o comportamento e a evidência publicados.
+
 > **For agentic workers:** Implementar os módulos independentes com testes primeiro; integrar e revisar o conjunto antes da publicação.
 
 **Goal:** Retomar conversas inscritas mediante conclusão de um trabalho da Ponte, pelo perfil oficial de MCP Events.

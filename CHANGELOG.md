@@ -1,0 +1,84 @@
+# Histórico de versões
+
+[Projeto](README.md) · [Documentação](docs/README.md) · [Evidência de validação](docs/VALIDACAO.md)
+
+Este histórico reúne as entregas já implementadas. As notas de cada versão descrevem suas mudanças; os guias em `docs/` descrevem o comportamento atual. A revisão documental de 22 de outubro de 2026 não altera a versão do programa.
+
+## Revisão da documentação — 22/10/2026
+
+- Reorganização do README e criação de um índice dos guias.
+- Referências próprias de operação/configuração e API/ferramentas, alinhadas à v0.6.0.
+- Revisão dos fluxos de ChatGPT, Claude, Roblox, Playwright, OAuth, aprovação e recuperação de estado.
+- Distinção explícita entre job, watcher nativo e inscrição de MCP Events; prazos e identidade de conexão documentados.
+- Atualização das instruções para o chat e conferência do exemplo OpenAPI com o gerador atual de nove operações.
+- Separação entre registros históricos de falha, teste manual posterior de Events e validação controlada dos watchers.
+- Identificação dos planos e desenhos antigos como registros históricos; remoção de instruções de rotação de credenciais incompatíveis com o estado de watchers.
+
+## 0.6.0 — Watchers nativos — 22/10/2026
+
+- Serviço próprio de acompanhamentos com gatilhos `signal` e `job` e persistência em `watchers.json`.
+- Ferramentas `bridge_watch_create`, `bridge_watch_get`, `bridge_watch_list`, `bridge_watch_wait` e `bridge_watch_cancel`.
+- Criação submetida à política de aprovação; consultas e esperas diretas, autenticadas e sem ocupar a fila de execução.
+- Callback por watcher com credencial exclusiva, correlação por `runId`, repetição idempotente e resultado persistido antes da confirmação.
+- Espera padrão de 25 segundos, configurável até 300 segundos quando o cliente permitir; reconexão pelo mesmo ID.
+- Seção **Acompanhamentos** no painel e quatro operações REST adicionais no OpenAPI.
+- Produtor `scripts/ponte-watch-notify.mjs` para o executor enviar conclusão, falha ou pedido de informação.
+- Instruções MCP para criar o acompanhamento antes de delegar e usar o serviço da Ponte, sem agendador do ChatGPT/Claude.
+- Ajuste de prazo do adaptador stdio para as novas esperas; proteção de credenciais em observação administrativa e arquivos de Events.
+
+O watcher preserva monitor e resultado, mas não reabre uma conversa encerrada nem comprova sucesso pelo término de um comando de delegação. Um watcher `job` não retoma a execução original após reiniciar. A validação registrada contém **237 testes** e smoke; veja [Validação](docs/VALIDACAO.md).
+
+## 0.5.0 — Claude, diagnóstico e identidade visual — 22/10/2026
+
+- Guia e aba de conexão para Claude, Claude Desktop e Claude Code.
+- Compatibilidade do OAuth com callbacks hospedados e callbacks locais com porta temporária, preservando os demais vínculos de autorização.
+- Geração de comandos com citação de argumentos e conferência de caracteres especiais.
+- Diagnóstico de Events que distingue descoberta, tentativa de inscrição, verificação de callback e entrega.
+- Logotipo próprio e paleta azul cobalto/grafite; correção de cards inclinados e espaçamento do painel.
+
+A validação registrada contém **202 testes** e smoke. O erro de criação de assinatura observado em uma tentativa do ChatGPT foi investigado separadamente; um teste manual posterior confirmou inscrição e recebimento de evento. Os dois registros estão em [Validação](docs/VALIDACAO.md), sem garantia de disponibilidade em todos os clientes.
+
+## 0.4.0 — MCP Events — 22/10/2026
+
+- Adaptador HTTP para os métodos implementados do protocolo `2026-07-28`, mantendo clientes legados e upstreams no SDK existente.
+- Evento `ponte.job.completed` vinculado a um job e à identidade da conexão.
+- Inscrição pelo cliente, verificação HTTPS do callback e assinatura Standard Webhooks.
+- Persistência de inscrições, fila de entrega e cópias limitadas dos resultados dos trabalhos acompanhados.
+- Consulta do resultado retido após reinício e tratamento explícito de execução interrompida.
+
+A validação registrada contém **188 testes** e smoke com receptor controlado. O contrato e os limites atuais estão em [MCP Events](docs/MCP-EVENTS.md).
+
+## 0.3.0 — Aprovação automática e espera — 22/10/2026
+
+- Política persistente `automatic`, além de `mutations` e `all`.
+- Liberação de solicitações pendentes válidas, mantendo permissões, pausa e validação de argumentos.
+- Espera de até 25 segundos por resultado MCP e `bridge_job.waitMs` para acompanhar aprovação/execução durante o turno ativo.
+- Ajuste dos prazos do adaptador stdio e orientação para não reenviar operações de resultado incerto.
+
+A validação registrada contém **125 testes** e smoke. MCP Events ainda não fazia parte desta versão.
+
+## 0.2.1 — Consentimento OAuth com túneis — 22/10/2026
+
+- Consulta da decisão de consentimento com cookies da mesma origem e cabeçalho de dispensa da página intermediária do ngrok.
+- Diagnóstico de resposta HTML, erro HTTP, JSON inválido, queda de rede e timeout, com recuperação enquanto o pedido estiver válido.
+- Regressões executando o JavaScript real e reprodução do problema em Chromium com proxy controlado.
+
+A validação registrada contém **82 testes** e smoke. O teste com proxy não equivalia, naquele momento, a uma autorização na conta real do ChatGPT.
+
+## 0.2.0 — OAuth para MCP remoto — 22/10/2026
+
+- Descoberta do recurso protegido e do servidor OAuth, registro dinâmico de clientes e authorization code com PKCE S256.
+- Autorização no painel local com código de verificação; renovação, rotação de refresh token e revogação.
+- Identificador canônico da origem pública, vínculo de recurso/scope/redirect e separação entre tokens OAuth, API e administração.
+- Página de consentimento e metadados de segurança nas ferramentas.
+
+A validação registrada contém **72 testes**, smoke e verificações locais de navegador.
+
+## 0.1.0 — Base do projeto — 21/10/2026
+
+- Serviço local com painel em português, projetos autorizados e ferramentas de arquivos/comandos.
+- Aprovação de trabalhos, diff, hash esperado, backups, auditoria de metadados e cancelamento.
+- Agregação de ferramentas MCP por stdio, Streamable HTTP e SSE legado, com preset Roblox.
+- Fachadas MCP e REST, exportação OpenAPI e scripts de instalação/inicialização.
+
+O desenho e o plano dessa etapa permanecem no [arquivo histórico](docs/superpowers/README.md). Para instalar ou operar, use os guias da versão atual.

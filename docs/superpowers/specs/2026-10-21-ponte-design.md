@@ -1,5 +1,7 @@
 # Ponte MCP — especificação da versão 0.1
 
+> **Registro histórico.** Este documento preserva o planejamento da entrega indicada, não instruções para reexecutá-la. Consulte o [índice atual](../../README.md), o [histórico de versões](../../../CHANGELOG.md) e a [validação](../../VALIDACAO.md) para o comportamento e a evidência publicados.
+
 ## Objetivo
 Permitir que um chat com integração de ferramentas leia e altere projetos locais, execute comandos autorizados e utilize servidores MCP locais ou remotos por uma conexão central. O usuário pediu a construção do projeto. Adotamos Windows como plataforma prioritária, com servidor portátil em Node.js e painel local em português.
 

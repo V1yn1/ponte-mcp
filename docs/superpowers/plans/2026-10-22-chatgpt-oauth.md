@@ -1,5 +1,7 @@
 # Correção de compatibilidade nativa com ChatGPT — 0.2.0
 
+> **Registro histórico.** Este documento preserva o planejamento da entrega indicada, não instruções para reexecutá-la. Consulte o [índice atual](../../README.md), o [histórico de versões](../../../CHANGELOG.md) e a [validação](../../VALIDACAO.md) para o comportamento e a evidência publicados.
+
 ## Objetivo autorizado
 
 Atualizar a versão existente da Ponte para que o ChatGPT consiga cadastrar e
