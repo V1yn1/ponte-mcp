@@ -4,7 +4,7 @@ export function makeOpenApi(baseUrl: string) {
   const jobSchema = { type: 'object', properties: { id: { type: 'string' }, tool: { type: 'string' }, status: { type: 'string', enum: ['pending_approval', 'queued', 'running', 'succeeded', 'failed', 'rejected', 'cancelled', 'expired'] }, result: { type: 'object', additionalProperties: true }, error: { type: 'string' } }, additionalProperties: true };
   return {
     openapi: '3.1.0',
-    info: { title: 'Ponte MCP', version: '0.4.0', description: 'Ferramentas locais e MCPs conectados. A aprovação segue a política selecionada no painel do computador. Não altera cotas de IA. Descubra o schema usando listTools; envie argumentsJson com JSON válido. Consulte getJob até estado final; não confunda pending_approval com sucesso.' },
+    info: { title: 'Ponte MCP', version: '0.5.0', description: 'Ferramentas locais e MCPs conectados. A aprovação segue a política selecionada no painel do computador. Não altera cotas de IA. Descubra o schema usando listTools; envie argumentsJson com JSON válido. Consulte getJob até estado final; não confunda pending_approval com sucesso.' },
     servers: [{ url: baseUrl.replace(/\/$/, '') }],
     security: [{ bearerAuth: [] }],
     components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' } } },

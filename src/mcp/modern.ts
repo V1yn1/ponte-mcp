@@ -13,6 +13,7 @@ export interface ModernMcpDependencies {
   getTools(): Tool[] | Promise<Tool[]>;
   call(name: string, args: Record<string, unknown>): Promise<CallToolResult>;
   events: {
+    observeRequest?(method: string): { accepted(): void; rejected(error: unknown): void } | undefined;
     list(principal: string, params: unknown): unknown | Promise<unknown>;
     subscribe(principal: string, params: unknown): Promise<unknown>;
     unsubscribe(principal: string, params: unknown): Promise<unknown>;
@@ -171,6 +172,8 @@ export async function handleModernMcp(req: Request, res: Response, deps: ModernM
   if (!isModern(req)) return false;
   const rawBody: unknown = req.body;
   const id = object(rawBody) && validId(rawBody.id) ? rawBody.id : undefined;
+  const observedMethod = object(rawBody) && typeof rawBody.method === 'string' ? rawBody.method : req.headers['mcp-method'];
+  const observation = typeof observedMethod === 'string' ? deps.events.observeRequest?.(observedMethod) : undefined;
   try {
     validateMedia(req);
     const request = validateRequest(req);
@@ -204,8 +207,11 @@ export async function handleModernMcp(req: Request, res: Response, deps: ModernM
     } else {
       throw new ProtocolError(-32601, 'Método MCP não implementado.', 404);
     }
-    res.status(200).json({ jsonrpc: '2.0', id: request.id, result: complete(result, deps) });
+    const response = { jsonrpc: '2.0', id: request.id, result: complete(result, deps) };
+    observation?.accepted();
+    res.status(200).json(response);
   } catch (error) {
+    observation?.rejected(error);
     const protocol = error as { code?: unknown; message?: unknown; data?: unknown } | null;
     const known = typeof protocol?.code === 'number' && Number.isInteger(protocol.code);
     const code = known ? protocol.code as number : -32603;

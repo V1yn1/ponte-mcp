@@ -55,6 +55,21 @@ function safeRedirect(value: string): boolean {
   } catch { return false; }
 }
 
+/** RFC 8252 native callbacks vary only their HTTP loopback port, never their destination. */
+export function matchesRegisteredRedirect(requested: string, registered: readonly string[]): boolean {
+  if (!safeRedirect(requested)) return false;
+  if (registered.includes(requested)) return true;
+  // Compare the original strings except for the port. URL normalization would
+  // also accept changed paths (for example /a/../callback) or encoded hosts.
+  const native = /^(http:\/\/(?:localhost|127\.0\.0\.1|\[::1\]))(?::[0-9]+)?([/?].*|)$/;
+  const target = native.exec(requested);
+  if (!target) return false;
+  return registered.some(value => {
+    const candidate = native.exec(value);
+    return candidate !== null && target[1] === candidate[1] && target[2] === candidate[2];
+  });
+}
+
 const scopeSchema = z.array(z.literal(SCOPE)).length(1);
 const metadataSchema = z.object({
   redirect_uris: z.array(z.string().refine(safeRedirect)).min(1).max(8).refine(items => new Set(items).size === items.length),
@@ -324,8 +339,7 @@ export class PonteOAuthProvider implements OAuthServerProvider {
     await this.serialized(async () => {
       await this.synchronizeIssuer();
       const registered = this.state.clients.find(item => item.client_id === client.client_id);
-      // The SDK permits variable loopback ports; Ponte deliberately requires exact registration.
-      if (!registered || !registered.redirect_uris.includes(params.redirectUri)) {
+      if (!registered || !matchesRegisteredRedirect(params.redirectUri, registered.redirect_uris)) {
         res.status(400).json(new InvalidRequestError('Unregistered client or redirect URI.').toResponseObject());
         return;
       }

@@ -1,4 +1,4 @@
-import type { Express, RequestHandler, Response } from 'express';
+import { urlencoded, type Express, type RequestHandler, type Response } from 'express';
 import path from 'node:path';
 import { timingSafeEqual } from 'node:crypto';
 import { authorizationHandler } from '@modelcontextprotocol/sdk/server/auth/handlers/authorize.js';
@@ -9,6 +9,7 @@ import { metadataHandler } from '@modelcontextprotocol/sdk/server/auth/handlers/
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import type { Application } from '../app.js';
 import { projectRoot } from '../app.js';
+import { matchesRegisteredRedirect } from './provider.js';
 
 export const MCP_SCOPE = 'ponte:tools';
 const protocolPaths = new Set(['/authorize', '/register', '/token', '/revoke', '/.well-known/oauth-authorization-server', '/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp']);
@@ -28,7 +29,7 @@ export function oauthConnectionState(runtime: Application) {
 export function mountOAuth(admin: Express, api: Express, runtime: Application): void {
   const configured: RequestHandler = (_req, res, next) => {
     if (!runtime.store.config.publicUrl) {
-      res.status(503).json({ error: 'temporarily_unavailable', error_description: 'Configure a origem HTTPS pública no painel local antes de conectar o ChatGPT.' }); return;
+      res.status(503).json({ error: 'temporarily_unavailable', error_description: 'Configure a origem HTTPS pública no painel local antes de conectar o cliente MCP.' }); return;
     }
     next();
   };
@@ -68,7 +69,20 @@ export function mountOAuth(admin: Express, api: Express, runtime: Application): 
     }) as Response['redirect'];
     next();
   };
-  api.use('/authorize', configured, withIssuer, authorizationHandler({ provider: runtime.oauth, rateLimit }));
+  const validateRedirect: RequestHandler = async (req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'POST') { next(); return; }
+    const params = req.method === 'POST' ? req.body : req.query;
+    if (typeof params?.client_id === 'string' && typeof params.redirect_uri === 'string') {
+      const client = await runtime.oauth.clientsStore.getClient(params.client_id);
+      // The SDK checks request parameters before provider.authorize and can
+      // redirect errors itself. Apply the same safe callback policy first.
+      if (client && !matchesRegisteredRedirect(params.redirect_uri, client.redirect_uris)) {
+        res.status(400).json({ error: 'invalid_request', error_description: 'Unregistered or unsafe redirect URI.' }); return;
+      }
+    }
+    next();
+  };
+  api.use('/authorize', configured, urlencoded({ extended: false }), validateRedirect, withIssuer, authorizationHandler({ provider: runtime.oauth, rateLimit }));
   api.use('/token', configured, tokenHandler({ provider: runtime.oauth, rateLimit: { ...rateLimit, max: 120 } }));
   api.use('/register', configured, clientRegistrationHandler({ clientsStore: runtime.oauth.clientsStore, clientSecretExpirySeconds: 0, rateLimit }));
   api.use('/revoke', configured, revocationHandler({ provider: runtime.oauth, rateLimit }));
@@ -76,7 +90,7 @@ export function mountOAuth(admin: Express, api: Express, runtime: Application): 
   api.get('/oauth/consent/status', configured, (req, res) => {
     const id = typeof req.query.request === 'string' ? req.query.request : '';
     const status = runtime.oauth.consentStatus(id);
-    if (!status) { res.status(404).json({ error: 'Solicitação não encontrada ou expirada. Inicie a conexão novamente no ChatGPT.' }); return; }
+    if (!status) { res.status(404).json({ error: 'Solicitação não encontrada ou expirada. Inicie a conexão novamente no cliente MCP.' }); return; }
     res.json({ ...status, adminUrl: runtime.adminUrl });
   });
   api.get('/oauth/complete', configured, async (req, res) => {
@@ -87,6 +101,9 @@ export function mountOAuth(admin: Express, api: Express, runtime: Application): 
   for (const [route, file] of [['/oauth/consent', 'consent.html'], ['/oauth/consent.js', 'consent.js'], ['/oauth/consent.css', 'consent.css']] as const) {
     api.get(route, configured, (_req, res) => { res.sendFile(path.join(projectRoot, 'public', file), { cacheControl: false }); });
   }
+  api.get('/assets/ponte-mark.png', configured, (_req, res) => {
+    res.sendFile(path.join(projectRoot, 'public', 'assets', 'ponte-mark.png'), { cacheControl: false });
+  });
   for (const decision of ['approve', 'reject'] as const) {
     admin.post('/admin/oauth/requests/:id/' + decision, async (req, res) => {
       await runtime.oauth[decision](String(req.params.id)); res.json({ ok: true });

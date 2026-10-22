@@ -4,10 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="theme-color" content="#172823">
+  <meta name="theme-color" content="#171c2a">
   <meta name="description" content="Ponte MCP — controle local de projetos, ferramentas e execuções.">
   <title>Ponte MCP — Painel local</title>
+  <link rel="icon" type="image/png" href="/assets/ponte-mark.png">
   <link rel="stylesheet" href="/styles.css">
+  <script src="/client-commands.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
@@ -45,7 +47,7 @@
 
   <div id="auth-screen" class="auth-screen">
     <div class="auth-story">
-      <a class="brand auth-brand" href="/" aria-label="Ponte MCP, início"><span class="brand-mark"><svg class="icon"><use href="#i-bridge"/></svg></span><span>Ponte<span class="brand-suffix"> MCP</span></span></a>
+      <a class="brand auth-brand" href="/" aria-label="Ponte MCP, início"><span class="brand-mark"><img src="/assets/ponte-mark.png" alt="" width="40" height="40"></span><span>Ponte<span class="brand-suffix"> MCP</span></span></a>
       <div class="auth-story-content">
         <span class="eyebrow">SEU AMBIENTE. SEU CONTROLE.</span>
         <h1>Do chat ao código.<br><span>Com você no comando.</span></h1>
@@ -53,7 +55,7 @@
         <div class="auth-flow" aria-label="Fluxo: cliente de chat, Ponte MCP, ambiente local">
           <div><svg class="icon"><use href="#i-chat"/></svg><span>Seu chat</span></div>
           <span class="flow-line" aria-hidden="true"></span>
-          <div class="flow-center"><svg class="icon"><use href="#i-bridge"/></svg><span>Ponte MCP</span></div>
+          <div class="flow-center"><img class="flow-mark" src="/assets/ponte-mark.png" alt="" width="30" height="30"><span>Ponte MCP</span></div>
           <span class="flow-line" aria-hidden="true"></span>
           <div><svg class="icon"><use href="#i-terminal"/></svg><span>Seu ambiente</span></div>
         </div>
@@ -83,7 +85,7 @@
     <a class="skip-link" href="#main-content">Pular para o conteúdo</a>
     <button id="nav-backdrop" class="nav-backdrop" aria-label="Fechar navegação" hidden></button>
     <aside id="sidebar" class="sidebar" aria-label="Barra lateral">
-      <a class="brand sidebar-brand" href="#overview"><span class="brand-mark"><svg class="icon"><use href="#i-bridge"/></svg></span><span>Ponte<span class="brand-suffix"> MCP</span></span></a>
+      <a class="brand sidebar-brand" href="#overview"><span class="brand-mark"><img src="/assets/ponte-mark.png" alt="" width="40" height="40"></span><span>Ponte<span class="brand-suffix"> MCP</span></span></a>
       <div class="workspace-label"><span class="workspace-avatar">L</span><div><strong>Ambiente local</strong><span>Seu espaço de trabalho</span></div><span class="mini-dot" aria-hidden="true"></span></div>
       <span class="nav-label">WORKSPACE</span>
       <nav id="main-nav" class="main-nav" aria-label="Navegação principal">
@@ -93,7 +95,7 @@
         <a href="#tools" data-view="tools"><svg class="icon"><use href="#i-tool"/></svg><span>Ferramentas</span></a>
         <a href="#jobs" data-view="jobs"><svg class="icon"><use href="#i-activity"/></svg><span>Execuções</span><span class="nav-count nav-pending" id="nav-pending-count" hidden>0</span></a>
         <div class="nav-divider"></div>
-        <a href="#connect" data-view="connect"><svg class="icon"><use href="#i-chat"/></svg><span>Conectar ChatGPT</span><span class="nav-count nav-pending" id="nav-oauth-count" hidden>0</span><svg class="icon nav-arrow"><use href="#i-arrow"/></svg></a>
+        <a href="#connect" data-view="connect"><svg class="icon"><use href="#i-chat"/></svg><span>Conectar IA</span><span class="nav-count nav-pending" id="nav-oauth-count" hidden>0</span><svg class="icon nav-arrow"><use href="#i-arrow"/></svg></a>
       </nav>
       <div class="sidebar-bottom">
         <div class="sidebar-note"><svg class="icon"><use href="#i-shield"/></svg><div><strong>Você decide o próximo passo</strong><p>Defina a política de aprovação e acompanhe as execuções.</p></div></div>
@@ -116,7 +118,7 @@
         <section id="view-overview" class="view" aria-label="Visão geral">
           <div class="overview-hero">
             <div class="hero-copy"><span class="hero-kicker"><span class="status-dot"></span> DO CHAT AO SEU AMBIENTE</span><h2>Seu próximo passo,<br>com as ferramentas certas.</h2><p>Uma ponte para seus projetos, servidores MCP e ações locais. Tudo fica visível no seu painel.</p><a class="button button-dark" href="#connect">Conectar um chat<svg class="icon"><use href="#i-arrow"/></svg></a></div>
-            <div class="bridge-visual" aria-hidden="true"><div class="bridge-orbit orbit-one"></div><div class="bridge-orbit orbit-two"></div><div class="visual-node visual-chat"><svg class="icon"><use href="#i-chat"/></svg><span>Chat</span></div><span class="visual-line line-one"></span><div class="visual-center"><svg class="icon"><use href="#i-bridge"/></svg></div><span class="visual-line line-two"></span><div class="visual-node visual-tools"><svg class="icon"><use href="#i-code"/></svg><span>Ferramentas</span></div><div class="visual-caption"><svg class="icon"><use href="#i-shield"/></svg><span>Permissões sob seu controle</span></div></div>
+            <div class="bridge-visual" aria-hidden="true"><div class="bridge-orbit orbit-one"></div><div class="bridge-orbit orbit-two"></div><div class="visual-node visual-chat"><svg class="icon"><use href="#i-chat"/></svg><span>Chat</span></div><span class="visual-line line-one"></span><div class="visual-center"><img src="/assets/ponte-mark.png" alt="" width="60" height="60"></div><span class="visual-line line-two"></span><div class="visual-node visual-tools"><svg class="icon"><use href="#i-code"/></svg><span>Ferramentas</span></div><div class="visual-caption"><svg class="icon"><use href="#i-shield"/></svg><span>Permissões sob seu controle</span></div></div>
           </div>
           <div id="overview-stats" class="stats-grid" aria-label="Resumo do ambiente"></div>
           <div class="overview-columns">
@@ -155,35 +157,56 @@
           <p class="page-footnote">O painel exibe as 50 solicitações mais recentes. Abra uma execução para ver argumentos, prévia e resultado.</p>
         </section>
 
-        <section id="view-connect" class="view" aria-label="Conectar ChatGPT" hidden>
-          <div class="connect-intro"><span class="soft-icon large"><svg class="icon"><use href="#i-chat"/></svg></span><div><h2>Seu ambiente, disponível no ChatGPT.</h2><p>Conecte a Ponte como servidor MCP com OAuth. Você confirma a conexão aqui e mantém o controle sobre projetos, ferramentas e execuções.</p></div></div>
+        <section id="view-connect" class="view" aria-label="Conectar ChatGPT e Claude" hidden>
+          <div class="connect-intro"><span class="soft-icon large"><svg class="icon"><use href="#i-chat"/></svg></span><div><h2>ChatGPT ou Claude. A mesma ponte.</h2><p>Escolha seu cliente e conecte projetos e ferramentas. As conexões OAuth são confirmadas aqui; cada execução segue a política do seu ambiente.</p></div></div>
 
           <section id="oauth-requests-panel" class="panel oauth-requests-panel" aria-labelledby="oauth-requests-title" hidden>
             <div class="panel-heading"><div><span class="section-kicker">CONFIRME NO SEU COMPUTADOR</span><h2 id="oauth-requests-title">Solicitações de conexão <span id="oauth-requests-count" class="count-badge">0</span></h2></div><span class="badge badge-warning">Revisão local</span></div>
-            <p class="oauth-section-description">Abra os detalhes e compare o código com a página que o ChatGPT abriu no navegador.</p>
+            <p class="oauth-section-description">Abra os detalhes e compare o código com a página de autorização aberta pelo seu cliente.</p>
             <div id="oauth-requests-list"></div>
           </section>
 
           <div class="connect-grid native-connect-grid">
             <section class="panel connect-card public-url-card"><div class="step-heading"><span class="step-number">01</span><div><span class="section-kicker">PREPARE O ENDPOINT</span><h2>URL pública da API</h2></div></div><p>Crie um túnel HTTPS para a API da Ponte e salve a origem pública abaixo. Essa URL será usada na descoberta e na autorização OAuth.</p><form id="public-url-form"><label for="public-url">Origem pública HTTPS</label><div class="input-action"><input id="public-url" name="publicUrl" type="url" placeholder="https://sua-ponte.exemplo.com" autocomplete="off" aria-describedby="public-url-help"><button class="button button-primary" type="submit">Salvar</button></div><p id="public-url-help" class="field-help">Use apenas a origem, sem /mcp. Salvar a URL não cria um túnel nem publica o serviço.</p></form><div class="notice notice-subtle tunnel-notice"><svg class="icon"><use href="#i-shield"/></svg><span id="tunnel-help">Exponha apenas a API na porta 4318. O painel da porta 4317 permanece local.</span></div><p class="field-help">Mantenha a Ponte e o túnel em execução enquanto usar a conexão. Se a origem mudar, salve a nova URL e reconecte o cliente.</p></section>
 
-            <section class="panel connect-card native-chatgpt-card"><div class="step-heading"><span class="step-number">02</span><div><span class="section-kicker">MCP NATIVO · OAUTH</span><h2>Adicionar ao ChatGPT</h2></div><span id="oauth-status" class="badge badge-neutral">Configure a URL</span></div><div id="oauth-setup-note" class="notice notice-subtle"><svg class="icon"><use href="#i-info"/></svg><span>Salve a URL pública HTTPS para habilitar o OAuth.</span></div><div class="endpoint-list"><div class="endpoint-row"><div><span>URL do servidor MCP</span><code id="chatgpt-mcp-url">Configure a URL pública primeiro</code></div><button id="copy-chatgpt-url" class="icon-button" data-action="copy-chatgpt-url" aria-label="Copiar URL MCP para o ChatGPT" disabled><svg class="icon"><use href="#i-copy"/></svg></button></div></div><ol class="connect-steps"><li>No ChatGPT, abra <strong>Plugins → + → Add custom MCP server</strong>. Dê o nome <strong>Ponte</strong> e cole a URL MCP acima.</li><li>Em autenticação, selecione <strong>OAuth</strong>. O registro do cliente é automático: deixe Client ID e Client Secret sem preencher.</li><li>Na página de autorização, confira o código. Neste painel, em <strong>Conectar ChatGPT</strong>, revise a solicitação com o mesmo código e autorize.</li><li>Volte ao ChatGPT e selecione <strong>@Ponte</strong> na conversa para disponibilizar as ferramentas.</li></ol><p class="field-help oauth-key-note">A conexão nativa usa OAuth e não pede que você copie uma chave de API.</p></section>
+            <section class="panel connect-card client-setup-card">
+              <div class="client-tabs" role="tablist" aria-label="Cliente de IA">
+                <button id="client-tab-chatgpt" class="client-tab" type="button" role="tab" aria-selected="true" aria-controls="client-panel-chatgpt" data-action="select-client" data-client="chatgpt">ChatGPT</button>
+                <button id="client-tab-claude" class="client-tab" type="button" role="tab" aria-selected="false" aria-controls="client-panel-claude" tabindex="-1" data-action="select-client" data-client="claude">Claude</button>
+              </div>
+              <div id="client-panel-chatgpt" class="client-panel native-chatgpt-card" role="tabpanel" aria-labelledby="client-tab-chatgpt" tabindex="0"><div class="step-heading"><span class="step-number">02</span><div><span class="section-kicker">MCP NATIVO · OAUTH</span><h2>Adicionar ao ChatGPT</h2></div><span id="oauth-status" class="badge badge-neutral">Configure a URL</span></div><div id="oauth-setup-note" class="notice notice-subtle"><svg class="icon"><use href="#i-info"/></svg><span>Salve a URL pública HTTPS para habilitar o OAuth.</span></div><div class="endpoint-list"><div class="endpoint-row"><div><span>URL do servidor MCP</span><code id="chatgpt-mcp-url">Configure a URL pública primeiro</code></div><button id="copy-chatgpt-url" class="icon-button" data-action="copy-chatgpt-url" aria-label="Copiar URL MCP para o ChatGPT" disabled><svg class="icon"><use href="#i-copy"/></svg></button></div></div><ol class="connect-steps"><li>No ChatGPT, abra <strong>Plugins → + → Add custom MCP server</strong>. Dê o nome <strong>Ponte</strong> e cole a URL MCP acima.</li><li>Em autenticação, selecione <strong>OAuth</strong>. O registro do cliente é automático: deixe Client ID e Client Secret sem preencher.</li><li>Na página de autorização, confira o código. Neste painel, em <strong>Conectar IA</strong>, revise a solicitação com o mesmo código e autorize.</li><li>Volte ao ChatGPT e selecione <strong>@Ponte</strong> na conversa para disponibilizar as ferramentas.</li></ol><p class="field-help oauth-key-note">A conexão nativa usa OAuth e não pede que você copie uma chave de API.</p></div>
+              <div id="client-panel-claude" class="client-panel native-claude-card" role="tabpanel" aria-labelledby="client-tab-claude" tabindex="0" hidden>
+                <div class="step-heading"><span class="step-number">02</span><div><span class="section-kicker">CONECTOR REMOTO · OAUTH</span><h2>Adicionar ao Claude</h2></div><span id="claude-oauth-status" class="badge badge-neutral">Configure a URL</span></div>
+                <div id="claude-setup-note" class="notice notice-subtle"><svg class="icon"><use href="#i-info"/></svg><span>Salve a URL pública HTTPS para habilitar o conector remoto.</span></div>
+                <div class="endpoint-list"><div class="endpoint-row"><div><span>URL do servidor MCP</span><code id="claude-mcp-url">Configure a URL pública primeiro</code></div><button id="copy-claude-url" class="icon-button" data-action="copy-claude-url" aria-label="Copiar URL MCP para o Claude" disabled><svg class="icon"><use href="#i-copy"/></svg></button></div></div>
+                <ol class="connect-steps">
+                  <li>No Claude, abra <strong>Customize → Connectors → Add → Custom → Web</strong>. Informe o nome <strong>Ponte</strong> e cole a URL MCP acima.</li>
+                  <li>Escolha <strong>Sign in now</strong> e, em OAuth client, <strong>Register automatically</strong>. A Ponte usa registro automático do cliente.</li>
+                  <li>Compare o código da página de autorização com o pedido em <strong>Conectar IA</strong> neste painel. Revise os dados e autorize a conexão.</li>
+                  <li>Volte ao Claude e habilite a Ponte nos conectores da conversa. Os projetos e a política de aprovação continuam sendo definidos aqui.</li>
+                </ol>
+                <p class="field-help oauth-key-note">O conector remoto usa OAuth. Para trabalhar localmente, veja as opções Claude Desktop e Claude Code abaixo.</p>
+                <a class="text-link documentation-link" href="https://support.claude.com/en/articles/11176164-use-connectors-to-extend-claude-s-capabilities" target="_blank" rel="noopener noreferrer">Guia oficial de conectores<svg class="icon"><use href="#i-external"/></svg></a>
+              </div>
+            </section>
           </div>
 
           <section class="panel oauth-grants-panel" aria-labelledby="oauth-grants-title"><div class="panel-heading"><div><span class="section-kicker">ACESSO AUTORIZADO</span><h2 id="oauth-grants-title">Clientes conectados <span id="oauth-grants-count" class="count-badge">0</span></h2></div><span class="soft-icon"><svg class="icon"><use href="#i-shield"/></svg></span></div><div id="oauth-grants-list"></div></section>
 
           <section class="panel oauth-grants-panel events-panel" aria-labelledby="events-title">
-            <div class="panel-heading"><div><span class="section-kicker">CONTINUIDADE DA CONVERSA</span><h2 id="events-title">Avisos de conclusão <span id="events-count" class="count-badge">0</span></h2></div><span id="events-status" class="badge badge-neutral">MCP Events</span></div>
+            <div class="panel-heading"><div><span class="section-kicker">CHATGPT · CONTINUIDADE DA CONVERSA</span><h2 id="events-title">Avisos de conclusão <span id="events-count" class="count-badge">0</span></h2></div><span id="events-status" class="badge badge-neutral">MCP Events</span></div>
             <p class="field-help">Quando o ChatGPT se inscreve em uma execução, a Ponte envia um aviso ao terminar. Em uma conversa compatível com eventos, peça para continuar a tarefa quando aquela execução concluir.</p>
             <p class="field-help">Atualize as ferramentas e os eventos do plugin após instalar esta versão. A aprovação automática libera ferramentas; a inscrição em eventos permite retomar a conversa.</p>
+            <div id="event-diagnostics" class="event-diagnostics" hidden></div>
             <div id="events-error" class="notice notice-warning" role="status" hidden></div>
             <div id="events-list"></div>
             <p class="field-help">“Aviso recebido” confirma a entrega ao cliente. A continuidade da tarefa depende do ChatGPT e das instruções da conversa. Encerrar um aviso não cancela a execução.</p>
           </section>
 
-          <div class="connect-alternatives-heading"><span class="section-kicker">OUTRAS FORMAS DE CONECTAR</span><h2>Clientes locais e GPT Actions</h2><p>Use a integração adequada ao seu cliente.</p></div>
-          <div class="connect-grid">
-            <section class="panel connect-card"><div class="step-heading"><span class="soft-icon"><svg class="icon"><use href="#i-terminal"/></svg></span><div><span class="section-kicker">CLIENTE LOCAL</span><h2>Conectar por stdio</h2></div><span class="badge badge-neutral">MCP</span></div><p>Adicione esta configuração ao arquivo de servidores MCP do seu cliente. O comando usa o diretório de estado desta ponte.</p><div class="code-header"><span>Configuração do cliente</span><button class="icon-button" data-action="copy-stdio" aria-label="Copiar configuração stdio"><svg class="icon"><use href="#i-copy"/></svg></button></div><pre id="stdio-config" class="code-block"></pre><p class="field-help">O cliente precisa conseguir executar o comando localmente. A configuração varia entre aplicativos.</p></section>
+          <div class="connect-alternatives-heading"><span class="section-kicker">OUTRAS FORMAS DE CONECTAR</span><h2>Desktop, terminal e GPT Actions</h2><p>Conecte pelo aplicativo, pela linha de comando ou pelo editor de GPTs.</p></div>
+          <div class="connect-grid connect-options-grid">
+            <section class="panel connect-card"><div class="step-heading"><span class="soft-icon"><svg class="icon"><use href="#i-terminal"/></svg></span><div><span class="section-kicker">LOCAL · STDIO</span><h2>Claude Desktop</h2></div><span class="badge badge-neutral">Sem túnel</span></div><p>No Claude Desktop, abra <strong>Settings → Developer → Edit Config</strong>. Adicione <code>ponte</code> ao objeto <code>mcpServers</code>, preserve os servidores existentes e reinicie o aplicativo.</p><div class="code-header"><span>Configuração do cliente</span><button class="icon-button" data-action="copy-stdio" aria-label="Copiar configuração stdio para Claude Desktop"><svg class="icon"><use href="#i-copy"/></svg></button></div><pre id="stdio-config" class="code-block"></pre><p class="field-help">Mantenha a Ponte em execução nesta máquina. A configuração usa seus caminhos absolutos e o estado atual, funciona em outros clientes stdio e não contém tokens.</p><a class="text-link documentation-link" href="https://modelcontextprotocol.io/docs/develop/connect-local-servers" target="_blank" rel="noopener noreferrer">Guia de configuração local<svg class="icon"><use href="#i-external"/></svg></a></section>
+            <section class="panel connect-card claude-code-card"><div class="step-heading"><span class="soft-icon"><svg class="icon"><use href="#i-code"/></svg></span><div><span class="section-kicker">TERMINAL · HTTP + OAUTH</span><h2>Claude Code</h2></div></div><p>Com o Claude Code instalado, execute este comando no terminal do seu projeto para adicionar a Ponte.</p><div class="code-header"><span id="claude-code-shell">Comando de conexão</span><button id="copy-claude-code" class="icon-button" data-action="copy-claude-code" aria-label="Copiar comando para o Claude Code" disabled><svg class="icon"><use href="#i-copy"/></svg></button></div><pre id="claude-code-command" class="code-block">Configure a URL pública para gerar o comando.</pre><ol class="connect-steps"><li>Abra o Claude Code e execute <code>/mcp</code>.</li><li>Selecione <strong>ponte</strong> e autentique. Compare o código e autorize neste painel.</li></ol><p class="field-help">Esta opção usa a URL HTTPS e a mesma autorização OAuth do conector remoto.</p><a class="text-link documentation-link" href="https://code.claude.com/docs/en/mcp" target="_blank" rel="noopener noreferrer">Guia oficial do Claude Code<svg class="icon"><use href="#i-external"/></svg></a></section>
             <section class="panel connect-card token-card"><div class="step-heading"><span class="soft-icon"><svg class="icon"><use href="#i-code"/></svg></span><div><span class="section-kicker">GPT ACTIONS · OPENAPI</span><h2>Conectar com chave de API</h2></div></div><p>No editor de GPT Actions, importe o esquema OpenAPI e configure autenticação <strong>API Key</strong>, tipo <strong>Bearer</strong>, com o token de API desta Ponte.</p><div id="connection-endpoints" class="endpoint-list"></div><button id="download-openapi" class="button button-secondary full-width"><svg class="icon"><use href="#i-download"/></svg>Baixar esquema OpenAPI</button><p class="actions-token-label">Obtenha o token no terminal, na pasta da Ponte MCP:</p><div class="inline-code"><code>node dist/cli.js token api</code><button class="icon-button" data-action="copy-api-command" aria-label="Copiar comando para obter token de API para Actions"><svg class="icon"><use href="#i-copy"/></svg></button></div><p class="field-help">Actions envia <code>Authorization: Bearer SEU_TOKEN_API</code>. O token de administração é exclusivo deste painel.</p></section>
           </div>
           <div class="notice notice-subtle"><svg class="icon"><use href="#i-info"/></svg><span>O acesso a servidores MCP personalizados e Actions depende do cliente, plano e permissões do workspace. As cotas e os limites do provedor continuam valendo.</span></div>

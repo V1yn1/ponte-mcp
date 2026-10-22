@@ -4,7 +4,7 @@
 
 Ponte MCP é um servidor local com painel em português. Ele reúne ferramentas de arquivos, execução de comandos e servidores MCP externos. O chat escolhe uma ferramenta; a ponte valida a solicitação, apresenta alterações para revisão quando necessário e devolve o resultado.
 
-A versão **0.4.0** acrescenta **MCP Events**: uma conversa compatível pode acompanhar um trabalho e receber um aviso quando ele termina, para consultar o resultado e continuar a tarefa. O cliente precisa criar a assinatura desse trabalho. A Ponte mantém a aprovação automática opcional e a espera de até 25 segundos por resultados; o modo padrão continua pedindo revisão para alterações e comandos. A conexão com o ChatGPT usa OAuth, com autorização local e acesso revogável. O projeto é destinado a uso pessoal em um computador e inclui código TypeScript, painel, testes e exemplos de integração. Não contém modelo de IA, assinatura comercial, chave de fornecedor ou instalador proprietário.
+A versão **0.5.0** acrescenta configuração para **Claude, Claude Desktop e Claude Code**, corrige a autenticação com portas locais temporárias e renova o painel com logotipo próprio e paleta azul cobalto/grafite. O diagnóstico de MCP Events mostra se uma solicitação de assinatura chegou, foi aceita ou falhou na verificação do callback. A Ponte mantém OAuth com autorização local, aprovação automática opcional e espera de até 25 segundos por resultados. O projeto é destinado a uso pessoal em um computador e inclui código TypeScript, painel, testes e exemplos de integração. Não contém modelo de IA, assinatura comercial, chave de fornecedor ou instalador proprietário.
 
 ## O que está implementado
 
@@ -16,11 +16,11 @@ A versão **0.4.0** acrescenta **MCP Events**: uma conversa compatível pode aco
 | Terminal | Executável e argumentos separados, diretório do projeto, limite de tempo e saída, cancelamento |
 | MCPs | Clientes stdio, Streamable HTTP e SSE legado; descoberta de ferramentas, namespaces e reconexão |
 | Roblox | Preset do servidor MCP integrado oficialmente ao Studio |
-| Conexão com chats | MCP Streamable HTTP com OAuth, adaptador stdio e API REST com OpenAPI para Actions |
+| Conexão com chats | ChatGPT e Claude por MCP Streamable HTTP com OAuth; Claude Desktop/Code por stdio; API REST com OpenAPI para Actions |
 | Resultados MCP | Espera de até 25 segundos na chamada e consulta do mesmo trabalho com `bridge_job` e `waitMs` |
 | MCP Events | Evento `ponte.job.completed` por `jobId`, assinatura pelo cliente, callback HTTPS verificado e assinado, entrega persistente e diagnóstico no painel |
 | OAuth | Authorization code com PKCE S256, descoberta, cadastro dinâmico de clientes, renovação e revogação |
-| Painel | Visão geral, projetos, conexões, ferramentas, execuções, aprovação das conexões do ChatGPT e avisos de conclusão |
+| Painel | Visão geral, projetos, conexões, ferramentas, execuções, abas ChatGPT/Claude, aprovação OAuth e diagnóstico de avisos de conclusão |
 | Operação | Tokens distintos de administração e API, autorizações OAuth persistentes, pausa de novas execuções, idempotência, auditoria de metadados |
 
 ## O que a ponte resolve — e seus limites
@@ -73,7 +73,7 @@ npm.cmd run build
 npm.cmd start
 ```
 
-Confira **0.4.0** no painel. Preserve a pasta `.ponte`: a política de aprovação, os projetos e as autorizações OAuth já concluídas continuam disponíveis após reiniciar. Uma conexão que já funciona não precisa ser recriada. Somente pedidos OAuth ainda em andamento precisam ser iniciados novamente após o reinício.
+Confira **0.5.0** no painel. Preserve a pasta `.ponte`: a política de aprovação, os projetos e as autorizações OAuth já concluídas continuam disponíveis após reiniciar. Uma conexão que já funciona não precisa ser recriada. Somente pedidos OAuth ainda em andamento precisam ser iniciados novamente após o reinício.
 
 No ChatGPT, abra **Plugins → Ponte → Atualizar ferramentas** e atualize também a descoberta de eventos oferecida pela interface. Confira se `ponte.job.completed` aparece na página do plugin. Mantenha o ngrok encaminhando a API na porta **4318** e confira se a URL pública salva corresponde à origem atual do túnel. O roteiro específico está em [Conectar ao ChatGPT](docs/CHATGPT.md); o uso dos avisos está em [MCP Events](docs/MCP-EVENTS.md).
 
@@ -151,7 +151,7 @@ Os nomes e schemas são descobertos no Studio instalado; a ponte não mantém um
 
 ### Cliente com MCP local por stdio
 
-Inicie a ponte e copie a configuração stdio da aba **Conectar ChatGPT**, em **Clientes locais e GPT Actions**. Um exemplo, adaptando os caminhos:
+Inicie a ponte e copie a configuração stdio da aba **Conectar IA**, em **Clientes locais e GPT Actions**. Um exemplo, adaptando os caminhos:
 
 ```json
 {
@@ -173,22 +173,35 @@ O adaptador stdio lê a credencial local e encaminha para o serviço já iniciad
 
 ### ChatGPT com MCP
 
-O caminho HTTP da versão 0.4.0 usa **OAuth com cadastro dinâmico de cliente (DCR)**. Você autoriza a conexão no seu computador; o ChatGPT recebe credenciais OAuth próprias e renováveis.
+O caminho HTTP da versão 0.5.0 usa **OAuth com cadastro dinâmico de cliente (DCR)**. Você autoriza a conexão no seu computador; o ChatGPT recebe credenciais OAuth próprias e renováveis.
 
 1. Inicie a ponte e encaminhe **toda a API da porta 4318** por uma origem HTTPS estável. O encaminhamento precisa atender `/mcp` e os endpoints de descoberta e OAuth. Mantenha a porta 4317 exclusivamente local.
-2. Em **Conectar ChatGPT**, salve a origem HTTPS em **URL pública da API**, por exemplo `https://sua-ponte.exemplo.com`, sem `/mcp`.
+2. Em **Conectar IA**, salve a origem HTTPS em **URL pública da API**, por exemplo `https://sua-ponte.exemplo.com`, sem `/mcp`.
 3. No ChatGPT, abra **Plugins → + → Add custom MCP server**. Informe `https://sua-ponte.exemplo.com/mcp`, escolha **OAuth** e deixe as credenciais de cliente vazias. Se houver escolha de registro, selecione **DCR**.
-4. Quando o fluxo de autorização abrir a página da Ponte, confira o código de verificação de oito caracteres. No painel local, abra **Conectar ChatGPT**, encontre o mesmo código, revise a solicitação e autorize.
+4. Quando o fluxo de autorização abrir a página da Ponte, confira o código de verificação de oito caracteres. No painel local, abra **Conectar IA**, encontre o mesmo código, revise a solicitação e autorize.
 5. Volte à página de autorização. Ela retorna automaticamente ao ChatGPT após a aprovação. Conclua **Create as a plugin**, instale o plugin e selecione-o com `@` em uma conversa.
 6. Peça: `Use a Ponte para consultar bridge_status e listar os projetos disponíveis.`
 
 O token de administração fica no painel local. Depois de autorizar a conexão, as chamadas seguem a política de aprovação escolhida, inclusive `automatic`. As permissões dos projetos e das ferramentas continuam valendo.
 
-O roteiro completo, testes de descoberta e solução de problemas estão em [docs/CHATGPT.md](docs/CHATGPT.md). A implementação pode ser verificada localmente; **a conexão com uma conta real do ChatGPT ainda precisa ser validada no seu ambiente**. A disponibilidade de MCP e as permissões para adicionar plugins dependem da conta e do workspace. A documentação oficial também prevê Secure MCP Tunnel; veja [outras opções de conexão](docs/INTEGRACOES.md).
+O roteiro completo, testes de descoberta e solução de problemas estão em [docs/CHATGPT.md](docs/CHATGPT.md). Chamadas reais de ferramentas do plugin foram confirmadas nesta instalação; a retomada por Events ainda não foi concluída. A disponibilidade de MCP e as permissões para adicionar plugins dependem da conta e do workspace. A documentação oficial também prevê Secure MCP Tunnel; veja [outras opções de conexão](docs/INTEGRACOES.md).
+
+### Claude, Claude Desktop e Claude Code
+
+Abra **Conectar IA → Claude** no painel. Para o conector remoto, use a mesma URL HTTPS `/mcp` e escolha OAuth com registro automático/DCR. Autorize o código exibido pela Ponte no painel local. O modo local do Claude Desktop usa o JSON `mcpServers` gerado com os caminhos reais da instalação e dispensa túnel.
+
+Para Claude Code, o painel gera o comando HTTP:
+
+```sh
+claude mcp add --transport http ponte https://sua-ponte.exemplo.com/mcp
+claude mcp login ponte
+```
+
+O guia [Conectar ao Claude](docs/CLAUDE.md) inclui configuração local, callbacks, aprovação e diagnóstico. Os fluxos OAuth foram exercitados com clientes de teste; a conexão em uma conta real do Claude precisa ser conferida depois da configuração.
 
 ### Continuar uma tarefa com MCP Events
 
-Use uma conversa **Work no navegador** ou **Work com Cloud selecionado no aplicativo desktop**, conforme a [documentação da OpenAI](https://developers.openai.com/plugins/build/mcp-events). Atualize as ferramentas e os eventos do plugin depois de instalar a 0.4.0. A disponibilidade também depende das permissões da conta e do workspace.
+Use uma conversa **Work no navegador** ou **Work com Cloud selecionado no aplicativo desktop**, conforme a [documentação da OpenAI](https://developers.openai.com/plugins/build/mcp-events). Atualize as ferramentas e os eventos do plugin depois de instalar a 0.5.0. A disponibilidade também depende das permissões da conta e do workspace.
 
 Quando uma chamada retornar um `jobId` ainda pendente, peça:
 
@@ -199,14 +212,16 @@ esse mesmo ID e continue esta tarefa a partir do resultado. Não reenvie
 a operação que criou o trabalho.
 ```
 
-O cliente cria a assinatura com `arguments.jobId` e fornece o callback e a chave de assinatura. A Ponte verifica o destino antes de ativar o aviso. Você pode acompanhar a inscrição, as tentativas e a entrega em **Conectar ChatGPT → Avisos de conclusão**, ou usar **Encerrar aviso**.
+O cliente cria a assinatura com `arguments.jobId` e fornece o callback e a chave de assinatura. A Ponte verifica o destino antes de ativar o aviso. Você pode acompanhar a inscrição, as tentativas e a entrega em **Conectar IA → Avisos de conclusão**, ou usar **Encerrar aviso**.
 
 A aprovação automática e os avisos são independentes: `automatic` libera ferramentas; MCP Events informa o cliente sobre uma execução específica. A retomada depende da assinatura, do suporte do cliente e das instruções da conversa. **Aviso recebido** confirma a entrega ao cliente, e não a conclusão das próximas ações do ChatGPT. O [guia completo](docs/MCP-EVENTS.md) explica o teste, a retenção de resultados e os limites.
+
+Na investigação da mensagem `Webhook connectors could not be validated before creation`, o ChatGPT descobriu o evento, mas a tentativa de criar a tarefa não enviou `events/subscribe` à Ponte. Esse erro não foi resolvido pela atualização do servidor: o bloqueio observado acontece antes da assinatura, e sua causa interna ainda não foi identificada. O painel da 0.5.0 passa a distinguir essas etapas sem mostrar callbacks ou segredos. Consulte os registros em [VALIDACAO.md](docs/VALIDACAO.md) e o roteiro de diagnóstico de [MCP Events](docs/MCP-EVENTS.md).
 
 ### GPT personalizado com Actions
 
 1. Encaminhe **somente a porta 4318** por um túnel HTTPS confiável, configurado por você. Mantenha o painel da porta 4317 local.
-2. Salve a origem HTTPS em **Conectar ChatGPT → URL pública da API**. Exemplo: `https://sua-ponte.exemplo.com`, sem `/mcp`.
+2. Salve a origem HTTPS em **Conectar IA → URL pública da API**. Exemplo: `https://sua-ponte.exemplo.com`, sem `/mcp`.
 3. Baixe o OpenAPI pelo painel ou gere-o:
 
 ```powershell
@@ -222,6 +237,8 @@ O projeto não abre túneis nem modifica sua conta automaticamente. O formato ex
 ## Usar outros MCPs
 
 Cadastre a configuração em **Conexões MCP**. Para MCPs stdio, instale o executável ou pacote no computador antes de conectá-lo. Para MCPs remotos, use a URL MCP completa.
+
+Para automatizar um navegador, consulte [Adicionar Playwright MCP](docs/PLAYWRIGHT.md), com os campos prontos para o painel e o teste de conexão no Windows.
 
 ```json
 {

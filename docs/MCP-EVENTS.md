@@ -1,4 +1,4 @@
-# MCP Events na Ponte MCP 0.4.0
+# MCP Events na Ponte MCP 0.5.0
 
 MCP Events permite que a Ponte avise uma conversa inscrita quando um trabalho termina. O ChatGPT pode então consultar o resultado e continuar o pedido do usuário. A Ponte implementa o evento **`ponte.job.completed`**, com um `jobId` obrigatório por assinatura, usando webhooks verificados e assinados.
 
@@ -6,8 +6,8 @@ O cliente precisa oferecer Events e criar a inscrição. Instalar a Ponte, autor
 
 ## Começar pelo ChatGPT
 
-1. Atualize a Ponte para **0.4.0**, preserve seu diretório de estado e reinicie o serviço. Os comandos estão no [README](../README.md#atualizar-uma-instalação-existente).
-2. Mantenha a API em execução, com a origem HTTPS correta em **Conectar ChatGPT → URL pública da API**. Preserve uma conexão OAuth já concluída quando a origem continuar a mesma.
+1. Atualize a Ponte para **0.5.0**, preserve seu diretório de estado e reinicie o serviço. Os comandos estão no [README](../README.md#atualizar-uma-instalação-existente).
+2. Mantenha a API em execução, com a origem HTTPS correta em **Conectar IA → URL pública da API**. Preserve uma conexão OAuth já concluída quando a origem continuar a mesma.
 3. No plugin da Ponte, use **Atualizar ferramentas** e atualize a descoberta de eventos disponível na interface. Confirme que **`ponte.job.completed`** aparece na página do plugin.
 4. Abra uma conversa Work compatível, com Cloud selecionado se estiver no desktop, e selecione a Ponte com `@`.
 5. Peça uma tarefa em um projeto autorizado. Quando uma chamada retornar um `jobId` pendente de aprovação ou de execução, peça para acompanhar aquele ID e continuar quando ele terminar.
@@ -28,7 +28,7 @@ Para um primeiro teste, use uma alteração pequena em um projeto de teste com a
 
 ## Conferir no painel
 
-Abra **Conectar ChatGPT → Avisos de conclusão**. Cada item corresponde a uma assinatura de um trabalho, com validade, situação, número de tentativas e eventual erro de entrega.
+Abra **Conectar IA → Avisos de conclusão**. Cada item corresponde a uma assinatura de um trabalho, com validade, situação, número de tentativas e eventual erro de entrega.
 
 | Estado | Significado |
 |---|---|
@@ -149,7 +149,7 @@ Referências normativas: [metadados](https://modelcontextprotocol.io/specificati
   "_meta": {
     "io.modelcontextprotocol/serverInfo": {
       "name": "ponte-mcp",
-      "version": "0.4.0"
+      "version": "0.5.0"
     }
   }
 }
@@ -319,11 +319,35 @@ Trabalhos sem assinatura mantêm a retenção em memória da Ponte. O arquivo de
 
 ## Diagnóstico
 
+### Identificar em qual etapa o acompanhamento parou
+
+Em **Conectar IA → Avisos de conclusão**, o diagnóstico mostra as solicitações observadas **desde esta inicialização da Ponte**. Esses contadores ficam somente na memória e são zerados ao reiniciar; as assinaturas e os resultados retidos continuam seguindo a persistência descrita acima.
+
+| Campo em `diagnostics` | Significado |
+|---|---|
+| `since` | Instante em que esta instância do serviço de Events começou |
+| `eventsListRequests` | Solicitações autenticadas de `events/list` recebidas pelo adaptador moderno |
+| `subscribeRequests` | Solicitações autenticadas de `events/subscribe` recebidas, inclusive as recusadas por envelope, metadados, cabeçalhos ou parâmetros inválidos |
+| `acceptedSubscriptions` / `rejectedSubscriptions` | Solicitações de inscrição concluídas com sucesso ou erro; as aceitas incluem renovações, não apenas novas assinaturas |
+| `lastSubscribeAt` / `lastSubscribeError` | Horário da solicitação de inscrição mais recente e, se recusada, seu código e eventual categoria segura de erro |
+| `callbackVerificationAttempts` | Desafios de verificação realmente iniciados; reutilizar uma verificação em cache não aumenta este contador |
+| `callbackVerificationSucceeded` / `callbackVerificationFailed` | Verificações concluídas com sucesso ou erro |
+| `lastCallbackVerificationAt` / `lastCallbackVerificationOutcome` / `lastCallbackVerificationError` | Horário, resultado e eventual erro categorizado da última verificação |
+
+Uma solicitação ou verificação em andamento já entra no total de recebidas/iniciadas; a contagem de sucesso ou erro só muda quando ela termina. O horário da solicitação mais recente continua ligado ao seu próprio resultado, mesmo se uma solicitação anterior terminar depois. `lastSubscribeError` é removido quando uma nova solicitação começa; um sucesso também não conserva o erro da tentativa anterior.
+
+O registro contém somente contagens, horários e erros na forma `{ "code": -32015, "reason": "challenge_failed" }`. A categoria `reason` pertence a uma lista fechada. Não são registrados no diagnóstico URL de callback, segredo, cabeçalhos, argumentos, `jobId`, identidade da conexão, corpo da resposta nem mensagem livre de erro. Os campos da última tentativa são omitidos enquanto não há informação correspondente. Falhas que ocorrem antes do adaptador autenticado, como JSON ilegível ou autenticação recusada, não entram nesses contadores; consulte o status HTTP nesse caso.
+
+Se a descoberta tiver sido recebida, mas `subscribeRequests` continuar em zero, nenhuma nova inscrição chegou ao adaptador desde a inicialização indicada. Isso não informa por que o cliente parou, nem invalida uma assinatura restaurada do disco. Se houver uma recusa, use o código/categoria para localizar a etapa. Por exemplo, `-32602` indica parâmetros ou metadados inválidos, `-32020` indica divergência de cabeçalhos, e `-32015` com `challenge_failed` indica que a verificação de callback não confirmou o desafio.
+
+Na verificação integrada de 22/10/2026, o ChatGPT descobriu a Ponte e seu evento, e a captura de requisições registrou `server/discover` e `events/list` com HTTP 200. A criação nativa do acompanhamento retornou **“Webhook connectors could not be validated before creation.”**, sem criar uma tarefa. A janela de captura examinada após a tentativa não registrou `events/subscribe`. Essa evidência localiza a interrupção antes de uma inscrição recebida pela Ponte nessa janela; ela não identifica a causa interna da validação do cliente. Não há, nesse resultado, evidência de falha do desafio de callback, da assinatura HMAC ou das restrições de endereço. O diagnóstico adicionado torna essa fronteira visível em novas tentativas; ele não altera o protocolo nem comprova que o erro de criação foi resolvido.
+
 | Sintoma | Conferência útil |
 |---|---|
-| O plugin não lista `ponte.job.completed` | Confirme a 0.4.0, a mesma origem HTTPS e a atualização das ferramentas/eventos; o cliente precisa descobrir o protocolo `2026-07-28` |
+| O plugin não lista `ponte.job.completed` | Confirme a 0.5.0, a mesma origem HTTPS e a atualização das ferramentas/eventos; o cliente precisa descobrir o protocolo `2026-07-28` |
 | Ferramentas funcionam, mas Events não aparece | Confirme Work no navegador ou Work com Cloud no desktop, além das permissões da conta/workspace |
 | O painel mostra zero avisos | Ainda não há assinatura ativa; aprovação automática e autorização OAuth não criam uma inscrição |
+| A criação do acompanhamento informa que os conectores de webhook não puderam ser validados | Confira `subscribeRequests` desde a inicialização e a captura HTTP da tentativa. Sem uma chamada recebida, a etapa de verificação de callback da Ponte ainda não foi alcançada; esse erro genérico não identifica sozinho a causa |
 | Assinatura recusada por trabalho indisponível | Use o `jobId` retornado pela mesma autorização que está assinando; um trabalho de outra conexão ou já expurgado não pode ser acompanhado |
 | Erro `-32015` | Leia `data.reason`; a Ponte exige callback HTTPS público válido, segredo válido e resposta correta ao desafio |
 | Erro `-32025` com `subscription_busy` | Aguarde a inscrição ou renovação em andamento e tente inscrever novamente; não repita a ferramenta que criou o trabalho |

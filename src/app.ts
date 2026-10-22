@@ -62,7 +62,7 @@ export class Application {
   getTools(): ToolDefinition[] { return [...createLocalTools(() => this.store.config, this.store.stateDir), ...this.hub.tools()]; }
   publicStatus() {
     return {
-      name: 'Ponte MCP', version: '0.4.0', paused: this.jobs.paused, approvalMode: this.store.config.approvalMode,
+      name: 'Ponte MCP', version: '0.5.0', paused: this.jobs.paused, approvalMode: this.store.config.approvalMode,
       projects: this.store.config.projects.map(({ id, name, allowWrite, allowExec }) => ({ id, name, allowWrite, allowExec })),
       servers: this.hub.statuses(), toolCount: this.getTools().length,
       events: { supported: Boolean(this.events), protocolVersion: '2026-07-28', event: 'ponte.job.completed', subscriptionRequired: true },
@@ -75,13 +75,14 @@ export class Application {
     const tools = this.getTools();
     const counts = (status: string) => jobs.filter(job => job.status === status).length;
     return {
-      name: 'Ponte MCP', version: '0.4.0', paused: this.jobs.paused, startedAt: this.startedAt,
+      name: 'Ponte MCP', version: '0.5.0', paused: this.jobs.paused, startedAt: this.startedAt,
       config, servers: this.hub.statuses(),
       jobs: jobs.slice(0, 50).map(({ result: _result, preview: _preview, arguments: _arguments, ...job }) => ({ ...job, arguments: {} })),
       stats: { tools: tools.length, projects: config.projects.length, pending: counts('pending_approval'), running: counts('running') + counts('queued'), succeeded: counts('succeeded'), failed: counts('failed') },
       ...(this.audit.error ? { auditError: this.audit.error } : {}),
       events: this.events?.snapshot(),
       connection: {
+        platform: process.platform,
         mcpUrl: (config.publicUrl ?? this.apiUrl).replace(/\/$/, '') + '/mcp', apiUrl: config.publicUrl ?? this.apiUrl,
         openapiUrl: (config.publicUrl ?? this.apiUrl).replace(/\/$/, '') + '/openapi.json',
         stdioCommand: process.execPath, stdioArgs: [path.join(projectRoot, 'dist', 'cli.js'), 'stdio', '--state-dir', this.store.stateDir],

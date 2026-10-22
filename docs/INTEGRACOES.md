@@ -1,6 +1,6 @@
 # Conexão com chats e outros servidores
 
-Ponte MCP **0.4.0**. Documentação do ChatGPT consultada em **22 de outubro de 2026**. As telas e permissões dos fornecedores podem mudar. O roteiro da conexão nativa está em [CHATGPT.md](CHATGPT.md); os resultados efetivamente observados na entrega estão em [VALIDACAO.md](VALIDACAO.md).
+Ponte MCP **0.5.0**. Documentação do ChatGPT e do Claude consultada em **22 de outubro de 2026**. As telas e permissões dos fornecedores podem mudar. Os roteiros de conexão estão em [CHATGPT.md](CHATGPT.md) e [CLAUDE.md](CLAUDE.md); os resultados efetivamente observados na entrega estão em [VALIDACAO.md](VALIDACAO.md).
 
 ## Escolha a entrada compatível com seu cliente
 
@@ -8,7 +8,9 @@ Ponte MCP **0.4.0**. Documentação do ChatGPT consultada em **22 de outubro de 
 |---|---|---|
 | ChatGPT com MCP nativo | `https://SUA_ORIGEM/mcp`, OAuth com DCR | Origem HTTPS encaminhando toda a API, `publicUrl` configurada e aprovação local |
 | ChatGPT com MCP Events | Mesma entrada `/mcp`, protocolo `2026-07-28` | Work no navegador ou Work + Cloud no desktop, evento descoberto e assinatura de um `jobId` pelo cliente |
-| Cliente desktop com MCP stdio | `node dist/cli.js stdio --state-dir CAMINHO` | Ponte iniciada no mesmo computador |
+| Claude remoto | `https://SUA_ORIGEM/mcp`, OAuth público com DCR | Registro automático, origem HTTPS e aprovação local |
+| Claude Code | HTTP com OAuth ou stdio | Callback HTTP loopback aceita porta temporária; configure um transporte por entrada |
+| Claude Desktop local ou outro cliente com MCP stdio | `node dist/cli.js stdio --state-dir CAMINHO` | Ponte iniciada no mesmo computador |
 | Cliente MCP HTTP com Bearer configurável | `http://127.0.0.1:4318/mcp` | Token API; remoto exige encaminhamento HTTPS |
 | ChatGPT com Secure MCP Tunnel disponível | Túnel oficial para uma entrada MCP compatível | Permissões, associação ao workspace e configuração própria do cliente de túnel |
 | GPT personalizado com Actions | REST em origem HTTPS | OpenAPI e autenticação API Key/Bearer |
@@ -18,9 +20,9 @@ Ponte MCP **0.4.0**. Documentação do ChatGPT consultada em **22 de outubro de 
 
 A fachada `/mcp` implementa authorization code com PKCE `S256`, cadastro dinâmico de clientes (DCR), descoberta de autorização, renovação e revogação. O scope usado é `ponte:tools`. As ferramentas anunciam essa política em `securitySchemes` e no espelho `_meta.securitySchemes`.
 
-Configure a origem HTTPS da API em **Conectar ChatGPT → URL pública da API**. No ChatGPT, abra **Plugins → + → Add custom MCP server**, informe a URL completa terminada em `/mcp`, escolha **OAuth** e deixe as credenciais de cliente vazias. Se houver escolha entre métodos de registro, use **DCR**. O ChatGPT registra seu próprio cliente e inicia a autorização.
+Configure a origem HTTPS da API em **Conectar IA → URL pública da API**. No ChatGPT, abra **Plugins → + → Add custom MCP server**, informe a URL completa terminada em `/mcp`, escolha **OAuth** e deixe as credenciais de cliente vazias. Se houver escolha entre métodos de registro, use **DCR**. O ChatGPT registra seu próprio cliente e inicia a autorização.
 
-A página de consentimento mostra um código de oito caracteres. No painel local, abra **Conectar ChatGPT**, compare o código, revise o pedido e autorize. A página retorna automaticamente ao ChatGPT; conclua a criação, instale o plugin e selecione-o com `@` em uma conversa. As etapas detalhadas e o primeiro teste estão em [CHATGPT.md](CHATGPT.md).
+A página de consentimento mostra um código de oito caracteres. No painel local, abra **Conectar IA**, compare o código, revise o pedido e autorize. A página retorna automaticamente ao ChatGPT; conclua a criação, instale o plugin e selecione-o com `@` em uma conversa. As etapas detalhadas e o primeiro teste estão em [CHATGPT.md](CHATGPT.md).
 
 ### Contrato HTTP
 
@@ -43,7 +45,7 @@ Os caminhos abaixo pertencem à API da porta 4318. O túnel precisa encaminhar t
 
 O `issuer` é exatamente a origem HTTPS configurada, sem barra final. O identificador do recurso é essa origem acrescida de `/mcp`. O mesmo recurso acompanha a autorização e a troca de tokens; credenciais de outro recurso são rejeitadas.
 
-A Ponte anuncia `authorization_response_iss_parameter_supported: true` e inclui `iss` nos redirects OAuth de sucesso e erro. Isso permite ao ChatGPT usar o callback estável `https://chatgpt.com/connector_platform_oauth_redirect`. Os redirects precisam coincidir com os valores registrados pelo cliente; não configure curingas.
+A Ponte anuncia `authorization_response_iss_parameter_supported: true` e inclui `iss` nos redirects OAuth de sucesso e erro. Isso permite ao ChatGPT usar o callback estável `https://chatgpt.com/connector_platform_oauth_redirect`. Callbacks HTTPS precisam coincidir exatamente com o registro. Para clientes nativos como Claude Code, callbacks HTTP de loopback aceitam apenas variação da porta: host, caminho e query devem coincidir literalmente. A troca do código exige o URI completo efetivamente aprovado. Não configure curingas.
 
 O registro aceita `none` para cliente público e `client_secret_post` para cliente com segredo. `client_secret_basic`, CIMD e `private_key_jwt` não são anunciados como métodos implementados pela Ponte. O cliente DCR e seu segredo persistem, sem expiração automática do segredo, enquanto tokens têm validade e revogação próprias.
 
@@ -57,7 +59,7 @@ Pedidos de autorização aguardam revisão por até 10 minutos, códigos OAuth v
 
 Use uma origem estável. Alterar `publicUrl` muda os identificadores de emissor e recurso; configure novamente a conexão no ChatGPT para o novo endereço. Copiar apenas os arquivos do programa para outra pasta não transfere o estado OAuth: preserve o diretório `.ponte` ou passe seu caminho absoluto em `--state-dir`.
 
-Ao atualizar para 0.4.0, preserve `.ponte` e mantenha uma conexão OAuth já concluída. No plugin da Ponte, atualize as ferramentas e a descoberta de eventos; confirme `ponte.job.completed` na página do plugin. Atualizar o catálogo não exige recriar uma conexão que funciona. O procedimento completo de atualização está em [CHATGPT.md](CHATGPT.md).
+Ao atualizar para 0.5.0, preserve `.ponte` e mantenha uma conexão OAuth já concluída. No plugin da Ponte, atualize as ferramentas e a descoberta de eventos; confirme `ponte.job.completed` na página do plugin. Atualizar o catálogo não exige recriar uma conexão que funciona. O procedimento completo de atualização está em [CHATGPT.md](CHATGPT.md).
 
 Fontes oficiais:
 
@@ -65,6 +67,10 @@ Fontes oficiais:
 - [OAuth, registro de clientes e identificação do emissor](https://developers.openai.com/plugins/build/auth)
 - [Metadados e erros de ferramentas](https://developers.openai.com/plugins/reference)
 - [Conectar e testar uma integração MCP](https://developers.openai.com/plugins/deploy/connect-chatgpt)
+
+## Claude
+
+O painel **Conectar IA → Claude** oferece o conector remoto, o JSON stdio do Claude Desktop e os comandos do Claude Code. O OAuth remoto usa DCR público com PKCE S256 e o mesmo consentimento local. O adaptador stdio lê as credenciais locais e usa o serviço já iniciado. Siga [CLAUDE.md](CLAUDE.md) para escolher e validar o caminho.
 
 ## Aprovação e espera por resultados MCP
 
@@ -84,11 +90,11 @@ Para aguardar o mesmo trabalho durante o turno ativo, chame `bridge_job`:
 
 ### MCP Events
 
-A Ponte 0.4.0 implementa o perfil de webhooks e verificação de [MCP Events da OpenAI](https://developers.openai.com/plugins/build/mcp-events), usando o protocolo `2026-07-28`. A disponibilidade documentada é **Work no navegador** ou **Work com Cloud selecionado no desktop**, sujeita à conta e ao workspace. Não se aplica automaticamente a toda conversa que tenha ferramentas MCP.
+A Ponte 0.5.0 implementa o perfil de webhooks e verificação de [MCP Events da OpenAI](https://developers.openai.com/plugins/build/mcp-events), usando o protocolo `2026-07-28`. A disponibilidade documentada é **Work no navegador** ou **Work com Cloud selecionado no desktop**, sujeita à conta e ao workspace. Não se aplica automaticamente a toda conversa que tenha ferramentas MCP.
 
 O evento `ponte.job.completed` exige o `jobId` de um trabalho da mesma conexão. O cliente cria a assinatura e fornece callback e segredo; a Ponte verifica o destino e envia um evento assinado quando aquele trabalho atinge estado final. Ao recebê-lo, o chat consulta `bridge_job` e continua conforme as instruções dadas pelo usuário. Uma assinatura criada logo após a conclusão também recebe o estado final atual; não há reprodução de histórico por cursor.
 
-Atualize as ferramentas e eventos do plugin e confira a inscrição em **Conectar ChatGPT → Avisos de conclusão**. A opção **Encerrar aviso** cancela a inscrição, sem cancelar o trabalho. Callbacks e segredos não aparecem no painel. O modo automático de aprovação e Events podem ser usados juntos, mas um não ativa o outro.
+Atualize as ferramentas e eventos do plugin e confira a inscrição em **Conectar IA → Avisos de conclusão**. A opção **Encerrar aviso** cancela a inscrição, sem cancelar o trabalho. Callbacks e segredos não aparecem no painel. O modo automático de aprovação e Events podem ser usados juntos, mas um não ativa o outro.
 
 As assinaturas, tentativas de entrega e resultados dos trabalhos acompanhados persistem em estado privado, com prazo e capacidade limitados. Nenhuma operação é repetida ao reiniciar a Ponte. O status de entrega confirma o recebimento do aviso; a retomada exige suporte do cliente. Há exemplos, referência do protocolo e diagnóstico em [MCP-EVENTS.md](MCP-EVENTS.md).
 

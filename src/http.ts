@@ -210,7 +210,7 @@ export function createHttpApps(runtime: Application): { admin: Express; api: Exp
     const principal = typeof grantId === 'string' ? 'oauth:' + grantId : runtime.apiPrincipal;
     const getTools = () => publicTools(runtime, Boolean(runtime.store.config.publicUrl));
     const call = (name: string, args: Record<string, unknown>) => callGateway(runtime, name, args, principal);
-    if (await handleModernMcp(req, res, { getTools, call, events: runtime.events, principal, version: '0.4.0', instructions: SERVER_INSTRUCTIONS })) return;
+    if (await handleModernMcp(req, res, { getTools, call, events: runtime.events, principal, version: '0.5.0', instructions: SERVER_INSTRUCTIONS })) return;
     const server = makeMcpServer(getTools, call);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     try { await server.connect(transport); await transport.handleRequest(req, res, req.body); }

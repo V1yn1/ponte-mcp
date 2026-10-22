@@ -1,6 +1,42 @@
-# Validação da entrega — Ponte MCP 0.4.0
+# Validação da entrega — Ponte MCP 0.5.0
 
-## MCP Events e continuidade por trabalho — 0.4.0
+## Claude, diagnóstico de Events e identidade visual — 0.5.0
+
+Verificação em **22 de outubro de 2026**, com Node.js 24.19.0 e npm 11.9.0 em Linux, mais uma conferência restrita de argumentos no PowerShell da instalação Windows conectada. Os testes do servidor usam estado, portas e credenciais temporários.
+
+| Verificação | Resultado observado |
+|---|---|
+| `npm run verify` | TypeScript, **202 testes**, zero falhas, zero testes ignorados e build concluído |
+| `npm run smoke` | Aplicação compilada concluiu OAuth, catálogo e chamadas MCP, aprovação manual/automática, descoberta moderna, inscrição, desafio, entrega assinada e encerramento com receptor controlado |
+| OAuth | **22 testes de provider e 8 HTTP**; incluem callback hospedado do Claude, DCR público, PKCE, callback local com porta temporária, troca de código vinculada ao endereço aprovado, renovação e regressão do ChatGPT |
+| Diagnóstico de Events | **5 testes novos** cobrem descoberta sem inscrição, contadores antes da validação de parâmetros, reinício, cache de verificação, falha, ausência de segredos, cópias isoladas e ordenação de requisições concorrentes |
+| Comando Claude Code | **4 testes novos**, incluindo execução do comando gerado com um `claude` de teste em shell POSIX, preservação de apóstrofos e metacaracteres e recusa de controles |
+| PowerShell real | Três URLs com caracteres especiais chegaram como o mesmo argumento literal à função de teste; processo terminou com código 0 e sem saída inesperada. Nenhum Claude foi instalado ou acionado por esse teste |
+| Arquivos públicos compilados | Logo respondeu HTTP 200 e `image/png` no painel e no consentimento, com bytes iguais ao asset; helper do comando respondeu 200 |
+| JavaScript e diff | Sintaxe de `app.js`, `client-commands.js` e `consent.js`, mais `git diff --check`, passaram |
+| Revisão independente | Dois achados corrigidos e rechecados: URL sem cotação no comando copiado e indicação incorreta durante a verificação do callback |
+
+O callback nativo de Claude Code anteriormente recebia 400 quando usava uma porta local diferente da registrada. A correspondência agora permite apenas essa variação, preservando host, caminho e query literais. O preflight também impede que o SDK envie redirects de erro para endereços locais com fragmento, credenciais embutidas ou caminho normalizado diferente. A troca do código continua vinculada ao URI completo aprovado, incluindo a porta.
+
+### Resultado da conexão real com ChatGPT
+
+A Ponte conectada respondeu **0.4.0**, com aprovação automática, dois projetos e o upstream Roblox conectado. Chamadas de ferramentas funcionaram. A descoberta nativa apresentou o evento `ponte.job.completed` e seu schema com `jobId`.
+
+A criação nativa de uma tarefa de teste retornou **`Webhook connectors could not be validated before creation.`**, sem identificador de automação. Uma consulta confirmou ausência de tarefa criada. Uma nova tentativa com outro trabalho válido, depois de atualizar a descoberta, retornou o mesmo erro.
+
+A captura do ngrok examinada antes e depois da tentativa continha `server/discover`, `events/list` e `tools/list` com HTTP 200, e **nenhum `events/subscribe`** nessa janela. Isso localiza a interrupção antes de a Ponte receber a assinatura observada; não identifica a causa interna da validação do cliente. Não há evidência de que o callback, o desafio ou a verificação HMAC tenham sido alcançados. **O erro nativo de criação da automação continua pendente.** O diagnóstico da 0.5.0 torna essas etapas visíveis; não representa uma correção comprovada desse bloqueio externo.
+
+### Painel e logotipo
+
+Foram removidas as rotações que inclinavam os cards “Chat” e “Ferramentas” e corrigido o recuo dos parágrafos do card de eventos. A nova paleta usa azul cobalto, grafite e fundos claros. O logotipo PNG tem 1254 × 1254 pixels e canal alfa transparente, e está integrado ao painel e ao consentimento. O histórico da criação está em [IDENTIDADE-VISUAL.md](IDENTIDADE-VISUAL.md).
+
+A auditoria estática conferiu IDs únicos, referências ARIA, scripts externos, assets existentes, regras responsivas e ausência das rotações. A revisão executou o renderer de diagnóstico com estados sem tentativa, em andamento, sucesso e falha. **Não houve inspeção renderizada em navegador nesta entrega:** o navegador local não estava disponível nesta sessão; o navegador remoto não alcançou a instância local e a abertura de arquivo foi bloqueada por sua política. Nenhum caminho alternativo foi usado para contornar o bloqueio. Essa limitação impede afirmar validação visual por screenshot.
+
+### Limites restantes
+
+A suíte e o smoke não comprovam uma conexão em conta real do Claude nem a retomada de conversa pelo ChatGPT. A instalação Windows conectada ainda precisa receber a 0.5.0 e reiniciar para carregar os novos recursos. O teste PowerShell verifica somente a preservação dos argumentos no comando copiado; não comprova instalação ou autenticação do Claude Code. Configure o cliente conforme [CLAUDE.md](CLAUDE.md) e confira `bridge_status`/`local_projects` para validar a conexão real.
+
+## Histórico: MCP Events e continuidade por trabalho — 0.4.0
 
 Verificação em 22 de outubro de 2026, com Node.js 24.19.0 e npm 11.9.0 em Linux. As integrações usam diretórios, credenciais, portas e um receptor de webhook controlados, separados da instalação do usuário. A versão 0.4.0 inclui também a aprovação automática e a espera de resultados da 0.3.0.
 

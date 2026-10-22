@@ -15,7 +15,7 @@
     connections: { title: 'Conexões MCP', eyebrow: 'FERRAMENTAS, CONECTADAS', description: 'Seus servidores MCP, reunidos em uma única ponte.' },
     tools: { title: 'Ferramentas', eyebrow: 'EXPLORE E EXPERIMENTE', description: 'Inspecione parâmetros e envie solicitações com contexto.' },
     jobs: { title: 'Execuções', eyebrow: 'CADA AÇÃO, VISÍVEL', description: 'Revise solicitações e acompanhe o resultado de cada execução.' },
-    connect: { title: 'Conectar ChatGPT', eyebrow: 'SEU CHAT, SUAS FERRAMENTAS', description: 'Configure o OAuth, revise conexões e controle o acesso ao seu ambiente.' }
+    connect: { title: 'Conectar IA', eyebrow: 'SEU CHAT, SUAS FERRAMENTAS', description: 'Conecte ChatGPT ou Claude, revise autorizações e controle o acesso ao seu ambiente.' }
   };
   const statuses = {
     pending_approval: ['Aguardando aprovação', 'warning', 'clock'],
@@ -45,7 +45,7 @@
     approvalModeSaving: false, approvalModeRevision: 0,
     serverEditing: false, confirmResolve: null, navOpen: false, lastSync: null,
     pendingToken: '', sessionGeneration: 0, serverOriginalUrl: '',
-    oauthRequestId: null, oauthRequestSnapshot: '', oauthActions: new Set(), eventActions: new Set()
+    oauthRequestId: null, oauthRequestSnapshot: '', oauthActions: new Set(), eventActions: new Set(), connectionClient: 'chatgpt'
   };
 
   function badge(label, variant = 'neutral', iconName) {
@@ -323,7 +323,7 @@
     const state = app.state;
     if (!state) return;
     updateConnectionStatus();
-    $('#sidebar-version').textContent = `Ponte MCP · v${state.version || '0.4.0'}`;
+    $('#sidebar-version').textContent = `Ponte MCP · v${state.version || '0.5.0'}`;
     $('#nav-project-count').textContent = number(state.config?.projects?.length);
     $('#nav-pending-count').textContent = number(state.stats?.pending);
     $('#nav-pending-count').hidden = !state.stats?.pending;
@@ -519,6 +519,15 @@
     replaceMarkup($('#connection-endpoints'), [['API / Actions', 'apiUrl'], ['OpenAPI', 'openapiUrl']].map(([label, key]) => `<div class="endpoint-row"><div><span>${label}</span><code>${escape(connection[key] || 'Indisponível')}</code></div><button class="icon-button" data-action="copy-endpoint" data-key="${key}" aria-label="Copiar endpoint ${label}" ${connection[key] ? '' : 'disabled'}>${icon('copy')}</button></div>`).join(''));
     $('#chatgpt-mcp-url').textContent = enabled ? oauth.resource : 'Configure a URL pública primeiro';
     $('#copy-chatgpt-url').disabled = !enabled;
+    $('#claude-mcp-url').textContent = enabled ? oauth.resource : 'Configure a URL pública primeiro';
+    $('#copy-claude-url').disabled = !enabled;
+    $('#claude-oauth-status').textContent = enabled ? 'OAuth disponível' : 'Configure a URL';
+    $('#claude-oauth-status').className = `badge badge-${enabled ? 'success' : 'neutral'}`;
+    replaceMarkup($('#claude-setup-note'), `${icon(enabled ? 'check' : 'info')}<span>${enabled ? 'A URL está configurada. Adicione o conector no Claude para iniciar a autorização.' : 'Salve a URL pública HTTPS para habilitar o conector remoto.'}</span>`);
+    const claudeCommand = enabled ? window.PonteClientCommands.claudeHttpCommand(oauth.resource, connection.platform) : null;
+    $('#claude-code-command').textContent = claudeCommand?.command || 'Configure a URL pública para gerar o comando.';
+    $('#claude-code-shell').textContent = claudeCommand ? `Comando · ${claudeCommand.shell}` : 'Comando de conexão';
+    $('#copy-claude-code').disabled = !enabled;
     $('#oauth-status').textContent = enabled ? 'OAuth disponível' : 'Configure a URL';
     $('#oauth-status').className = `badge badge-${enabled ? 'success' : 'neutral'}`;
     replaceMarkup($('#oauth-setup-note'), `${icon(enabled ? 'check' : 'info')}<span>${enabled ? 'A URL está configurada. Adicione o servidor no ChatGPT para iniciar a autorização.' : 'Salve a URL pública HTTPS para habilitar o OAuth.'}</span>`);
@@ -550,10 +559,58 @@
     $('#events-status').className = `badge badge-${events.enabled ? 'success' : 'neutral'}`;
     $('#events-error').hidden = !events.error;
     $('#events-error').textContent = events.error ? String(events.error) : '';
+    renderEventDiagnostics(events.diagnostics);
     replaceMarkup($('#events-list'), subscriptions.length ? subscriptions.map(item => {
       const [label, variant] = labels[item.status] || ['Acompanhando', 'neutral'];
       return `<article class="oauth-grant"><span class="soft-icon">${icon('activity')}</span><div class="oauth-grant-main"><h3>Execução <code>${escape(String(item.jobId || '').slice(0, 12))}</code></h3><p>Válido até ${escape(dateLabel(item.refreshBefore, true))}</p><div>${badge(label, variant)}${item.attempts ? badge(`${number(item.attempts)} ${item.attempts === 1 ? 'tentativa' : 'tentativas'}`, 'neutral') : ''}</div>${item.lastError ? `<p class="event-delivery-error">${escape(item.lastError)}</p>` : ''}</div><button class="button button-secondary button-small" data-action="cancel-event" data-id="${escape(item.id)}" ${app.eventActions.has(item.id) || app.offline ? 'disabled' : ''}>Encerrar aviso</button></article>`;
     }).join('') : emptyState('chat', 'Nenhuma execução acompanhada.', 'As inscrições criadas pelo ChatGPT aparecerão aqui. Cada inscrição acompanha uma execução específica.', '', true));
+  }
+
+  function renderEventDiagnostics(diagnostics) {
+    const target = $('#event-diagnostics');
+    target.hidden = !diagnostics || typeof diagnostics !== 'object';
+    if (target.hidden) return;
+    const received = Math.max(0, Number(diagnostics.subscribeRequests) || 0);
+    const accepted = Math.max(0, Number(diagnostics.acceptedSubscriptions) || 0);
+    const rejected = Math.max(0, Number(diagnostics.rejectedSubscriptions) || 0);
+    const description = received === 0
+      ? 'Nenhuma solicitação de assinatura recebida desde esta inicialização.'
+      : `${number(received)} ${received === 1 ? 'solicitação de assinatura recebida' : 'solicitações de assinatura recebidas'}. As contagens também incluem renovações de avisos existentes.`;
+    const lastVerification = diagnostics.lastCallbackVerificationOutcome;
+    const verification = lastVerification === 'succeeded'
+      ? 'Última verificação do callback: concluída. O cliente confirmou o endereço para receber avisos.'
+      : lastVerification === 'failed'
+        ? 'Última verificação do callback: falhou. A Ponte não conseguiu confirmar o endereço informado pelo cliente.'
+        : Number(diagnostics.callbackVerificationAttempts) > 0 || diagnostics.lastCallbackVerificationAt
+          ? 'Verificação do callback em andamento…'
+          : 'Nenhuma verificação de callback registrada desde esta inicialização.';
+    const reasons = {
+      invalid_url: 'O endereço de retorno informado pelo cliente é inválido.',
+      blocked_address: 'O endereço de retorno foi bloqueado pela política de rede da Ponte.',
+      invalid_secret: 'O segredo de verificação enviado pelo cliente tem formato inválido.',
+      invalid_headers: 'Os cabeçalhos de retorno enviados pelo cliente são inválidos.',
+      payload_too_large: 'O conteúdo da solicitação ultrapassou o limite permitido.',
+      response_too_large: 'A resposta do cliente ultrapassou o limite permitido.',
+      dns_error: 'Não foi possível resolver o endereço de retorno do cliente.',
+      tls_error: 'Não foi possível estabelecer uma conexão HTTPS válida com o cliente.',
+      timeout: 'O cliente não respondeu à verificação dentro do prazo.',
+      aborted: 'A verificação de retorno foi interrompida.',
+      network_error: 'Ocorreu uma falha de rede ao contatar o cliente.',
+      challenge_failed: 'O cliente não confirmou o desafio de verificação.',
+      http_redirect: 'O endereço de retorno respondeu com um redirecionamento.',
+      http_4xx: 'O endereço de retorno recusou a requisição da Ponte.',
+      http_5xx: 'O serviço de retorno do cliente apresentou um erro.',
+      http_error: 'O endereço de retorno respondeu com um erro HTTP.',
+      authorization_required: 'O cliente precisa se autenticar para solicitar avisos.',
+      storage_limit: 'O armazenamento local de avisos atingiu o limite.',
+      subscription_limit: 'O limite de avisos ativos foi atingido.',
+      subscription_busy: 'A inscrição está sendo processada. O cliente pode tentar novamente.'
+    };
+    const error = diagnostics.lastSubscribeError || diagnostics.lastCallbackVerificationError;
+    const errorDescription = error
+      ? reasons[error.reason] || 'A Ponte registrou uma falha na solicitação de avisos.' : '';
+    const errorCode = Number.isInteger(error?.code) ? ` Código ${error.code}.` : '';
+    replaceMarkup(target, `<div class="event-diagnostics-heading"><h3>Diagnóstico de eventos</h3><span>Desde ${escape(dateLabel(diagnostics.since, true))}</span></div><dl class="event-diagnostic-metrics"><div><dt>Solicitações recebidas</dt><dd>${number(received)}</dd></div><div><dt>Aceitas</dt><dd>${number(accepted)}</dd></div><div><dt>Recusadas</dt><dd>${number(rejected)}</dd></div></dl><p>${escape(description)}</p><p>${escape(verification)}</p>${errorDescription ? `<p class="event-diagnostic-error">Última falha registrada: ${escape(errorDescription + errorCode)}</p>` : ''}`);
   }
 
   async function cancelEvent(id) {
@@ -642,7 +699,7 @@
       await request(`/admin/oauth/requests/${encodeURIComponent(id)}/${action}`, { method: 'POST', body: {} });
       if (generation !== app.sessionGeneration) return;
       if (app.oauthRequestId === id) $('#oauth-dialog').close();
-      toast(action === 'approve' ? 'Conexão autorizada. Volte à página de autorização para concluir no ChatGPT.' : 'Solicitação de conexão recusada.');
+      toast(action === 'approve' ? 'Conexão autorizada. Volte à página de autorização para concluir no seu cliente.' : 'Solicitação de conexão recusada.');
       await refresh();
     } catch (error) {
       if (generation === app.sessionGeneration) handleError(error, '#oauth-review-error');
@@ -955,6 +1012,19 @@
     return Object.hasOwn(views, route) ? route : 'overview';
   }
 
+  function selectConnectionClient(client, focus = false) {
+    if (!['chatgpt', 'claude'].includes(client)) return;
+    app.connectionClient = client;
+    $$('.client-tab').forEach(tab => {
+      const selected = tab.dataset.client === client;
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      const panel = document.getElementById(tab.getAttribute('aria-controls'));
+      if (panel) panel.hidden = !selected;
+      if (selected && focus) tab.focus();
+    });
+  }
+
   function navigate(view, focus = true) {
     if (!Object.hasOwn(views, view)) view = 'overview';
     app.view = view;
@@ -1021,9 +1091,12 @@
     else if (['approve-oauth', 'reject-oauth'].includes(action)) await oauthRequestAction(action.split('-')[0], id, button);
     else if (action === 'revoke-oauth') await revokeOAuthGrant(id);
     else if (action === 'cancel-event') await cancelEvent(id);
+    else if (action === 'select-client') selectConnectionClient(button.dataset.client);
     else if (action === 'copy-stdio') await copyText($('#stdio-config').textContent);
     else if (action === 'copy-endpoint') await copyText(app.state?.connection?.[button.dataset.key]);
     else if (action === 'copy-chatgpt-url') await copyText(app.state?.connection?.oauth?.resource);
+    else if (action === 'copy-claude-url') await copyText(app.state?.connection?.oauth?.resource);
+    else if (action === 'copy-claude-code') await copyText($('#claude-code-command').textContent);
     else if (action === 'copy-api-command') await copyText('node dist/cli.js token api');
   });
 
@@ -1152,6 +1225,16 @@
   $('#oauth-dialog').addEventListener('close', () => { app.oauthRequestId = null; app.oauthRequestSnapshot = ''; $('#oauth-code-match').checked = false; });
   $('#menu-button').addEventListener('click', () => app.navOpen ? closeNavigation() : openNavigation());
   $('#nav-backdrop').addEventListener('click', () => closeNavigation());
+  $('.client-tabs').addEventListener('keydown', event => {
+    const tab = event.target.closest('.client-tab');
+    if (!tab || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const tabs = $$('.client-tab');
+    const current = tabs.indexOf(tab);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+      : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    selectConnectionClient(tabs[next].dataset.client, true);
+  });
   window.addEventListener('hashchange', () => { if (app.token) navigate(routeFromHash()); });
   window.addEventListener('resize', () => {
     if (!matchMedia('(max-width: 820px)').matches) closeNavigation(false);

@@ -97,7 +97,7 @@ export async function callGateway(gateway: Gateway, name: string, args: Record<s
 }
 
 export function makeMcpServer(getTools: () => Tool[] | Promise<Tool[]>, call: (name: string, args: Record<string, unknown>) => Promise<CallToolResult>): Server {
-  const server = new Server({ name: 'ponte-mcp', version: '0.4.0' }, { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS });
+  const server = new Server({ name: 'ponte-mcp', version: '0.5.0' }, { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS });
   server.setRequestHandler(ListToolsRequestSchema, async request => {
     const tools = await getTools();
     const cursor = request.params?.cursor;

@@ -31,7 +31,7 @@ Trabalhos têm um vínculo adicional com a identidade que os criou. Consultas po
 
 ## Revogar e preservar credenciais
 
-Para encerrar uma autorização OAuth, use **Conectar ChatGPT → Clientes conectados → Revogar acesso**. O endpoint OAuth `/revoke` permite ao cliente correspondente revogar suas credenciais. A revogação impede novos acessos, renovações e novas entregas de Events dessa autorização; ela não desfaz uma ferramenta que já foi executada nem interrompe automaticamente um trabalho em andamento. O serviço também verifica o prazo, o recurso, o scope e o emissor da autorização antes de enviar eventos. Trocar a origem pública invalida esse vínculo.
+Para encerrar uma autorização OAuth, use **Conectar IA → Clientes conectados → Revogar acesso**. O endpoint OAuth `/revoke` permite ao cliente correspondente revogar suas credenciais. A revogação impede novos acessos, renovações e novas entregas de Events dessa autorização; ela não desfaz uma ferramenta que já foi executada nem interrompe automaticamente um trabalho em andamento. O serviço também verifica o prazo, o recurso, o scope e o emissor da autorização antes de enviar eventos. Trocar a origem pública invalida esse vínculo.
 
 Para substituir os tokens legados de administração e API, encerre o serviço, remova `secrets.json` e rode `init` com o mesmo diretório de estado; os dois tokens serão recriados. Atualize os clientes Actions/HTTP e entre novamente no painel. Não remova `config.json` para essa operação. Trocar os tokens legados não revoga automaticamente as autorizações armazenadas em `oauth.json`; revogue-as pelo painel quando necessário.
 

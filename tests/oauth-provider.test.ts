@@ -161,13 +161,65 @@ test('registration rejects unsafe redirects and unsupported client capabilities'
     { redirect_uris: [REDIRECT], client_name: 'x'.repeat(201) },
   ]) await assert.rejects(Promise.resolve().then(() => register(metadata)));
   const loopback = await register({ redirect_uris: ['http://127.0.0.1:3456/callback'], token_endpoint_auth_method: 'none' });
-  const result = await begin(provider, loopback, { redirectUri: 'http://127.0.0.1:9876/callback' });
-  assert.equal(result.status, 400);
   const confidential = await register({ redirect_uris: [REDIRECT] });
   assert.equal(confidential.token_endpoint_auth_method, 'client_secret_post');
   assert.ok(confidential.client_secret && confidential.client_secret.length >= 32);
   assert.equal(confidential.client_secret_expires_at, 0);
   assert.equal(loopback.client_secret, undefined);
+});
+
+test('native OAuth callbacks accept ephemeral ports and bind the code to the actual approved URI', async t => {
+  const { provider } = await fixture(t);
+  for (const host of ['localhost', '127.0.0.1', '[::1]']) {
+    const registered = `http://${host}/callback?connection=ponte`;
+    const requested = `http://${host}:49152/callback?connection=ponte`;
+    const client = await provider.clientsStore.registerClient!({
+      client_name: 'Claude Code', redirect_uris: [registered], token_endpoint_auth_method: 'none',
+    });
+    const result = await begin(provider, client, { redirectUri: requested });
+    assert.equal(result.status, 302, `A native client must be able to choose an ephemeral port on ${host}`);
+    const requestId = new URL(result.location!).searchParams.get('request')!;
+    assert.equal(provider.consentStatus(requestId)?.request.redirectUri, requested);
+    await provider.approve(requestId);
+    const callback = new URL(await provider.completeAuthorization(requestId));
+    assert.equal(callback.origin, `http://${host}:49152`);
+    assert.equal(callback.pathname, '/callback');
+    assert.equal(callback.searchParams.get('connection'), 'ponte');
+    const value = callback.searchParams.get('code')!;
+    await assert.rejects(provider.exchangeAuthorizationCode(client, value, undefined, registered));
+    await assert.rejects(provider.exchangeAuthorizationCode(client, value, undefined, requested.replace(':49152', ':49153')));
+    const issued = await provider.exchangeAuthorizationCode(client, value, undefined, requested);
+    assert.equal((await provider.verifyAccessToken(issued.access_token)).clientId, client.client_id);
+  }
+});
+
+test('native OAuth callbacks do not relax host, scheme, path, query or unsafe URL components', async t => {
+  const { provider } = await fixture(t);
+  const client = await provider.clientsStore.registerClient!({
+    redirect_uris: ['http://localhost/callback?connection=ponte'], token_endpoint_auth_method: 'none',
+  });
+  for (const redirectUri of [
+    'http://127.0.0.1:49152/callback?connection=ponte',
+    'http://localhost.attacker.example:49152/callback?connection=ponte',
+    'https://localhost:49152/callback?connection=ponte',
+    'http://localhost:49152/other?connection=ponte',
+    'http://localhost:49152/a/../callback?connection=ponte',
+    'http://localhost:49152/callback?connection=other',
+    'http://localhost:49152/callback?connection=ponte&state=collision',
+    'http://user@localhost:49152/callback?connection=ponte',
+    'http://localhost:49152/callback?connection=ponte#fragment',
+  ]) {
+    const result = await begin(provider, client, { redirectUri });
+    assert.equal(result.status, 400, redirectUri);
+    assert.equal(result.location, undefined);
+  }
+  const httpsClient = await provider.clientsStore.registerClient!({
+    redirect_uris: ['https://localhost/callback'], token_endpoint_auth_method: 'none',
+  });
+  const result = await begin(provider, httpsClient, { redirectUri: 'https://localhost:49152/callback' });
+  assert.equal(result.status, 400);
+  assert.equal(result.location, undefined);
+  assert.equal(provider.snapshot().pending.length, 0);
 });
 
 test('authorization codes bind client, redirect and resource and are single-use under races', async t => {

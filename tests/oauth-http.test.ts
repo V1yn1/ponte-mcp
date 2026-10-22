@@ -53,7 +53,7 @@ test('MCP advertises public OAuth discovery with exact issuer, resource and supp
   assert.equal(metadata.revocation_endpoint, issuer + '/revoke');
 });
 
-test('official MCP OAuth client discovers, registers, obtains local consent and calls real tools', async t => {
+async function exerciseOAuthClient(t: TestContext, clientName: string, redirect: string, authentication: 'none' | 'client_secret_post') {
   const f = await fixture(t);
   let clientInfo: OAuthClientInformationMixed | undefined;
   let tokens: OAuthTokens | undefined;
@@ -61,14 +61,15 @@ test('official MCP OAuth client discovers, registers, obtains local consent and 
   let authorizationUrl: URL | undefined;
   const provider: OAuthClientProvider = {
     redirectUrl: redirect,
-    clientMetadata: { client_name: 'Interop SDK / ChatGPT callback', redirect_uris: [redirect], token_endpoint_auth_method: 'client_secret_post', grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'] },
+    clientMetadata: { client_name: clientName, redirect_uris: [redirect], token_endpoint_auth_method: authentication, grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'] },
     state: () => 'expected-oauth-state', clientInformation: () => clientInfo,
     saveClientInformation: value => { clientInfo = value; }, tokens: () => tokens, saveTokens: value => { tokens = value; },
     redirectToAuthorization: value => { authorizationUrl = value; }, saveCodeVerifier: value => { verifier = value; }, codeVerifier: () => verifier,
   };
   assert.equal(await auth(provider, { serverUrl: issuer + '/mcp', fetchFn: f.localFetch }), 'REDIRECT');
   assert.ok(clientInfo?.client_id);
-  assert.equal((clientInfo as { client_secret_expires_at?: number }).client_secret_expires_at, 0);
+  if (authentication === 'none') assert.equal((clientInfo as { client_secret?: string }).client_secret, undefined);
+  else assert.equal((clientInfo as { client_secret_expires_at?: number }).client_secret_expires_at, 0);
   assert.equal(authorizationUrl?.searchParams.get('resource'), issuer + '/mcp');
   const request = await f.localFetch(authorizationUrl!);
   assert.equal(request.status, 302);
@@ -76,7 +77,10 @@ test('official MCP OAuth client discovers, registers, obtains local consent and 
   assert.equal(consentUrl.pathname, '/oauth/consent');
   const requestId = consentUrl.searchParams.get('request')!;
   const statusUrl = issuer + '/oauth/consent/status?request=' + requestId;
-  assert.equal((await f.localFetch(statusUrl).then(res => res.json())).status, 'pending');
+  const pending = await f.localFetch(statusUrl).then(res => res.json());
+  assert.equal(pending.status, 'pending');
+  assert.equal(pending.request.clientName, clientName);
+  assert.equal(pending.request.redirectUri, redirect);
   assert.equal((await f.localFetch(issuer + '/oauth/complete?request=' + requestId)).status, 400);
   assert.equal((await fetch(f.runtime.adminUrl + '/admin/oauth/requests/' + requestId + '/approve', { method: 'POST', headers: { Authorization: 'Bearer ' + f.runtime.store.secrets.apiToken } })).status, 401);
   assert.equal((await f.admin('/admin/oauth/requests/' + requestId + '/approve')).status, 200);
@@ -117,6 +121,81 @@ test('official MCP OAuth client discovers, registers, obtains local consent and 
   assert.equal((await f.admin('/admin/oauth/grants/' + state.connection.oauth.grants[0].id + '/revoke')).status, 200);
   const denied = await f.localFetch(issuer + '/mcp', { method: 'POST', headers: { Authorization: 'Bearer ' + tokens!.access_token, 'Content-Type': 'application/json' }, body: '{}' });
   assert.equal(denied.status, 401);
+}
+
+test('official MCP OAuth client discovers, registers, obtains local consent and calls real tools', async t => {
+  await exerciseOAuthClient(t, 'Interop SDK / ChatGPT callback', redirect, 'client_secret_post');
+});
+
+test('Claude hosted callback completes public DCR and PKCE without secrets and calls real tools', async t => {
+  await exerciseOAuthClient(t, 'Claude', 'https://claude.ai/api/mcp/auth_callback', 'none');
+});
+
+test('Claude Code public OAuth uses a registered loopback callback with an ephemeral port', async t => {
+  const f = await fixture(t);
+  const registered = 'http://localhost/callback';
+  const callbackUrl = 'http://localhost:49152/callback';
+  const registration = await f.json('/register', {
+    client_name: 'Claude Code', redirect_uris: [registered, 'http://127.0.0.1/callback'],
+    token_endpoint_auth_method: 'none', grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'],
+  });
+  assert.equal(registration.status, 201);
+  const { client_id, client_secret } = await registration.json();
+  assert.equal(client_secret, undefined);
+  const verifier = randomBytes(32).toString('base64url');
+  const params = new URLSearchParams({
+    client_id, redirect_uri: callbackUrl, response_type: 'code',
+    code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256',
+    resource: issuer + '/mcp', scope: 'ponte:tools', state: 'claude-code-connection',
+  });
+  const authorization = await f.localFetch(issuer + '/authorize?' + params);
+  assert.equal(authorization.status, 302);
+  const id = new URL(authorization.headers.get('location')!, issuer).searchParams.get('request')!;
+  assert.equal(f.runtime.oauth.consentStatus(id)?.request.redirectUri, callbackUrl);
+  assert.equal((await f.admin('/admin/oauth/requests/' + id + '/approve')).status, 200);
+  const callback = new URL((await f.localFetch(issuer + '/oauth/complete?request=' + id)).headers.get('location')!);
+  assert.equal(callback.origin + callback.pathname, callbackUrl);
+  assert.equal(callback.searchParams.get('state'), 'claude-code-connection');
+  const body = { client_id, grant_type: 'authorization_code', code: callback.searchParams.get('code')!, code_verifier: verifier, redirect_uri: callbackUrl, resource: issuer + '/mcp' };
+  for (const redirect_uri of [registered, 'http://localhost:49153/callback', 'http://127.0.0.1:49152/callback']) {
+    const wrong = await f.form('/token', { ...body, redirect_uri });
+    assert.equal(wrong.status, 400);
+    assert.equal((await wrong.json()).error, 'invalid_grant');
+  }
+  const exchanged = await f.form('/token', body);
+  assert.equal(exchanged.status, 200);
+  const issued = await exchanged.json();
+  const refresh = await f.form('/token', { client_id, grant_type: 'refresh_token', refresh_token: issued.refresh_token });
+  assert.equal(refresh.status, 200);
+  const rotated = await refresh.json();
+  assert.notEqual(rotated.refresh_token, issued.refresh_token);
+  const client = new Client({ name: 'claude-code-oauth-interop', version: '1.0.0' });
+  await client.connect(new StreamableHTTPClientTransport(new URL(issuer + '/mcp'), {
+    fetch: f.localFetch, requestInit: { headers: { Authorization: 'Bearer ' + rotated.access_token } },
+  }));
+  t.after(() => client.close());
+  assert.ok((await client.listTools()).tools.some(tool => tool.name === 'bridge_status'));
+  assert.equal((await client.callTool({ name: 'bridge_status', arguments: {} })).isError, undefined);
+});
+
+test('unsafe or unregistered loopback callbacks never receive OAuth errors via redirects', async t => {
+  const f = await fixture(t);
+  const { client_id } = await f.json('/register', {
+    client_name: 'Claude Code', redirect_uris: ['http://localhost/callback', 'https://localhost/callback'], token_endpoint_auth_method: 'none',
+  }).then(res => res.json());
+  for (const redirect_uri of [
+    'http://localhost:49152/callback#fragment', 'http://user@localhost:49152/callback',
+    'http://localhost:49152/path/../callback', 'http://localhost:49152/callback?state=collision',
+    'http://127.0.0.1:49152/callback', 'https://localhost:49152/callback',
+  ]) {
+    // An invalid response_type makes the SDK emit an error before provider.authorize.
+    const params = { client_id, redirect_uri, response_type: 'token', code_challenge: 'invalid', code_challenge_method: 'plain' };
+    for (const response of [await f.localFetch(issuer + '/authorize?' + new URLSearchParams(params)), await f.form('/authorize', params)]) {
+      assert.equal(response.status, 400, redirect_uri);
+      assert.equal(response.headers.has('location'), false, redirect_uri);
+    }
+  }
+  assert.equal(f.runtime.oauth.snapshot().pending.length, 0);
 });
 
 test('authorization error redirects include exact issuer and rejected requests never issue a code', async t => {

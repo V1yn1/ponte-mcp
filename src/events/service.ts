@@ -60,8 +60,32 @@ export interface EventServiceOptions {
   post?: WebhookPost;
   now?: () => number;
 }
+const diagnosticReasons = [
+  'invalid_url', 'blocked_address', 'invalid_secret', 'invalid_headers', 'payload_too_large', 'response_too_large',
+  'dns_error', 'tls_error', 'timeout', 'aborted', 'network_error', 'challenge_failed', 'http_redirect', 'http_4xx', 'http_5xx', 'http_error',
+  'authorization_required', 'storage_limit', 'subscription_limit', 'subscription_busy',
+] as const;
+type DiagnosticReason = typeof diagnosticReasons[number];
+export interface EventDiagnosticError { code: number; reason?: DiagnosticReason }
+export interface EventDiagnostics {
+  since: string;
+  eventsListRequests: number;
+  subscribeRequests: number;
+  acceptedSubscriptions: number;
+  rejectedSubscriptions: number;
+  callbackVerificationAttempts: number;
+  callbackVerificationSucceeded: number;
+  callbackVerificationFailed: number;
+  lastSubscribeAt?: string;
+  lastSubscribeError?: EventDiagnosticError;
+  lastCallbackVerificationAt?: string;
+  lastCallbackVerificationOutcome?: 'succeeded' | 'failed';
+  lastCallbackVerificationError?: EventDiagnosticError;
+}
+export interface EventRequestObservation { accepted(): void; rejected(error: unknown): void }
 export interface EventSnapshot {
   enabled: true; subscriptionCount: number; pendingDeliveries: number; delivered: number; failed: number;
+  diagnostics: EventDiagnostics;
   subscriptions: Array<{ id: string; event: string; jobId: string; createdAt: string; refreshBefore: string;
     status: 'waiting' | 'queued' | 'retrying' | 'delivered' | 'failed'; attempts: number;
     lastAttemptAt?: string; deliveredAt?: string; lastError?: string }>;
@@ -75,6 +99,12 @@ function parameters<T>(schema: z.ZodType<T>, input: unknown): T {
   const parsed = schema.safeParse(input);
   if (!parsed.success) throw new EventError('Parâmetros de Events inválidos.');
   return parsed.data;
+}
+function diagnosticError(error: unknown): EventDiagnosticError {
+  const input = error as { code?: unknown; data?: { reason?: unknown } } | null;
+  const code = typeof input?.code === 'number' && Number.isSafeInteger(input.code) ? input.code : -32603;
+  const reason = input?.data?.reason;
+  return { code, ...(typeof reason === 'string' && diagnosticReasons.includes(reason as DiagnosticReason) ? { reason: reason as DiagnosticReason } : {}) };
 }
 const iso = (value: number) => new Date(value).toISOString();
 const archiveKey = (principal: string, jobId: string) => JSON.stringify([principal, jobId]);
@@ -135,9 +165,12 @@ export class EventService {
   private readonly verified = new Map<string, number>();
   private readonly now: () => number;
   private readonly post: WebhookPost;
+  private readonly diagnostics: EventDiagnostics;
 
   private constructor(private readonly options: EventServiceOptions, private state: State) {
     this.now = options.now ?? Date.now; this.post = options.post ?? postWebhook;
+    this.diagnostics = { since: iso(this.now()), eventsListRequests: 0, subscribeRequests: 0, acceptedSubscriptions: 0, rejectedSubscriptions: 0,
+      callbackVerificationAttempts: 0, callbackVerificationSucceeded: 0, callbackVerificationFailed: 0 };
   }
   static async open(options: EventServiceOptions): Promise<EventService> {
     const stateDir = path.resolve(options.stateDir);
@@ -222,6 +255,29 @@ export class EventService {
     }
   }
 
+  /** Called by the authenticated modern transport before validating its envelope.
+   * Only counters, timestamps and allowlisted error categories are retained. */
+  observeRequest(method: string): EventRequestObservation | undefined {
+    if (method === 'events/list') { this.diagnostics.eventsListRequests++; return; }
+    if (method !== 'events/subscribe') return;
+    const sequence = ++this.diagnostics.subscribeRequests;
+    this.diagnostics.lastSubscribeAt = iso(this.now());
+    delete this.diagnostics.lastSubscribeError;
+    let completed = false;
+    return {
+      accepted: () => {
+        if (completed) return;
+        completed = true; this.diagnostics.acceptedSubscriptions++;
+        if (sequence === this.diagnostics.subscribeRequests) delete this.diagnostics.lastSubscribeError;
+      },
+      rejected: error => {
+        if (completed) return;
+        completed = true; this.diagnostics.rejectedSubscriptions++;
+        if (sequence === this.diagnostics.subscribeRequests) this.diagnostics.lastSubscribeError = diagnosticError(error);
+      },
+    };
+  }
+
   async list(principal: string, params: unknown): Promise<unknown> {
     await this.requireAuthorization(principal);
     const input = parameters(z.object({ cursor: z.string().optional() }).strict(), params);
@@ -256,7 +312,20 @@ export class EventService {
       const verifiedAt = this.verified.get(cacheKey);
       if (verifiedAt === undefined || verifiedAt + VERIFY_CACHE_MS <= this.now()) {
         const controller = this.track(id);
-        try { await verifyCallback({ url: input.delivery.url, secret: input.delivery.secret, subscriptionId: id }, this.post, controller.signal); }
+        this.diagnostics.callbackVerificationAttempts++;
+        this.diagnostics.lastCallbackVerificationAt = iso(this.now());
+        delete this.diagnostics.lastCallbackVerificationOutcome;
+        delete this.diagnostics.lastCallbackVerificationError;
+        try {
+          await verifyCallback({ url: input.delivery.url, secret: input.delivery.secret, subscriptionId: id }, this.post, controller.signal);
+          this.diagnostics.callbackVerificationSucceeded++;
+          this.diagnostics.lastCallbackVerificationOutcome = 'succeeded';
+        } catch (error) {
+          this.diagnostics.callbackVerificationFailed++;
+          this.diagnostics.lastCallbackVerificationOutcome = 'failed';
+          this.diagnostics.lastCallbackVerificationError = diagnosticError(error);
+          throw error;
+        }
         finally { this.untrack(id, controller); }
         this.verified.set(cacheKey, this.now());
         for (const [cached, at] of this.verified) if (at + VERIFY_CACHE_MS <= this.now()) this.verified.delete(cached);
@@ -332,6 +401,7 @@ export class EventService {
   snapshot(): EventSnapshot {
     const subscriptions = this.state.subscriptions.filter(item => item.expiresAt > this.now());
     return { enabled: true, subscriptionCount: subscriptions.length,
+      diagnostics: structuredClone(this.diagnostics),
       pendingDeliveries: subscriptions.filter(item => item.delivery && ['queued', 'retrying'].includes(item.delivery.status)).length,
       delivered: subscriptions.filter(item => item.delivery?.status === 'delivered').length,
       failed: subscriptions.filter(item => item.delivery?.status === 'failed').length,

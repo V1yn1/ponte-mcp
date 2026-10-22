@@ -1,4 +1,4 @@
-# Conectar a Ponte MCP 0.4.0 ao ChatGPT
+# Conectar a Ponte MCP 0.5.0 ao ChatGPT
 
 A Ponte oferece OAuth para a conexão MCP nativa do ChatGPT e MCP Events para avisar quando um trabalho acompanhado termina. O usuário autoriza o acesso no painel do próprio computador e pode revogá-lo depois. O ChatGPT não recebe a credencial de administração. O recebimento de eventos exige uma conversa compatível e uma assinatura criada pelo cliente.
 
@@ -10,7 +10,7 @@ Inicie a ponte e entre no painel local em `http://127.0.0.1:4317`. Se você usa 
 
 Configure um encaminhamento HTTPS para **toda a API em `http://127.0.0.1:4318`**. O encaminhamento deve conservar os caminhos: publicar somente `/mcp` impede a descoberta OAuth e a autorização. Use uma origem estável, como `https://sua-ponte.exemplo.com`.
 
-Em **Conectar ChatGPT → URL pública da API**, salve essa origem, sem caminho, credenciais, query string ou fragmento. O valor é `https://sua-ponte.exemplo.com`; a URL a cadastrar no ChatGPT será `https://sua-ponte.exemplo.com/mcp`.
+Em **Conectar IA → URL pública da API**, salve essa origem, sem caminho, credenciais, query string ou fragmento. O valor é `https://sua-ponte.exemplo.com`; a URL a cadastrar no ChatGPT será `https://sua-ponte.exemplo.com/mcp`.
 
 O painel da porta **4317 permanece local**. A Ponte não cria o túnel ao salvar a URL. Mantenha o processo da ponte e o encaminhamento em execução durante o uso.
 
@@ -24,7 +24,7 @@ ngrok http 4318
 
 Use a origem HTTPS exibida pelo ngrok como **URL pública da API** no painel e acrescente `/mcp` somente no endereço cadastrado no ChatGPT. Se o ngrok apresentar seu aviso de visita ao abrir a página, prossiga para o site e mantenha a página de autorização aberta.
 
-A correção introduzida na versão **0.2.1**, mantida na 0.4.0, preserva os cookies da própria origem ao consultar a decisão e envia o cabeçalho `ngrok-skip-browser-warning` nessa consulta, conforme a [documentação oficial do ngrok](https://ngrok.com/docs/pricing-limits/free-plan-limits#removing-the-interstitial-page). Isso evita que a página intermediária do túnel seja interpretada como o status OAuth. A página também informa quando recebe HTML, erro HTTP, dados inválidos ou falha de rede.
+A correção introduzida na versão **0.2.1**, mantida na 0.5.0, preserva os cookies da própria origem ao consultar a decisão e envia o cabeçalho `ngrok-skip-browser-warning` nessa consulta, conforme a [documentação oficial do ngrok](https://ngrok.com/docs/pricing-limits/free-plan-limits#removing-the-interstitial-page). Isso evita que a página intermediária do túnel seja interpretada como o status OAuth. A página também informa quando recebe HTML, erro HTTP, dados inválidos ou falha de rede.
 
 Antes da correção da 0.2.1, a consulta descartava os cookies e escondia essas falhas atrás de “Aguardando a Ponte responder”. Esse comportamento pode impedir a página de perceber uma aprovação que já ocorreu no painel.
 
@@ -60,7 +60,7 @@ O Bearer fixo mostrado por `token api` continua destinado a Actions e clientes q
 O início da autorização pode ocorrer ao criar a conexão ou quando o ChatGPT solicitar acesso a uma ferramenta protegida.
 
 1. A página de autorização da Ponte mostra um **código de verificação de oito caracteres**. Mantenha essa página aberta.
-2. No painel local, entre em **Conectar ChatGPT** e abra a solicitação com **Revisar conexão**.
+2. No painel local, entre em **Conectar IA** e abra a solicitação com **Revisar conexão**.
 3. Encontre o pedido com o mesmo código. Confira o cliente, o destino do retorno e a permissão solicitada.
 4. Autorize somente o pedido que você acabou de iniciar. Se não reconhecer a solicitação ou se o código não coincidir, rejeite-a.
 5. Volte à página de autorização. Ela acompanha a decisão e retorna automaticamente ao ChatGPT após aprovar.
@@ -100,16 +100,16 @@ Essa espera funciona durante o turno ativo e **não reabre uma conversa encerrad
 
 ## 6. Receber um aviso e continuar a tarefa
 
-Na 0.4.0, a Ponte anuncia o evento **`ponte.job.completed`**, que acompanha um único trabalho pelo argumento obrigatório `jobId`. Ele é emitido ao concluir, falhar, ser recusado, ser cancelado ou expirar. O aviso contém metadados; o ChatGPT consulta `bridge_job` para obter o resultado completo.
+Na 0.5.0, a Ponte anuncia o evento **`ponte.job.completed`**, que acompanha um único trabalho pelo argumento obrigatório `jobId`. Ele é emitido ao concluir, falhar, ser recusado, ser cancelado ou expirar. O aviso contém metadados; o ChatGPT consulta `bridge_job` para obter o resultado completo.
 
 Segundo a [documentação de MCP Events da OpenAI](https://developers.openai.com/plugins/build/mcp-events), o recebimento está disponível em conversas **Work no navegador** e **Work com Cloud selecionado no desktop**, sujeito aos controles da conta e do workspace. Uma conexão MCP que consegue chamar ferramentas pode não oferecer Events no modo de conversa selecionado.
 
-1. Atualize a instalação, reinicie a Ponte e confirme **0.4.0** no painel.
+1. Atualize a instalação, reinicie a Ponte e confirme **0.5.0** no painel.
 2. No plugin da Ponte, use **Atualizar ferramentas** e a atualização de eventos disponível na interface. Confirme que `ponte.job.completed` aparece na página do plugin.
 3. Abra uma conversa Work compatível e selecione a Ponte com `@`.
 4. Solicite uma operação de teste em um projeto autorizado. Se ela ficar pendente de aprovação ou de execução, guarde o `jobId` retornado.
 5. Peça que o ChatGPT acompanhe **esse ID** e continue a tarefa quando o aviso chegar. O cliente envia `events/subscribe` com o callback e o segredo de assinatura que ele próprio fornece.
-6. Em **Conectar ChatGPT → Avisos de conclusão**, confirme que a execução aparece como **Aguardando conclusão**. Se a operação exige revisão, aprove-a em **Execuções**.
+6. Em **Conectar IA → Avisos de conclusão**, confirme que a execução aparece como **Aguardando conclusão**. Se a operação exige revisão, aprove-a em **Execuções**.
 7. Ao terminar, acompanhe o estado **Aviso recebido**. Na conversa, confira a chamada a `bridge_job` para o mesmo ID e a resposta baseada no resultado.
 
 Exemplo de pedido após receber o ID:
@@ -152,9 +152,9 @@ npm.cmd run build
 npm.cmd start
 ```
 
-Preserve o diretório `.ponte` e confira **0.4.0** no painel. Projetos, política de aprovação e conexões OAuth já concluídas persistem; não recrie uma conexão que continua funcionando. Se havia um pedido de autorização ainda em andamento quando a Ponte reiniciou, inicie somente esse fluxo novamente e compare o novo código nas duas telas.
+Preserve o diretório `.ponte` e confira **0.5.0** no painel. Projetos, política de aprovação e conexões OAuth já concluídas persistem; não recrie uma conexão que continua funcionando. Se havia um pedido de autorização ainda em andamento quando a Ponte reiniciou, inicie somente esse fluxo novamente e compare o novo código nas duas telas.
 
-Abra **Plugins → Ponte → Atualizar ferramentas** para carregar os schemas da 0.4.0 e atualize a descoberta de eventos oferecida pela interface. Confira o evento `ponte.job.completed` e teste uma chamada. Isso atualiza o catálogo sem exigir uma nova autorização OAuth. Ao mudar a origem HTTPS, atualize `publicUrl` e configure a conexão para a nova URL: emissor, recurso e destino dos tokens dependem desse endereço. As assinaturas vinculadas à autorização da origem anterior deixam de entregar e precisam ser recriadas pela nova conexão.
+Abra **Plugins → Ponte → Atualizar ferramentas** para carregar os schemas da 0.5.0 e atualize a descoberta de eventos oferecida pela interface. Confira o evento `ponte.job.completed` e teste uma chamada. Isso atualiza o catálogo sem exigir uma nova autorização OAuth. Ao mudar a origem HTTPS, atualize `publicUrl` e configure a conexão para a nova URL: emissor, recurso e destino dos tokens dependem desse endereço. As assinaturas vinculadas à autorização da origem anterior deixam de entregar e precisam ser recriadas pela nova conexão.
 
 ## Resolver problemas
 
@@ -167,7 +167,7 @@ Abra **Plugins → Ponte → Atualizar ferramentas** para carregar os schemas da
 | A autorização pede uma senha/token da Ponte | Use o login apenas no painel local; confirme que abriu a origem configurada e o fluxo descrito neste guia |
 | O pedido não aparece no painel | Verifique se navegador, túnel e painel apontam para a mesma instância e o mesmo diretório de estado |
 | Código de verificação expirou ou não coincide | Rejeite o pedido incorreto e inicie uma nova autorização |
-| A aprovação ocorreu, mas a página continua em “Carregando…” ou “Aguardando a Ponte responder” | Atualize para 0.4.0, que inclui a correção da 0.2.1, e recomece o pedido OAuth que ficou incompleto; confira o código nas duas telas antes de aprovar |
+| A aprovação ocorreu, mas a página continua em “Carregando…” ou “Aguardando a Ponte responder” | Atualize para 0.5.0, que inclui a correção da 0.2.1, e recomece o pedido OAuth que ficou incompleto; confira o código nas duas telas antes de aprovar |
 | A página informa que o túnel devolveu uma página inesperada | A consulta recebeu uma página intermediária, em vez do JSON da Ponte; confira o ngrok, o encaminhamento para a API 4318 e a URL pública configurada |
 | A página informa um erro HTTP | Confira o número exibido e se a API e o túnel continuam ativos; a tela tenta consultar novamente enquanto o pedido estiver válido |
 | A página informa falha de rede ou demora na resposta | Confira a conexão, o processo da Ponte e o túnel; se o serviço reiniciou, recomece a autorização no ChatGPT |
@@ -176,7 +176,7 @@ Abra **Plugins → Ponte → Atualizar ferramentas** para carregar os schemas da
 | Token recusado após mudar a URL | O token está vinculado ao recurso e emissor anteriores; conecte de novo usando a nova origem |
 | Uma escrita está pendente | Confira `approvalMode` em `bridge_status`; em `mutations` ou `all`, aprove o trabalho em **Execuções** e consulte o mesmo `jobId` |
 | O chat terminou a resposta antes da aprovação | Para avisos futuros, use Work compatível e confirme uma assinatura em **Avisos de conclusão**; sem assinatura, peça a consulta do mesmo `jobId` |
-| Ferramentas antigas, `waitMs` ausente ou evento não listado | Atualize as ferramentas e os eventos do plugin; confirme a versão 0.4.0 e a origem da Ponte |
+| Ferramentas antigas, `waitMs` ausente ou evento não listado | Atualize as ferramentas e os eventos do plugin; confirme a versão 0.5.0 e a origem da Ponte |
 | Não aparece nenhuma execução em **Avisos de conclusão** | Ainda não há assinatura ativa; confira o modo Work/Cloud e peça acompanhamento de um `jobId` criado pela mesma conexão |
 | O aviso foi recebido, mas o ChatGPT não continuou | Confirme as instruções da conversa e o suporte do cliente; o status de entrega não comprova a execução de um novo turno |
 | O aviso aparece como **Falha na entrega** | Veja o erro e as tentativas no painel; confira a conexão de saída da Ponte e consulte o resultado pelo mesmo `jobId` |
