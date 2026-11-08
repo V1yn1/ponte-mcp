@@ -1,0 +1,13 @@
+{
+  "name": "ponte-cloud-relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Entrada HTTPS estável para uma Ponte MCP local; um computador por serviço.",
+  "engines": { "node": ">=22.12.0 <25" },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test tests/relay.test.mjs",
+    "check": "node --check protocol.mjs && node --check server.mjs && node --check agent.mjs"
+  }
+}

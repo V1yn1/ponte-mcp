@@ -1,0 +1,19 @@
+# Only the relay runs on Render. Never upload .ponte or start the desktop core here.
+services:
+  - type: web
+    name: ponte-relay
+    runtime: node
+    plan: free
+    region: virginia
+    rootDir: relay
+    buildCommand: npm run check && npm test
+    startCommand: node server.mjs
+    healthCheckPath: /healthz
+    autoDeployTrigger: "off"
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: PONTE_RELAY_TOKEN
+        generateValue: true
